@@ -8,6 +8,14 @@ let mouseDown = false;
 let mouseRight = false;
 let bound = false;
 
+// The use key is edge-triggered: holding it must not buy or drop repeatedly.
+let usePressed = false;
+let useWasDown = false;
+
+export function wasUsePressed(): boolean {
+  return usePressed;
+}
+
 /** Logical (unscaled) pointer position within the 320x240 surface. */
 export function pointer(): { x: number; y: number } {
   return { x: mouseX, y: mouseY };
@@ -46,6 +54,10 @@ export function initInput(canvas: HTMLCanvasElement): void {
 }
 
 export function updateInput(_dt: number): void {
+  const useDown = mouseRight || keys.has('KeyE');
+  usePressed = useDown && !useWasDown;
+  useWasDown = useDown;
+
   for (const entity of q.players) {
     const pi = entity.playerInput!;
     pi.up    = keys.has('KeyW') || keys.has('ArrowUp');
@@ -53,7 +65,7 @@ export function updateInput(_dt: number): void {
     pi.left  = keys.has('KeyA') || keys.has('ArrowLeft');
     pi.right = keys.has('KeyD') || keys.has('ArrowRight');
     pi.shoot = mouseDown || keys.has('Space');
-    pi.use   = mouseRight || keys.has('KeyE');
+    pi.use   = useDown;
     pi.mouseX = mouseX;
     pi.mouseY = mouseY;
     pi.mouseAiming = true;

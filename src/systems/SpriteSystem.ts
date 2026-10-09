@@ -16,6 +16,15 @@ export function updateSprites(gameLayer: Container): void {
     gameLayer.addChild(sprite);
     world.addComponent(entity, 'sprite', sprite);
   }
+
+  // Directional art (turrets, bullets) changes cell without being animated.
+  for (const entity of world.with('visual', 'sprite', 'facing8')) {
+    if (entity.animation) continue;
+    const v = entity.visual!;
+    if (v.col === entity.facing8) continue;
+    v.col = entity.facing8;
+    entity.sprite!.texture = frameTexture(v.sheet, v.col, v.row ?? 0);
+  }
 }
 
 /** Detaches and destroys all sprites, for tearing a level down. */

@@ -21,6 +21,10 @@ import { updateBuffs } from '../systems/BuffSystem';
 import { updateLoot } from '../systems/LootSystem';
 import { updateDeath } from '../systems/DeathSystem';
 import { updateSpawners } from '../systems/SpawnerSystem';
+import { updateRandomSpawner } from '../systems/RandomSpawnerSystem';
+import { updateInteraction, takeNotices, shopItemNear, carriedByPlayer } from '../systems/InteractionSystem';
+import { SHOP_DEFS } from '../entities/ShopItemFactory';
+import { updateTurrets, updateHarvesters, updateBombs } from '../systems/BuildingSystem';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
 import { gameState } from '../game/GameState';
@@ -42,6 +46,9 @@ export class InGameScene implements Scene {
   private ticker = new Ticker();
 
   private scoreText!: Text;
+  private weaponText!: Text;
+  private promptText!: Text;
+  private noticeText!: Text;
   private healthBar!: Graphics;
   private sprintBar!: Graphics;
 
@@ -90,7 +97,7 @@ export class InGameScene implements Scene {
     clearSprites();
     for (const entity of world.entities.slice()) world.remove(entity);
 
-    this.level = await loadTmxLevel(gameState.selectedLevel.path);
+    this.level = await loadTmxLevel(gameState.selectedLevel.path, gameState.difficulty.shopCostMod);
     this.level.targetScore = gameState.targetScore;
 
     this.gameLayer.sortableChildren = true;
@@ -170,10 +177,43 @@ export class InGameScene implements Scene {
     this.sprintBar.y = y + 13;
     this.hudLayer.addChild(this.sprintBar);
 
-    const hint = makeText('WASD move · mouse aim · click shoot · ESC pause', 0x777777, 6, 'right');
+    const hint = makeText('WASD move · mouse aim · click shoot · E use · ESC pause', 0x777777, 6, 'right');
     hint.x = GAME_WIDTH - 4;
     hint.y = GAME_HEIGHT - 9;
     this.hudLayer.addChild(hint);
+
+    this.weaponText = makeText('rifle', 0xdddddd, 7);
+    this.weaponText.x = 190;
+    this.weaponText.y = y + 2;
+    this.hudLayer.addChild(this.weaponText);
+
+    // Shop prompt and purchase feedback, shown just above the HUD strip.
+    this.promptText = makeText('', 0xffee88, 8, 'center');
+    this.promptText.x = GAME_WIDTH / 2;
+    this.promptText.y = GAME_HEIGHT - HUD_H - 14;
+    this.hudLayer.addChild(this.promptText);
+
+    this.noticeText = makeText('', 0xffffff, 8, 'center');
+    this.noticeText.x = GAME_WIDTH / 2;
+    this.noticeText.y = 6;
+    this.hudLayer.addChild(this.noticeText);
+  }
+
+  /** Shows what the player is standing next to, or what they are carrying. */
+  private updatePrompt(): void {
+    const notices = takeNotices();
+    this.noticeText.text = notices.map((n) => n.text).join('\n');
+
+    const held = carriedByPlayer(this.player);
+    if (held) {
+      this.promptText.text = `Carrying ${held.building!.type} — [E] to place`;
+      return;
+    }
+
+    const shop = shopItemNear(this.player);
+    this.promptText.text = shop
+      ? `${SHOP_DEFS[shop.shopItem!.kind].label} — ${shop.shopItem!.cost} coins — [E] to buy`
+      : '';
   }
 
   private togglePause(): void {
@@ -216,8 +256,10 @@ export class InGameScene implements Scene {
     if (this.paused || this.finished) return;
 
     updateInput(dt);
+    updateInteraction();
     updateAI(this.level, dt);
     updateWeapons(dt);
+    updateTurrets(this.level, dt);
     updateMovement(this.level, dt);
     updateBullets(this.level, dt);
     updateCombatTimers(dt);
@@ -225,7 +267,11 @@ export class InGameScene implements Scene {
     updateContactDamage(dt);
     updateBuffs(dt);
     updateLoot(dt);
+    updateHarvesters(dt);
     updateSpawners(this.level, dt);
+    updateRandomSpawner(this.level);
+    // Bombs must detonate before DeathSystem clears the destroyed entity.
+    updateBombs(dt);
     updateDeath(this.level, dt);
     updateSprites(this.gameLayer);
     updateAnimation(dt);
@@ -243,6 +289,8 @@ export class InGameScene implements Scene {
     if (stats) this.scoreText.text = `${stats.score}`;
     if (health) this.drawBar(this.healthBar, health.current / health.max, 0xcc3333);
     if (stats) this.drawBar(this.sprintBar, stats.sprint / stats.maxSprint, 0x3399dd);
+    this.weaponText.text = this.player.weapon?.type ?? '';
+    this.updatePrompt();
 
     // The player entity is removed by DeathSystem once health hits zero.
     if (!health || health.current <= 0 || this.player.removed) {

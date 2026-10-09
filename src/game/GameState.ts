@@ -39,5 +39,8 @@ export const gameState = {
   difficulty: DIFFICULTIES[1],
   selectedLevel: LEVELS[0],
   winningTeam: 0,
-  targetScore: 100,
+  // Victory is measured in coins carried, as in the Java GoldRush mode, whose
+  // target is 5000. Vanilla's 100 applies to a separate deposited-treasury
+  // counter and would end the game before any shop item is affordable.
+  targetScore: 5000,
 };

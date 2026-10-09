@@ -14,6 +14,8 @@ export const enum Facing {
   West = 3,
 }
 
+export type ShopKind = 'turret' | 'harvester' | 'bomb' | 'rifle' | 'shotgun' | 'raygun';
+
 export type Entity = {
   // --- spatial ---
   position?: { x: number; y: number };
@@ -124,6 +126,19 @@ export type Entity = {
     justDroppedTicks?: number;
   };
 
+  /** A purchasable item sitting in a player's base. */
+  shopItem?: { kind: ShopKind; cost: number };
+  /** Set while a player is carrying this building around. */
+  carriedBy?: number;
+  /** Auto-targeting gun turret. */
+  turret?: { radius: number; delay: number; cooldown: number; damage: number };
+  /** Explodes when destroyed, damaging nearby mobs. */
+  bomb?: { blastRadius: number; blastDamage: number };
+  /** Vacuums up nearby loot. */
+  harvester?: { radius: number; collected: number };
+  /** 8-way sprite column, for things whose art is directional. */
+  facing8?: number;
+
   // --- AI ---
   ai?: {
     type: 'wander' | 'chase' | 'path';
@@ -176,4 +191,7 @@ export const q = {
   buildings:     world.with('position', 'building'),
   spawners:      world.with('position', 'spawner'),
   buffed:        world.with('buffs'),
+  shopItems:     world.with('position', 'shopItem'),
+  turrets:       world.with('position', 'turret'),
+  harvesters:    world.with('position', 'harvester'),
 };

@@ -24,6 +24,7 @@ const SHEETS: Record<string, SheetInfo> = {
   pickup_coin_bronze_16: { frameWidth: 16, frameHeight: 16 },
 
   turret:      { frameWidth: 32, frameHeight: 32 },
+  harvester:   { frameWidth: 32, frameHeight: 56 },
   treasure:    { frameWidth: 32, frameHeight: 56 },
   chest_small: { frameWidth: 32, frameHeight: 53 },
   spawner:     { frameWidth: 32, frameHeight: 40 },
@@ -31,6 +32,19 @@ const SHEETS: Record<string, SheetInfo> = {
   muzzle:      { frameWidth: 16, frameHeight: 16 },
   rails:       { frameWidth: 32, frameHeight: 38 },
   bullet:      { frameWidth: 16, frameHeight: 16 },
+  weapon_list: { frameWidth: 32, frameHeight: 32 },
+
+  // Player base pieces: 2 columns x 3 rows per character.
+  start_lordlard_left:        { frameWidth: 32, frameHeight: 32 },
+  start_lordlard_right:       { frameWidth: 32, frameHeight: 32 },
+  start_herrspeck_left:       { frameWidth: 32, frameHeight: 32 },
+  start_herrspeck_right:      { frameWidth: 32, frameHeight: 32 },
+  start_donut_left:           { frameWidth: 32, frameHeight: 32 },
+  start_donut_right:          { frameWidth: 32, frameHeight: 32 },
+  start_cruller_left:         { frameWidth: 32, frameHeight: 32 },
+  start_cruller_right:        { frameWidth: 32, frameHeight: 32 },
+  start_no_opponent_left:     { frameWidth: 32, frameHeight: 32 },
+  start_no_opponent_right:    { frameWidth: 32, frameHeight: 32 },
 };
 
 const cache = new Map<string, Texture>();

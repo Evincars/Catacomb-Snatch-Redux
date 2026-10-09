@@ -23,6 +23,18 @@ export const ASSETS: AssetManifest = {
     herr_von_speck_sheet:  '/art/player/herr_von_speck_sheet.png',
     duchess_donut_sheet:   '/art/player/duchess_donut_sheet.png',
 
+    // Player base halves, one pair per character
+    start_lordlard_left:     '/art/player/start_lordlard_left.png',
+    start_lordlard_right:    '/art/player/start_lordlard_right.png',
+    start_herrspeck_left:    '/art/player/start_herrspeck_left.png',
+    start_herrspeck_right:   '/art/player/start_herrspeck_right.png',
+    start_donut_left:        '/art/player/start_donut_left.png',
+    start_donut_right:       '/art/player/start_donut_right.png',
+    start_cruller_left:      '/art/player/start_cruller_left.png',
+    start_cruller_right:     '/art/player/start_cruller_right.png',
+    start_no_opponent_left:  '/art/player/start_no_opponent_left.png',
+    start_no_opponent_right: '/art/player/start_no_opponent_right.png',
+
     // Mobs
     enemy_mummy_anim_48:   '/art/mob/enemy_mummy_anim_48.png',
     enemy_scarab_anim_48:  '/art/mob/enemy_scarab_anim_48.png',

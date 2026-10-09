@@ -1,5 +1,6 @@
 import { world } from '../world';
 import type { Entity } from '../world';
+import { Mth } from '../math/Mth';
 
 export type BulletType = 'rifle' | 'shotgun' | 'cannon' | 'flame' | 'poison' | 'ray' | 'melee';
 
@@ -29,8 +30,10 @@ export function createBullet(
 ): Entity {
   const cfg = BULLET_CONFIGS[type];
   const pos = owner.position!;
-  const len = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+  const len = Math.hypot(dirX, dirY) || 1;
   const ownerId = world.id(owner) ?? -1;
+  // bullet.png holds 8 directional frames; pick the one matching travel direction.
+  const facing8 = Mth.angleTo8(dirX, dirY);
 
   return world.add({
     position: { x: pos.x, y: pos.y - (owner.yOffset ?? 0) },
@@ -45,6 +48,7 @@ export function createBullet(
       traveledRange: 0,
     },
     team: owner.team,
-    visual: { sheet: 'bullet' },
+    facing8,
+    visual: { sheet: 'bullet', col: facing8 },
   });
 }

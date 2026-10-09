@@ -5,6 +5,16 @@ import { Team } from '../world';
 
 export type SpawnPoint = { x: number; y: number };
 
+/** A decorative piece of a player's home base, drawn over the floor. */
+export type BaseTile = {
+  tileX: number;
+  tileY: number;
+  team: Team;
+  side: 'left' | 'right';
+  /** Index 0-5 into the character's base sheet, laid out as [img % 2][img / 2]. */
+  img: number;
+};
+
 export class Level {
   readonly width: number;
   readonly height: number;
@@ -14,6 +24,8 @@ export class Level {
 
   private spawnPointsP1: SpawnPoint[] = [];
   private spawnPointsP2: SpawnPoint[] = [];
+
+  readonly baseTiles: BaseTile[] = [];
 
   targetScore = 100;
   player1Score = 0;
@@ -77,6 +89,10 @@ export class Level {
       }
     }
     return result;
+  }
+
+  addBaseTile(tileX: number, tileY: number, team: Team, side: 'left' | 'right', img: number): void {
+    this.baseTiles.push({ tileX, tileY, team, side, img });
   }
 
   addSpawnPoint(x: number, y: number, team: Team): void {

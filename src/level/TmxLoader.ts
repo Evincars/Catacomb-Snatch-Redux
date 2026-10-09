@@ -1,9 +1,11 @@
 import { Level } from './Level';
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from './TileType';
 import { Team } from '../world';
+import type { ShopKind } from '../world';
 import { world } from '../world';
 import { createMob } from '../entities/MobFactory';
 import { createBuilding } from '../entities/BuildingFactory';
+import { createShopItem } from '../entities/ShopItemFactory';
 
 // TMX tileset firstgid offsets (from LevelUtils.java)
 const FLOOR_BASE   = 1;
@@ -16,6 +18,25 @@ const WALL_VARIANTS = 23;
 
 /** Offsets from a player tileset base that mark a spawn point (the rest are base/shop tiles). */
 const SPAWN_OFFSETS = new Set([0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19]);
+
+/** Shop stalls in a player's base, keyed by offset from the player tileset base. */
+const SHOP_OFFSETS: Record<number, ShopKind> = {
+  24: 'turret',
+  25: 'harvester',
+  26: 'bomb',
+  32: 'rifle',
+  33: 'shotgun',
+  34: 'raygun',
+};
+
+/**
+ * Base platform pieces. The Java tiles index their art as [img % 2][img / 2],
+ * so each offset maps to a column/row in the character's base sheet.
+ */
+const BASE_LEFT_OFFSETS: Record<number, number> = { 4: 0, 5: 1, 12: 2, 13: 3, 20: 4, 21: 5 };
+const BASE_RIGHT_OFFSETS: Record<number, number> = { 6: 0, 7: 1, 14: 2, 15: 3, 22: 4, 23: 5 };
+
+const PLAYER_RAIL_OFFSET = 27;
 
 async function decodeLayerData(dataText: string): Promise<number[]> {
   const b64 = dataText.trim().replace(/\s/g, '');
@@ -59,7 +80,8 @@ type TmxLayer = { name: string; data: string };
 function parseTmx(xml: string): { width: number; height: number; layers: TmxLayer[] } {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, 'text/xml');
-  const mapEl = doc.querySelector('map')!;
+  const mapEl = doc.querySelector('map');
+  if (!mapEl) throw new Error('TMX has no <map> element (wrong path?)');
   const width = parseInt(mapEl.getAttribute('width') ?? '64');
   const height = parseInt(mapEl.getAttribute('height') ?? '64');
 
@@ -72,8 +94,10 @@ function parseTmx(xml: string): { width: number; height: number; layers: TmxLaye
   return { width, height, layers };
 }
 
-export async function loadTmxLevel(path: string): Promise<Level> {
+/** `costMod` scales shop prices by the selected difficulty. */
+export async function loadTmxLevel(path: string, costMod = 1): Promise<Level> {
   const response = await fetch(path);
+  if (!response.ok) throw new Error(`HTTP ${response.status} loading ${path}`);
   const xml = await response.text();
   const { width, height, layers } = parseTmx(xml);
 
@@ -130,19 +154,56 @@ export async function loadTmxLevel(path: string): Promise<Level> {
             level.setTile(tx, ty, createTile(TileType.Wall, Math.floor(Math.random() * WALL_VARIANTS)));
           }
         } else if (id >= P1_BASE && id < P2_BASE) {
-          if (SPAWN_OFFSETS.has(id - P1_BASE)) {
-            level.addSpawnPoint(tx * TILE_WIDTH + TILE_WIDTH / 2, ty * TILE_HEIGHT + TILE_HEIGHT / 2, Team.One);
-          }
+          readPlayerTile(level, id - P1_BASE, tx, ty, Team.One, costMod);
         } else if (id >= P2_BASE) {
-          if (SPAWN_OFFSETS.has(id - P2_BASE)) {
-            level.addSpawnPoint(tx * TILE_WIDTH + TILE_WIDTH / 2, ty * TILE_HEIGHT + TILE_HEIGHT / 2, Team.Two);
-          }
+          readPlayerTile(level, id - P2_BASE, tx, ty, Team.Two, costMod);
         }
       }
     }
   }
 
   return level;
+}
+
+/** Handles one tile from either player tileset: spawn points, base art, shops and rails. */
+function readPlayerTile(
+  level: Level,
+  offset: number,
+  tx: number,
+  ty: number,
+  team: Team,
+  costMod: number,
+): void {
+  const cx = tx * TILE_WIDTH + TILE_WIDTH / 2;
+  const cy = ty * TILE_HEIGHT + TILE_HEIGHT / 2;
+
+  if (SPAWN_OFFSETS.has(offset)) {
+    level.addSpawnPoint(cx, cy, team);
+    return;
+  }
+
+  const shop = SHOP_OFFSETS[offset];
+  if (shop) {
+    createShopItem(cx, cy, shop, team, costMod);
+    level.addBaseTile(tx, ty, team, 'left', 0);
+    return;
+  }
+
+  const left = BASE_LEFT_OFFSETS[offset];
+  if (left !== undefined) {
+    level.addBaseTile(tx, ty, team, 'left', left);
+    return;
+  }
+
+  const right = BASE_RIGHT_OFFSETS[offset];
+  if (right !== undefined) {
+    level.addBaseTile(tx, ty, team, 'right', right);
+    return;
+  }
+
+  if (offset === PLAYER_RAIL_OFFSET) {
+    level.setTile(tx, ty, createTile(TileType.PlayerRail, 0));
+  }
 }
 
 function spawnSpawner(level: Level, mobType: string, x: number, y: number): void {

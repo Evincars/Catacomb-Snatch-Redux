@@ -21,6 +21,15 @@ export class Mth {
     return 0;                              // North
   }
 
+  /**
+   * 8-way sprite index for a direction vector, matching the Java original:
+   * `(8 + (int)((atan2(y,x) + PI*1.625) / PI * 4)) & 7`.
+   */
+  static angleTo8(dx: number, dy: number): number {
+    const angle = Math.atan2(dy, dx) + Math.PI * 1.625;
+    return (8 + Math.trunc((angle / Math.PI) * 4)) & 7;
+  }
+
   static facingToVector(facing: number): { x: number; y: number } {
     switch (facing) {
       case 0: return { x: 0, y: -1 };  // North

@@ -3,6 +3,8 @@ import type { Application } from 'pixi.js';
 import type { Level } from './Level';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from './TileType';
 import { getTexture } from '../assets/AssetLoader';
+import { Team } from '../world';
+import { gameState } from '../game/GameState';
 
 /** Walls are taller than a tile and hang upward over the row above. */
 const WALL_HEIGHT = 56;
@@ -23,6 +25,23 @@ function floorImageIndex(type: TileType, variant: number): number {
     default:                      return variant & 3;
   }
 }
+
+/**
+ * Each team's base is drawn with the base art of the character playing it.
+ * Team 2 is unused in single player, so it gets the neutral "no opponent" art.
+ */
+function baseSheet(team: Team, side: 'left' | 'right'): string {
+  const character = team === Team.One ? gameState.selectedCharacter : null;
+  const stem = character ? BASE_STEMS[character] : 'no_opponent';
+  return `start_${stem}_${side}`;
+}
+
+const BASE_STEMS: Record<string, string> = {
+  lord_lard: 'lordlard',
+  herr_von_speck: 'herrspeck',
+  duchess_donut: 'donut',
+  countess_cruller: 'cruller',
+};
 
 function frameOf(tex: Texture, col: number, row: number, w: number, h: number): Texture {
   return new Texture({
@@ -65,6 +84,15 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
       s.y = ty * TILE_HEIGHT;
       container.addChild(s);
     }
+  }
+
+  // Player base platforms sit above the floor but below walls.
+  for (const base of level.baseTiles) {
+    const sheet = baseSheet(base.team, base.side);
+    const s = new Sprite(frameOf(getTexture(sheet), base.img % 2, Math.floor(base.img / 2), TILE_WIDTH, TILE_HEIGHT));
+    s.x = base.tileX * TILE_WIDTH;
+    s.y = base.tileY * TILE_HEIGHT;
+    container.addChild(s);
   }
 
   // Walls last, top-to-bottom so lower walls overlap higher ones.
