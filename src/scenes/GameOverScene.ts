@@ -4,6 +4,7 @@ import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
 import { gameState } from '../game/GameState';
+import { sound } from '../audio/SoundPlayer';
 
 const GW = 320;
 const GH = 240;
@@ -14,17 +15,16 @@ export class GameOverScene implements Scene {
   constructor(manager: SceneManager) {
     this.container = new Container();
 
-    // Background — use game_over texture if available, else black
-    try {
-      const bg = new Sprite(getTexture('game_over'));
-      bg.width = GW;
-      bg.height = GH;
-      this.container.addChild(bg);
-    } catch {
-      const bg = new Graphics();
-      bg.rect(0, 0, GW, GH).fill(0x0a0a0a);
-      this.container.addChild(bg);
-    }
+    const backdrop = new Graphics();
+    backdrop.rect(0, 0, GW, GH).fill(0x0a0a0a);
+    this.container.addChild(backdrop);
+
+    const bg = new Sprite(getTexture('game_over'));
+    bg.width = GW;
+    bg.height = GH;
+    this.container.addChild(bg);
+
+    sound.startEndMusic();
 
     const title = makeTitle('Game Over');
     title.x = GW / 2;

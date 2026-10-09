@@ -65,7 +65,8 @@ export class Level {
     for (let ty = ty0; ty <= ty1; ty++) {
       for (let tx = tx0; tx <= tx1; tx++) {
         const tile = this.getTile(tx, ty);
-        if (tile && !tile.passable) {
+        // A null tile is outside the map, which must block or entities walk into the void.
+        if (!tile || !tile.passable) {
           result.push(new BB(
             tx * TILE_WIDTH,
             ty * TILE_HEIGHT,

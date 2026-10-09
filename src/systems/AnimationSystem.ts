@@ -1,31 +1,31 @@
 import { world } from '../world';
-import type { Spritesheet, Texture } from 'pixi.js';
+import { frameTexture, sheetCols } from '../render/Sheets';
 
-const sheets = new Map<string, Spritesheet>();
-
-export function registerSheet(name: string, sheet: Spritesheet): void {
-  sheets.set(name, sheet);
-}
-
+/**
+ * Picks each entity's sheet cell: the column is the animation step, the row the
+ * facing. Players step through their walk cycle from walkTime (as in the Java
+ * original) so they stand still when idle; everything else free-runs.
+ */
 export function updateAnimation(_dt: number): void {
   for (const entity of world.with('animation', 'sprite')) {
     const anim = entity.animation!;
-    const sprite = entity.sprite!;
+    const cols = sheetCols(anim.sheet);
 
-    anim.timer++;
-    if (anim.timer >= anim.frameTime) {
-      anim.timer = 0;
-      anim.frameX++;
-      if (anim.frameX >= anim.frameCount) {
-        anim.frameX = anim.loop ? 0 : anim.frameCount - 1;
+    if (entity.playerInput) {
+      const walk = entity.walkTime ?? 0;
+      anim.frameX = walk === 0 ? 0 : Math.floor(walk / 4) % anim.frameCount;
+    } else {
+      anim.timer++;
+      if (anim.timer >= anim.frameTime) {
+        anim.timer = 0;
+        anim.frameX++;
+        if (anim.frameX >= anim.frameCount) {
+          anim.frameX = anim.loop ? 0 : anim.frameCount - 1;
+        }
       }
     }
 
-    const sheet = sheets.get(anim.sheet);
-    if (!sheet) continue;
-
-    const textures = Object.values(sheet.textures) as Texture[];
-    const idx = anim.frameY * anim.frameCount + anim.frameX;
-    if (textures[idx]) sprite.texture = textures[idx];
+    const row = entity.facing ?? anim.frameY;
+    entity.sprite!.texture = frameTexture(anim.sheet, anim.frameX % cols, row);
   }
 }

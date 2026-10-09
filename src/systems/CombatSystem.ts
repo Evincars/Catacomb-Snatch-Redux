@@ -1,6 +1,11 @@
 import { world } from '../world';
 import type { Entity } from '../world';
 import { BB } from '../math/BB';
+import { sound } from '../audio/SoundPlayer';
+
+const CONTACT_DAMAGE = 1;
+/** Frames of invulnerability after a touch, so contact does not drain health instantly. */
+const CONTACT_COOLDOWN = 30;
 
 /** Decrements combat timers and handles regen. Ported from Mob.tick() / countdownTimers(). */
 export function updateCombatTimers(_dt: number): void {
@@ -57,6 +62,31 @@ export function updateBulletCollision(_dt: number): void {
   }
 }
 
+/** Mobs have no ranged attack; they damage players by walking into them. */
+export function updateContactDamage(_dt: number): void {
+  const mobs = world.with('position', 'radius', 'ai', 'health');
+  const players = world.with('position', 'radius', 'playerInput', 'health');
+
+  for (const mob of mobs) {
+    if (mob.health!.current <= 0) continue;
+    const mpos = mob.position!;
+    const mrad = mob.radius!;
+    const mbb = BB.fromCenter(mpos.x, mpos.y, mrad.x, mrad.y);
+
+    for (const player of players) {
+      if (player.health!.current <= 0) continue;
+      if ((player.freezeTime ?? 0) > 0) continue;
+
+      const ppos = player.position!;
+      const prad = player.radius!;
+      if (!mbb.intersects(BB.fromCenter(ppos.x, ppos.y, prad.x, prad.y))) continue;
+
+      hurtEntity(player, mob, CONTACT_DAMAGE);
+      player.freezeTime = CONTACT_COOLDOWN;
+    }
+  }
+}
+
 export function hurtEntity(
   target: Entity,
   source: Entity,
@@ -82,4 +112,5 @@ export function hurtEntity(
   }
 
   h.current = Math.max(0, h.current - damage);
+  if (tpos) sound.playSound('hit', tpos.x, tpos.y);
 }

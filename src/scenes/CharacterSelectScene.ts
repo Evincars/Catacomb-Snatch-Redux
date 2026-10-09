@@ -1,9 +1,11 @@
-import { Container, Sprite, Graphics, Rectangle, Texture } from 'pixi.js';
+import { Container, Sprite, Graphics } from 'pixi.js';
 import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
+import { frameTexture } from '../render/Sheets';
 import { gameState } from '../game/GameState';
+import { Facing } from '../world';
 import type { CharacterType } from '../entities/PlayerFactory';
 
 const GW = 320;
@@ -16,14 +18,18 @@ type CharInfo = {
   desc: string;
 };
 
+// Names are split over two lines so neighbouring columns do not collide.
 const CHARACTERS: CharInfo[] = [
-  { id: 'lord_lard',       label: 'Lord Lard',       sheet: 'lord_lard_sheet',       desc: 'HP: ■■■■  SPD: ■■■' },
-  { id: 'countess_cruller',label: 'Countess Cruller', sheet: 'countess_cruller_sheet', desc: 'HP: ■■■   SPD: ■■■■■' },
-  { id: 'herr_von_speck',  label: 'Herr von Speck',  sheet: 'herr_von_speck_sheet',  desc: 'HP: ■■■■■ SPD: ■■' },
-  { id: 'duchess_donut',   label: 'Duchess Donut',   sheet: 'duchess_donut_sheet',   desc: 'HP: ■■■   SPD: ■■■■' },
+  { id: 'lord_lard',        label: 'Lord\nLard',        sheet: 'lord_lard_sheet',        desc: 'HP ****\nSPD ***' },
+  { id: 'countess_cruller', label: 'Countess\nCruller', sheet: 'countess_cruller_sheet', desc: 'HP ***\nSPD *****' },
+  { id: 'herr_von_speck',   label: 'Herr von\nSpeck',   sheet: 'herr_von_speck_sheet',   desc: 'HP *****\nSPD **' },
+  { id: 'duchess_donut',    label: 'Duchess\nDonut',    sheet: 'duchess_donut_sheet',    desc: 'HP ***\nSPD ****' },
 ];
 
-const PORTRAIT_SIZE = 48; // pixel size to display portrait
+/** One 32x32 sheet cell, drawn at double size so it reads at this resolution. */
+const FRAME_SIZE = 32;
+const PORTRAIT_SCALE = 2;
+const PORTRAIT_SIZE = FRAME_SIZE * PORTRAIT_SCALE;
 
 export class CharacterSelectScene implements Scene {
   container: Container;
@@ -49,16 +55,9 @@ export class CharacterSelectScene implements Scene {
       const cx = 10 + i * colW;
       const cy = 40;
 
-      // Portrait: first row, first column of the sheet (facing south idle frame)
-      const sheetTex = getTexture(char.sheet);
-      let portrait = new Sprite(Texture.EMPTY);
-      if (sheetTex.source) {
-        const frame = new Texture({
-          source: sheetTex.source,
-          frame: new Rectangle(0, 0, PORTRAIT_SIZE, PORTRAIT_SIZE),
-        });
-        portrait = new Sprite(frame);
-      }
+      // Idle frame facing south.
+      const portrait = new Sprite(frameTexture(char.sheet, 0, Facing.South));
+      portrait.scale.set(PORTRAIT_SCALE);
       portrait.x = cx + (colW - PORTRAIT_SIZE) / 2;
       portrait.y = cy;
       portrait.eventMode = 'static';
@@ -86,7 +85,7 @@ export class CharacterSelectScene implements Scene {
       // Stats
       const stats = makeText(char.desc, 0xaaaaaa, 7, 'center');
       stats.x = cx + colW / 2;
-      stats.y = cy + PORTRAIT_SIZE + 16;
+      stats.y = cy + PORTRAIT_SIZE + 26;
       this.container.addChild(stats);
     });
 

@@ -47,6 +47,8 @@ export type Entity = {
   chasing?: boolean;
 
   // --- rendering ---
+  /** Declares what this entity looks like; SpriteSystem turns it into a `sprite`. */
+  visual?: { sheet: string; col?: number; row?: number };
   sprite?: Sprite;
   container?: Container;
   yOffset?: number;
@@ -126,6 +128,10 @@ export type Entity = {
   ai?: {
     type: 'wander' | 'chase' | 'path';
     targetId?: number;
+    /** Cached A* route and the countdown until it is recomputed. */
+    path?: Array<{ x: number; y: number }>;
+    repathIn?: number;
+    retargetIn?: number;
   };
 
   // --- spawner ---
@@ -162,6 +168,7 @@ export const q = {
   physical:      world.with('position', 'velocity', 'radius'),
   renderable:    world.with('position', 'sprite'),
   animated:      world.with('animation', 'sprite'),
+  needsSprite:   world.with('visual', 'position').without('sprite'),
   players:       world.with('position', 'playerInput', 'playerStats', 'health'),
   mobs:          world.with('position', 'health', 'ai'),
   bullets:       world.with('position', 'velocity', 'bullet'),

@@ -33,7 +33,7 @@ export function createBullet(
   const ownerId = world.id(owner) ?? -1;
 
   return world.add({
-    position: { x: pos.x, y: pos.y },
+    position: { x: pos.x, y: pos.y - (owner.yOffset ?? 0) },
     velocity: { x: (dirX / len) * cfg.speed, y: (dirY / len) * cfg.speed },
     radius: { ...cfg.radius },
     // blocking intentionally omitted — bullets don't block movement
@@ -45,5 +45,6 @@ export function createBullet(
       traveledRange: 0,
     },
     team: owner.team,
+    visual: { sheet: 'bullet' },
   });
 }

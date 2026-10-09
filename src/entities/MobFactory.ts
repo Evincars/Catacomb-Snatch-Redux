@@ -84,6 +84,7 @@ export function createMob(
     slide: { x: 0, y: 0 },
     chasing: false,
     ai: { type: 'wander' },
+    visual: { sheet: cfg.sheet },
     animation: {
       sheet: cfg.sheet,
       frameX: 0,

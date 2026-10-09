@@ -44,6 +44,16 @@ export function createPlayer(
     yOffset: 8,
     flashTime: 0,
     highlight: false,
+    visual: { sheet: `${character}_sheet` },
+    animation: {
+      sheet: `${character}_sheet`,
+      frameX: 0,
+      frameY: Facing.South,
+      frameCount: 6,
+      frameTime: 4,
+      timer: 0,
+      loop: true,
+    },
     playerInput: {
       up: false, down: false, left: false, right: false,
       shoot: false, use: false,

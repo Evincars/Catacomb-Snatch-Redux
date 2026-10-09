@@ -6,7 +6,6 @@ export type SceneName =
   | 'difficulty_select'
   | 'character_select'
   | 'in_game'
-  | 'pause'
   | 'game_over';
 
 export type SceneFactory = (manager: SceneManager) => Scene;
@@ -32,17 +31,21 @@ export class SceneManager {
   }
 
   goto(name: SceneName): void {
+    const factory = this.factories.get(name);
+    if (!factory) throw new Error(`Scene not registered: ${name}`);
+
+    // Build the next scene first: if its constructor throws, the current one
+    // stays on screen instead of leaving the stage blank.
+    const next = factory(this);
+
     if (this.current) {
       this.app.stage.removeChild(this.current.container);
       this.current.destroy();
     }
 
-    const factory = this.factories.get(name);
-    if (!factory) throw new Error(`Scene not registered: ${name}`);
-
-    this.current = factory(this);
+    this.current = next;
     this.currentName = name;
-    this.app.stage.addChild(this.current.container);
+    this.app.stage.addChild(next.container);
   }
 
   get currentScene(): SceneName | null {

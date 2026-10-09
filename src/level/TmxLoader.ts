@@ -12,6 +12,11 @@ const WALL_BASE    = 129;
 const P1_BASE      = 193;
 const P2_BASE      = 257;
 
+const WALL_VARIANTS = 23;
+
+/** Offsets from a player tileset base that mark a spawn point (the rest are base/shop tiles). */
+const SPAWN_OFFSETS = new Set([0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19]);
+
 async function decodeLayerData(dataText: string): Promise<number[]> {
   const b64 = dataText.trim().replace(/\s/g, '');
   const binary = atob(b64);
@@ -122,17 +127,14 @@ export async function loadTmxLevel(path: string): Promise<Level> {
         } else if (id >= WALL_BASE && id < P1_BASE) {
           const local = id - WALL_BASE;
           if (local === 0 || local === 1) {
-            level.setTile(tx, ty, createTile(TileType.Wall, local % 4));
+            level.setTile(tx, ty, createTile(TileType.Wall, Math.floor(Math.random() * WALL_VARIANTS)));
           }
         } else if (id >= P1_BASE && id < P2_BASE) {
-          const local = id - P1_BASE;
-          if (local < 12) {
-            // spawn point indices 0-11 → all count as P1 spawns
+          if (SPAWN_OFFSETS.has(id - P1_BASE)) {
             level.addSpawnPoint(tx * TILE_WIDTH + TILE_WIDTH / 2, ty * TILE_HEIGHT + TILE_HEIGHT / 2, Team.One);
           }
         } else if (id >= P2_BASE) {
-          const local = id - P2_BASE;
-          if (local < 12) {
+          if (SPAWN_OFFSETS.has(id - P2_BASE)) {
             level.addSpawnPoint(tx * TILE_WIDTH + TILE_WIDTH / 2, ty * TILE_HEIGHT + TILE_HEIGHT / 2, Team.Two);
           }
         }

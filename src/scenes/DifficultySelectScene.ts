@@ -7,15 +7,24 @@ import { DIFFICULTIES, gameState } from '../game/GameState';
 
 const GW = 320;
 const GH = 240;
+const BTN_W = 130;
+const BTN_H = 22;
+
+const DESCRIPTIONS: Record<string, string> = {
+  Easy:      'Relaxed — mobs are weak',
+  Normal:    'Balanced experience',
+  Hard:      'Tough — mobs regenerate',
+  Nightmare: 'Brutal — good luck!',
+};
 
 export class DifficultySelectScene implements Scene {
   container: Container;
   private selected: number;
+  private selBoxes: Graphics[] = [];
 
   constructor(manager: SceneManager) {
     this.container = new Container();
-    this.selected = DIFFICULTIES.indexOf(gameState.difficulty);
-    if (this.selected < 0) this.selected = 1;
+    this.selected = Math.max(0, DIFFICULTIES.indexOf(gameState.difficulty));
 
     const bg = new Sprite(getTexture('background'));
     bg.width = GW;
@@ -27,49 +36,36 @@ export class DifficultySelectScene implements Scene {
     title.y = 14;
     this.container.addChild(title);
 
-    const descs: Record<string, string> = {
-      Easy:      'Relaxed — mobs are weak',
-      Normal:    'Balanced experience',
-      Hard:      'Tough — mobs regenerate',
-      Nightmare: 'Brutal — good luck!',
-    };
-
-    const btnW = 130;
-    const btnH = 22;
-    const startX = (GW - btnW * 2 - 10) / 2;
+    const startX = (GW - BTN_W * 2 - 10) / 2;
     const startY = 50;
 
     DIFFICULTIES.forEach((diff, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const x = startX + col * (btnW + 10);
-      const y = startY + row * (btnH + 30);
+      const x = startX + (i % 2) * (BTN_W + 10);
+      const y = startY + Math.floor(i / 2) * (BTN_H + 30);
 
-      const btn = new PixelButton(diff.name, btnW, btnH);
+      const btn = new PixelButton(diff.name, BTN_W, BTN_H);
       btn.x = x;
       btn.y = y;
       btn.onPress = () => {
         this.selected = i;
         gameState.difficulty = DIFFICULTIES[i];
-        this.rebuildSelection(selBoxes);
+        this.updateSelection();
       };
       this.container.addChild(btn);
 
-      const desc = makeText(descs[diff.name] ?? '', 0xaaaaaa, 8, 'center');
-      desc.x = x + btnW / 2;
-      desc.y = y + btnH + 2;
+      const desc = makeText(DESCRIPTIONS[diff.name] ?? '', 0xaaaaaa, 8, 'center');
+      desc.x = x + BTN_W / 2;
+      desc.y = y + BTN_H + 2;
       this.container.addChild(desc);
 
-      // Selection highlight box placeholder — we'll update them
       const box = new Graphics();
       box.x = x;
       box.y = y;
       this.container.addChild(box);
-      selBoxes.push(box);
+      this.selBoxes.push(box);
     });
 
-    const selBoxes: Graphics[] = [];
-    this.rebuildSelection(selBoxes);
+    this.updateSelection();
 
     const startBtn = new PixelButton('Next >', 100, 20);
     startBtn.x = GW - 108;
@@ -87,13 +83,11 @@ export class DifficultySelectScene implements Scene {
     this.container.addChild(backBtn);
   }
 
-  private rebuildSelection(boxes: Graphics[]): void {
-    boxes.forEach((box, i) => {
+  private updateSelection(): void {
+    this.selBoxes.forEach((box, i) => {
       box.clear();
       if (i === this.selected) {
-        const btnW = 130;
-        const btnH = 22;
-        box.rect(-2, -2, btnW + 4, btnH + 4).stroke({ color: 0xffcc44, width: 1 });
+        box.rect(-2, -2, BTN_W + 4, BTN_H + 4).stroke({ color: 0xffcc44, width: 1 });
       }
     });
   }

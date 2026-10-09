@@ -1,8 +1,11 @@
-import { q, world, Facing } from '../world';
-import type { Entity } from '../world';
+import { world } from '../world';
 import type { Level } from '../level/Level';
 import { BB } from '../math/BB';
-import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
+import { Mth } from '../math/Mth';
+import { isKeyDown } from './InputSystem';
+import { screenToWorld } from '../render/Camera';
+
+const angleToFacing = (x: number, y: number) => Mth.angleToFacing(x, y);
 
 const EPSILON = 0.01;
 
@@ -71,16 +74,29 @@ export function move(
 }
 
 export function updateMovement(level: Level, _dt: number): void {
-  const allPhysical = world.with('position', 'velocity', 'radius');
+  // Bullets are excluded — BulletSystem moves them at constant speed.
+  const allPhysical = world.with('position', 'velocity', 'radius').without('bullet');
 
   for (const entity of allPhysical) {
     const { position, velocity, radius } = entity;
     if (!position || !velocity || !radius) continue;
 
-    const bbs = level.getClipBBs(position.x, position.y, radius.x, radius.y);
-    move(position, radius, velocity.x, velocity.y, bbs, entity.physicsSlide !== undefined);
+    // Knockback from a hit is folded into this frame's motion.
+    const bump = entity.bump;
+    let xa = velocity.x;
+    let ya = velocity.y;
+    if (bump) {
+      xa += bump.x;
+      ya += bump.y;
+      bump.x *= 0.8;
+      bump.y *= 0.8;
+      if (Math.abs(bump.x) < 0.01) bump.x = 0;
+      if (Math.abs(bump.y) < 0.01) bump.y = 0;
+    }
 
-    // Dampen velocity slightly
+    const bbs = level.getClipBBs(position.x, position.y, radius.x, radius.y);
+    move(position, radius, xa, ya, bbs, entity.physicsSlide !== undefined);
+
     velocity.x *= 0.85;
     velocity.y *= 0.85;
     if (Math.abs(velocity.x) < 0.01) velocity.x = 0;
@@ -93,22 +109,45 @@ export function updateMovement(level: Level, _dt: number): void {
     const { playerInput: pi, velocity: vel, position: pos, playerStats } = entity;
     if (!pi || !vel || !pos || !playerStats) continue;
 
-    const spd = entity.speed ?? 1.0;
+    if ((entity.freezeTime ?? 0) > 0) continue;
+
+    let spd = entity.speed ?? 1.0;
+
+    // Holding shift drains the sprint meter for extra speed; it refills when idle.
+    const sprinting = isKeyDown('ShiftLeft') && playerStats.sprint > 0 && (pi.up || pi.down || pi.left || pi.right);
+    if (sprinting) {
+      spd *= 1.6;
+      playerStats.sprint = Math.max(0, playerStats.sprint - 1);
+    } else if (playerStats.sprint < playerStats.maxSprint) {
+      playerStats.sprint = Math.min(playerStats.maxSprint, playerStats.sprint + 0.35);
+    }
 
     if (pi.up)    vel.y -= spd;
     if (pi.down)  vel.y += spd;
     if (pi.left)  vel.x -= spd;
     if (pi.right) vel.x += spd;
 
-    // Update facing from aim vector or movement direction
+    const moving = pi.up || pi.down || pi.left || pi.right;
+    entity.walkTime = moving ? (entity.walkTime ?? 0) + 1 : 0;
+
+    // Aim at the cursor, converting from screen space to world space.
     if (pi.mouseAiming && entity.aimVector) {
-      const dx = pi.mouseX - pos.x;
-      const dy = pi.mouseY - pos.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
+      const target = screenToWorld(pi.mouseX, pi.mouseY);
+      const dx = target.x - pos.x;
+      const dy = target.y - pos.y;
+      const len = Math.hypot(dx, dy);
       if (len > 0) {
         entity.aimVector.x = dx / len;
         entity.aimVector.y = dy / len;
       }
+    }
+
+    // Face the aim direction, falling back to the movement direction.
+    const aim = entity.aimVector;
+    if (aim && (aim.x !== 0 || aim.y !== 0)) {
+      entity.facing = angleToFacing(aim.x, aim.y);
+    } else if (moving) {
+      entity.facing = angleToFacing(vel.x, vel.y);
     }
   }
 }

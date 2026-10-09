@@ -4,6 +4,7 @@ import type { SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
+import { sound } from '../audio/SoundPlayer';
 
 const GW = 320;
 const GH = 240;
@@ -20,6 +21,8 @@ export class TitleScene implements Scene {
     bg.width = GW;
     bg.height = GH;
     this.container.addChild(bg);
+
+    sound.startTitleMusic();
 
     const menuItems: { label: string; action: () => void }[] = [
       { label: 'Play',        action: () => manager.goto('level_select') },

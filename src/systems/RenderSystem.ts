@@ -1,31 +1,25 @@
-import type { Application, Container } from 'pixi.js';
 import { world } from '../world';
-import type { Level } from '../level/Level';
-import { TILE_WIDTH, TILE_HEIGHT, TileType } from '../level/TileType';
 
-/** Sync Pixi sprite positions from ECS world positions. */
+/** Sync Pixi sprite transforms and tints from ECS state. */
 export function updateRender(_dt: number): void {
   for (const entity of world.with('position', 'sprite')) {
     const pos = entity.position!;
     const sprite = entity.sprite!;
     const yOff = entity.yOffset ?? 0;
 
-    sprite.x = pos.x;
-    sprite.y = pos.y - yOff;
+    sprite.x = Math.round(pos.x);
+    sprite.y = Math.round(pos.y - yOff);
 
-    // Hurt flash tint
+    // Entities overlap back-to-front by feet position.
+    sprite.zIndex = pos.y;
+
     if ((entity.hurtTime ?? 0) > 0) {
       const t = entity.hurtTime!;
-      sprite.tint = t > 34 && Math.floor(t / 2) % 2 === 0 ? 0xaaffffff : 0xff0000ff;
+      sprite.tint = t > 34 && Math.floor(t / 2) % 2 === 0 ? 0xffffff : 0xff4040;
     } else if ((entity.flashTime ?? 0) > 0) {
-      sprite.tint = 0x80ffff80;
+      sprite.tint = 0x80ffff;
     } else {
-      sprite.tint = 0xffffffff;
+      sprite.tint = 0xffffff;
     }
   }
-}
-
-/** Sort sprites by Y position for depth ordering. */
-export function sortByDepth(gameLayer: Container): void {
-  gameLayer.children.sort((a, b) => a.y - b.y);
 }

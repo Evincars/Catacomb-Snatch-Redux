@@ -2,7 +2,6 @@ import { Assets, Texture } from 'pixi.js';
 
 export type AssetManifest = {
   art: Record<string, string>;
-  sounds: Record<string, string>;
 };
 
 export const ASSETS: AssetManifest = {
@@ -108,42 +107,6 @@ export const ASSETS: AssetManifest = {
 
     // Logo
     mojang_logo: '/art/logo/mojang.png',
-  },
-
-  sounds: {
-    bg1: '/sound/Background 1.ogg',
-    bg2: '/sound/Background 2.ogg',
-    bg3: '/sound/Background 3.ogg',
-    bg4: '/sound/Background 4.ogg',
-    theme_title: '/sound/ThemeTitle.ogg',
-    theme_end:   '/sound/ThemeEnd.ogg',
-    shoot1: '/sound/shoot1.wav',
-    shoot2: '/sound/shoot2.wav',
-    shoot3: '/sound/shoot3.wav',
-    hit1: '/sound/hit1.wav',
-    hit2: '/sound/hit2.wav',
-    hit3: '/sound/hit3.wav',
-    coin1: '/sound/coin1.wav',
-    coin2: '/sound/coin2.wav',
-    coin3: '/sound/coin3.wav',
-    explosion: '/sound/Explosion.wav',
-    explosion2: '/sound/Explosion 2.wav',
-    death: '/sound/Death.wav',
-    enemy_death1: '/sound/Enemy Death 1.wav',
-    enemy_death2: '/sound/Enemy Death 2.wav',
-    level_up: '/sound/levelUp.wav',
-    upgrade: '/sound/Upgrade.wav',
-    fall: '/sound/Fall.wav',
-    falling_male: '/sound/falling_male.wav',
-    falling_female: '/sound/falling_female.wav',
-    pharao_dies: '/sound/pharao_dies.wav',
-    big_coin: '/sound/Big Coin.wav',
-    big_gem: '/sound/Big Gem.wav',
-    gem: '/sound/Gem.wav',
-    step1: '/sound/Step 1.wav',
-    step2: '/sound/Step 2.wav',
-    track_place: '/sound/Track Place.wav',
-    fail: '/sound/Fail.wav',
   },
 };
 

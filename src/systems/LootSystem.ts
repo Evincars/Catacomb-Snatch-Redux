@@ -1,5 +1,5 @@
 import { world } from '../world';
-import { BB } from '../math/BB';
+import { sound } from '../audio/SoundPlayer';
 
 const LOOT_FRICTION = 0.85;
 
@@ -29,6 +29,7 @@ export function updateLoot(_dt: number): void {
       if (distSqr < suckR * suckR) {
         // Collect
         player.playerStats.score += ld.value;
+        sound.playSound(ld.value >= 10 ? 'bigCoin' : 'smallCoin', lp.x, lp.y);
         world.removeComponent(lootEntity, 'loot');
         world.addComponent(lootEntity, 'removed', true);
         break;
