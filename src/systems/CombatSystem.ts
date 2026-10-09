@@ -3,9 +3,13 @@ import type { Entity } from '../world';
 import { BB } from '../math/BB';
 import { sound } from '../audio/SoundPlayer';
 
-const CONTACT_DAMAGE = 1;
-/** Frames of invulnerability after a touch, so contact does not drain health instantly. */
-const CONTACT_COOLDOWN = 30;
+/**
+ * Java's Player.hurt: damage only lands while hurtTime is 0, then 25 ticks of
+ * invulnerability, 15 of them frozen, plus a hard shove away from the attacker.
+ */
+const PLAYER_HURT_TIME = 25;
+const PLAYER_FREEZE_TIME = 15;
+const PLAYER_KNOCKBACK = 10;
 
 /** Decrements combat timers and handles regen. Ported from Mob.tick() / countdownTimers(). */
 export function updateCombatTimers(_dt: number): void {
@@ -75,16 +79,42 @@ export function updateContactDamage(_dt: number): void {
 
     for (const player of players) {
       if (player.health!.current <= 0) continue;
-      if ((player.freezeTime ?? 0) > 0) continue;
+      // Gate on hurtTime, not freezeTime: gating on freezeTime while also
+      // re-setting it every frame left the player permanently locked.
+      if ((player.hurtTime ?? 0) > 0) continue;
 
       const ppos = player.position!;
       const prad = player.radius!;
       if (!mbb.intersects(BB.fromCenter(ppos.x, ppos.y, prad.x, prad.y))) continue;
 
-      hurtEntity(player, mob, CONTACT_DAMAGE);
-      player.freezeTime = CONTACT_COOLDOWN;
+      hurtPlayer(player, mob, mob.strength ?? 1);
     }
   }
+}
+
+/** Damages a player and shoves them clear of whatever hit them. */
+export function hurtPlayer(player: Entity, source: Entity, damage: number): void {
+  const h = player.health;
+  if (!h || h.immortal) return;
+
+  player.hurtTime = PLAYER_HURT_TIME;
+  player.freezeTime = PLAYER_FREEZE_TIME;
+  player.regenTimer = player.regenInterval ?? 180;
+  h.current = Math.max(0, h.current - damage);
+
+  const spos = source.position;
+  const ppos = player.position;
+  if (spos && ppos) {
+    const dx = ppos.x - spos.x;
+    const dy = ppos.y - spos.y;
+    // If perfectly overlapped, pick an arbitrary direction so they still separate.
+    const dist = Math.hypot(dx, dy) || 1;
+    player.bump ??= { x: 0, y: 0 };
+    player.bump.x = (dx / dist) * PLAYER_KNOCKBACK;
+    player.bump.y = (dy / dist) * PLAYER_KNOCKBACK;
+  }
+
+  if (ppos) sound.playSound('hit', ppos.x, ppos.y);
 }
 
 export function hurtEntity(

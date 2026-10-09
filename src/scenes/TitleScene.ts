@@ -1,4 +1,5 @@
 import { Container, Sprite } from 'pixi.js';
+import { GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
 import type { Scene } from '../game/SceneManager';
 import type { SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
@@ -6,8 +7,8 @@ import { makeText } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
 import { sound } from '../audio/SoundPlayer';
 
-const GW = 320;
-const GH = 240;
+const GW = GAME_WIDTH;
+const GH = GAME_HEIGHT;
 
 export class TitleScene implements Scene {
   container: Container;
@@ -25,16 +26,17 @@ export class TitleScene implements Scene {
     sound.startTitleMusic();
 
     const menuItems: { label: string; action: () => void }[] = [
-      { label: 'Play',        action: () => manager.goto('level_select') },
-      { label: 'How To Play', action: () => {/* TODO: show howtoplay overlay */} },
-      { label: 'Exit',        action: () => { /* can't exit browser, just back to title */ } },
+      { label: 'Start',       action: () => manager.goto('level_select') },
+      { label: 'How To Play', action: () => manager.goto('how_to_play') },
+      { label: 'Options',     action: () => manager.goto('options') },
     ];
 
-    const startY = 140;
+    const BTN_W = 248;
+    const startY = 196;
     menuItems.forEach(({ label, action }, i) => {
-      const btn = new PixelButton(label, 128, 20);
-      btn.x = (GW - 128) / 2;
-      btn.y = startY + i * 28;
+      const btn = new PixelButton(label, BTN_W, 30);
+      btn.x = (GW - BTN_W) / 2;
+      btn.y = startY + i * 40;
       btn.onPress = action;
       this.buttons.push(btn);
       this.container.addChild(btn);

@@ -1,4 +1,5 @@
 import { Container, Sprite, Graphics } from 'pixi.js';
+import { GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
 import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
@@ -8,8 +9,8 @@ import { gameState } from '../game/GameState';
 import { Facing } from '../world';
 import type { CharacterType } from '../entities/PlayerFactory';
 
-const GW = 320;
-const GH = 240;
+const GW = GAME_WIDTH;
+const GH = GAME_HEIGHT;
 
 type CharInfo = {
   id: CharacterType;
@@ -28,7 +29,7 @@ const CHARACTERS: CharInfo[] = [
 
 /** One 32x32 sheet cell, drawn at double size so it reads at this resolution. */
 const FRAME_SIZE = 32;
-const PORTRAIT_SCALE = 2;
+const PORTRAIT_SCALE = 3;
 const PORTRAIT_SIZE = FRAME_SIZE * PORTRAIT_SCALE;
 
 export class CharacterSelectScene implements Scene {
@@ -47,13 +48,13 @@ export class CharacterSelectScene implements Scene {
 
     const title = makeTitle('Select Character');
     title.x = GW / 2;
-    title.y = 14;
+    title.y = 34;
     this.container.addChild(title);
 
-    const colW = (GW - 20) / CHARACTERS.length;
+    const colW = (GW - 40) / CHARACTERS.length;
     CHARACTERS.forEach((char, i) => {
-      const cx = 10 + i * colW;
-      const cy = 40;
+      const cx = 20 + i * colW;
+      const cy = 86;
 
       // Idle frame facing south.
       const portrait = new Sprite(frameTexture(char.sheet, 0, Facing.South));
@@ -91,18 +92,18 @@ export class CharacterSelectScene implements Scene {
 
     this.updateSelBoxes();
 
-    const startBtn = new PixelButton('Play!', 100, 22);
-    startBtn.x = GW - 108;
-    startBtn.y = GH - 40;
+    const startBtn = new PixelButton('Play!', 140, 28);
+    startBtn.x = GW - 160;
+    startBtn.y = GH - 56;
     startBtn.onPress = () => {
       gameState.selectedCharacter = CHARACTERS[this.selected].id;
       manager.goto('in_game');
     };
     this.container.addChild(startBtn);
 
-    const backBtn = new PixelButton('< Back', 80, 22);
-    backBtn.x = GW - 108 - 88;
-    backBtn.y = GH - 40;
+    const backBtn = new PixelButton('< Back', 120, 28);
+    backBtn.x = GW - 160 - 130;
+    backBtn.y = GH - 56;
     backBtn.onPress = () => manager.goto('difficulty_select');
     this.container.addChild(backBtn);
   }

@@ -1,5 +1,7 @@
 import { q } from '../world';
 import { GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
+import { bindingFor } from '../game/Settings';
+import type { ActionName } from '../game/Settings';
 
 const keys = new Set<string>();
 let mouseX = 0;
@@ -53,18 +55,23 @@ export function initInput(canvas: HTMLCanvasElement): void {
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
+/** True while the key bound to this action is held. */
+export function isActionDown(action: ActionName): boolean {
+  return keys.has(bindingFor(action));
+}
+
 export function updateInput(_dt: number): void {
-  const useDown = mouseRight || keys.has('KeyE');
+  const useDown = mouseRight || isActionDown('use');
   usePressed = useDown && !useWasDown;
   useWasDown = useDown;
 
   for (const entity of q.players) {
     const pi = entity.playerInput!;
-    pi.up    = keys.has('KeyW') || keys.has('ArrowUp');
-    pi.down  = keys.has('KeyS') || keys.has('ArrowDown');
-    pi.left  = keys.has('KeyA') || keys.has('ArrowLeft');
-    pi.right = keys.has('KeyD') || keys.has('ArrowRight');
-    pi.shoot = mouseDown || keys.has('Space');
+    pi.up    = isActionDown('up')    || keys.has('ArrowUp');
+    pi.down  = isActionDown('down')  || keys.has('ArrowDown');
+    pi.left  = isActionDown('left')  || keys.has('ArrowLeft');
+    pi.right = isActionDown('right') || keys.has('ArrowRight');
+    pi.shoot = mouseDown || isActionDown('fire');
     pi.use   = useDown;
     pi.mouseX = mouseX;
     pi.mouseY = mouseY;

@@ -1,4 +1,5 @@
 import { Container, Sprite, Graphics } from 'pixi.js';
+import { GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
 import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
@@ -6,8 +7,8 @@ import { getTexture } from '../assets/AssetLoader';
 import { gameState } from '../game/GameState';
 import { sound } from '../audio/SoundPlayer';
 
-const GW = 320;
-const GH = 240;
+const GW = GAME_WIDTH;
+const GH = GAME_HEIGHT;
 
 export class GameOverScene implements Scene {
   container: Container;
@@ -28,7 +29,7 @@ export class GameOverScene implements Scene {
 
     const title = makeTitle('Game Over');
     title.x = GW / 2;
-    title.y = 60;
+    title.y = 100;
     this.container.addChild(title);
 
     const winnerLabel = gameState.winningTeam === 1
@@ -39,18 +40,18 @@ export class GameOverScene implements Scene {
 
     const winner = makeText(winnerLabel, 0xffdd44, 12, 'center');
     winner.x = GW / 2;
-    winner.y = 100;
+    winner.y = 150;
     this.container.addChild(winner);
 
-    const okBtn = new PixelButton('Main Menu', 120, 22);
-    okBtn.x = (GW - 120) / 2;
-    okBtn.y = GH - 60;
+    const okBtn = new PixelButton('Main Menu', 200, 28);
+    okBtn.x = (GW - 200) / 2;
+    okBtn.y = GH - 70;
     okBtn.onPress = () => manager.goto('title');
     this.container.addChild(okBtn);
 
-    const retryBtn = new PixelButton('Play Again', 120, 22);
-    retryBtn.x = (GW - 120) / 2;
-    retryBtn.y = GH - 88;
+    const retryBtn = new PixelButton('Play Again', 200, 28);
+    retryBtn.x = (GW - 200) / 2;
+    retryBtn.y = GH - 112;
     retryBtn.onPress = () => manager.goto('in_game');
     this.container.addChild(retryBtn);
   }

@@ -6,7 +6,10 @@ export type SceneName =
   | 'difficulty_select'
   | 'character_select'
   | 'in_game'
-  | 'game_over';
+  | 'game_over'
+  | 'options'
+  | 'key_bindings'
+  | 'how_to_play';
 
 export type SceneFactory = (manager: SceneManager) => Scene;
 

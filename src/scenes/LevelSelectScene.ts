@@ -1,14 +1,15 @@
 import { Container, Sprite, Graphics } from 'pixi.js';
+import { GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
 import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
 import { LEVELS, gameState } from '../game/GameState';
 
-const GW = 320;
-const GH = 240;
-const BTN_W = 88;
-const BTN_H = 20;
+const GW = GAME_WIDTH;
+const GH = GAME_HEIGHT;
+const BTN_W = 140;
+const BTN_H = 28;
 const COLS = 3;
 const ROWS = 3;
 const LEVELS_PER_PAGE = COLS * ROWS;
@@ -34,40 +35,40 @@ export class LevelSelectScene implements Scene {
     // Title
     const title = makeTitle('Select Level');
     title.x = GW / 2;
-    title.y = 14;
+    title.y = 34;
     this.container.addChild(title);
 
     // Level button list area
     this.listContainer = new Container();
     this.listContainer.x = 0;
-    this.listContainer.y = 34;
+    this.listContainer.y = 84;
     this.container.addChild(this.listContainer);
 
     // Bottom nav
-    this.prevBtn = new PixelButton('<', 30, 18);
-    this.prevBtn.x = 8;
-    this.prevBtn.y = GH - 50;
+    this.prevBtn = new PixelButton('<', 40, 26);
+    this.prevBtn.x = 20;
+    this.prevBtn.y = GH - 56;
     this.prevBtn.onPress = () => { this.page--; this.rebuild(); };
     this.container.addChild(this.prevBtn);
 
-    this.nextBtn = new PixelButton('>', 30, 18);
-    this.nextBtn.x = 46;
-    this.nextBtn.y = GH - 50;
+    this.nextBtn = new PixelButton('>', 40, 26);
+    this.nextBtn.x = 68;
+    this.nextBtn.y = GH - 56;
     this.nextBtn.onPress = () => { this.page++; this.rebuild(); };
     this.container.addChild(this.nextBtn);
 
-    const startBtn = new PixelButton('Next >', 100, 20);
-    startBtn.x = GW - 108;
-    startBtn.y = GH - 50;
+    const startBtn = new PixelButton('Next >', 140, 28);
+    startBtn.x = GW - 160;
+    startBtn.y = GH - 56;
     startBtn.onPress = () => {
       gameState.selectedLevel = LEVELS[this.selected];
       manager.goto('difficulty_select');
     };
     this.container.addChild(startBtn);
 
-    const backBtn = new PixelButton('< Back', 80, 20);
-    backBtn.x = GW - 108 - 88;
-    backBtn.y = GH - 50;
+    const backBtn = new PixelButton('< Back', 120, 28);
+    backBtn.x = GW - 160 - 130;
+    backBtn.y = GH - 56;
     backBtn.onPress = () => manager.goto('title');
     this.container.addChild(backBtn);
 
@@ -85,7 +86,7 @@ export class LevelSelectScene implements Scene {
     const startIdx = this.page * LEVELS_PER_PAGE;
     const endIdx = Math.min(startIdx + LEVELS_PER_PAGE, LEVELS.length);
 
-    const xPad = (GW - COLS * (BTN_W + 6)) / 2 + 3;
+    const xPad = (GW - COLS * (BTN_W + 10)) / 2 + 5;
 
     for (let i = startIdx; i < endIdx; i++) {
       const levelInfo = LEVELS[i];
@@ -94,8 +95,8 @@ export class LevelSelectScene implements Scene {
       const row = Math.floor(slot / COLS);
 
       const btn = new PixelButton(levelInfo.name, BTN_W, BTN_H);
-      btn.x = xPad + col * (BTN_W + 6);
-      btn.y = row * (BTN_H + 6);
+      btn.x = xPad + col * (BTN_W + 10);
+      btn.y = row * (BTN_H + 10);
 
       if (i === this.selected) btn.alpha = 1;
 

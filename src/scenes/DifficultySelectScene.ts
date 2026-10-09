@@ -1,14 +1,15 @@
 import { Container, Sprite, Graphics } from 'pixi.js';
+import { GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
 import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
 import { DIFFICULTIES, gameState } from '../game/GameState';
 
-const GW = 320;
-const GH = 240;
-const BTN_W = 130;
-const BTN_H = 22;
+const GW = GAME_WIDTH;
+const GH = GAME_HEIGHT;
+const BTN_W = 200;
+const BTN_H = 30;
 
 const DESCRIPTIONS: Record<string, string> = {
   Easy:      'Relaxed — mobs are weak',
@@ -33,15 +34,15 @@ export class DifficultySelectScene implements Scene {
 
     const title = makeTitle('Select Difficulty');
     title.x = GW / 2;
-    title.y = 14;
+    title.y = 34;
     this.container.addChild(title);
 
-    const startX = (GW - BTN_W * 2 - 10) / 2;
-    const startY = 50;
+    const startX = (GW - BTN_W * 2 - 20) / 2;
+    const startY = 96;
 
     DIFFICULTIES.forEach((diff, i) => {
-      const x = startX + (i % 2) * (BTN_W + 10);
-      const y = startY + Math.floor(i / 2) * (BTN_H + 30);
+      const x = startX + (i % 2) * (BTN_W + 20);
+      const y = startY + Math.floor(i / 2) * (BTN_H + 48);
 
       const btn = new PixelButton(diff.name, BTN_W, BTN_H);
       btn.x = x;
@@ -55,7 +56,7 @@ export class DifficultySelectScene implements Scene {
 
       const desc = makeText(DESCRIPTIONS[diff.name] ?? '', 0xaaaaaa, 8, 'center');
       desc.x = x + BTN_W / 2;
-      desc.y = y + BTN_H + 2;
+      desc.y = y + BTN_H + 6;
       this.container.addChild(desc);
 
       const box = new Graphics();
@@ -67,18 +68,18 @@ export class DifficultySelectScene implements Scene {
 
     this.updateSelection();
 
-    const startBtn = new PixelButton('Next >', 100, 20);
-    startBtn.x = GW - 108;
-    startBtn.y = GH - 40;
+    const startBtn = new PixelButton('Next >', 140, 28);
+    startBtn.x = GW - 160;
+    startBtn.y = GH - 56;
     startBtn.onPress = () => {
       gameState.difficulty = DIFFICULTIES[this.selected];
       manager.goto('character_select');
     };
     this.container.addChild(startBtn);
 
-    const backBtn = new PixelButton('< Back', 80, 20);
-    backBtn.x = GW - 108 - 88;
-    backBtn.y = GH - 40;
+    const backBtn = new PixelButton('< Back', 120, 28);
+    backBtn.x = GW - 160 - 130;
+    backBtn.y = GH - 56;
     backBtn.onPress = () => manager.goto('level_select');
     this.container.addChild(backBtn);
   }

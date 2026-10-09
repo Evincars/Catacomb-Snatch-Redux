@@ -27,6 +27,12 @@ export class Level {
 
   readonly baseTiles: BaseTile[] = [];
 
+  /**
+   * Fog of war, stored per tile *corner* on a (width+1) x (height+1) grid so
+   * each tile can pick a darkness shape from which of its 4 corners are known.
+   */
+  readonly seen: boolean[];
+
   targetScore = 100;
   player1Score = 0;
   player2Score = 0;
@@ -38,6 +44,53 @@ export class Level {
 
     for (let i = 0; i < width * height; i++) {
       this.tileStacks[i] = [createTile(TileType.Floor, Math.floor(Math.random() * 4))];
+    }
+
+    this.seen = new Array((width + 1) * (height + 1)).fill(false);
+  }
+
+  isSeen(cornerX: number, cornerY: number): boolean {
+    if (cornerX < 0 || cornerY < 0 || cornerX > this.width || cornerY > this.height) return false;
+    return this.seen[cornerX + cornerY * (this.width + 1)];
+  }
+
+  /** Marks the four corners of a tile as known. */
+  markSeen(tileX: number, tileY: number): void {
+    const w = this.width + 1;
+    this.seen[tileX + tileY * w] = true;
+    this.seen[tileX + 1 + tileY * w] = true;
+    this.seen[tileX + (tileY + 1) * w] = true;
+    this.seen[tileX + 1 + (tileY + 1) * w] = true;
+  }
+
+  /**
+   * Reveals a disc around a tile by walking rays out to the perimeter of the
+   * bounding square, stopping at walls. Ported from Java's Level.reveal().
+   */
+  reveal(tileX: number, tileY: number, radius: number): void {
+    for (let i = 0; i < radius * 2 + 1; i++) {
+      this.revealLine(tileX, tileY, tileX - radius + i, tileY - radius, radius);
+      this.revealLine(tileX, tileY, tileX - radius + i, tileY + radius, radius);
+      this.revealLine(tileX, tileY, tileX - radius, tileY - radius + i, radius);
+      this.revealLine(tileX, tileY, tileX + radius, tileY - radius + i, radius);
+    }
+  }
+
+  private revealLine(x0: number, y0: number, x1: number, y1: number, radius: number): void {
+    for (let i = 0; i <= radius; i++) {
+      const xx = x0 + Math.trunc(((x1 - x0) * i) / radius);
+      const yy = y0 + Math.trunc(((y1 - y0) * i) / radius);
+      if (xx < 0 || yy < 0 || xx >= this.width || yy >= this.height) return;
+
+      const dx = xx - x0;
+      const dy = yy - y0;
+      if (dx * dx + dy * dy > radius * radius) return;
+
+      // Walls are revealed but block anything behind them.
+      const tile = this.getTile(xx, yy);
+      if (tile?.type === TileType.Wall) return;
+
+      this.markSeen(xx, yy);
     }
   }
 

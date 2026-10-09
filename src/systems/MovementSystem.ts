@@ -2,7 +2,7 @@ import { world } from '../world';
 import type { Level } from '../level/Level';
 import { BB } from '../math/BB';
 import { Mth } from '../math/Mth';
-import { isKeyDown } from './InputSystem';
+import { isActionDown } from './InputSystem';
 import { screenToWorld } from '../render/Camera';
 
 const angleToFacing = (x: number, y: number) => Mth.angleToFacing(x, y);
@@ -81,26 +81,33 @@ export function updateMovement(level: Level, _dt: number): void {
     const { position, velocity, radius } = entity;
     if (!position || !velocity || !radius) continue;
 
-    // Knockback from a hit is folded into this frame's motion.
     const bump = entity.bump;
-    let xa = velocity.x;
-    let ya = velocity.y;
+    const frozen = (entity.freezeTime ?? 0) > 0;
+
+    // While frozen the entity is only carried by knockback, never by its own
+    // input — this is what pushes a player out of a mob instead of locking them.
+    let xa = frozen ? 0 : velocity.x;
+    let ya = frozen ? 0 : velocity.y;
     if (bump) {
       xa += bump.x;
       ya += bump.y;
-      bump.x *= 0.8;
-      bump.y *= 0.8;
-      if (Math.abs(bump.x) < 0.01) bump.x = 0;
-      if (Math.abs(bump.y) < 0.01) bump.y = 0;
     }
 
     const bbs = level.getClipBBs(position.x, position.y, radius.x, radius.y);
     move(position, radius, xa, ya, bbs, entity.physicsSlide !== undefined);
 
-    velocity.x *= 0.85;
-    velocity.y *= 0.85;
+    const friction = entity.friction ?? 0.4;
+    velocity.x *= friction;
+    velocity.y *= friction;
     if (Math.abs(velocity.x) < 0.01) velocity.x = 0;
     if (Math.abs(velocity.y) < 0.01) velocity.y = 0;
+
+    if (bump) {
+      bump.x *= 0.8;
+      bump.y *= 0.8;
+      if (Math.abs(bump.x) < 0.01) bump.x = 0;
+      if (Math.abs(bump.y) < 0.01) bump.y = 0;
+    }
   }
 
   // Player-specific movement from input
@@ -114,7 +121,7 @@ export function updateMovement(level: Level, _dt: number): void {
     let spd = entity.speed ?? 1.0;
 
     // Holding shift drains the sprint meter for extra speed; it refills when idle.
-    const sprinting = isKeyDown('ShiftLeft') && playerStats.sprint > 0 && (pi.up || pi.down || pi.left || pi.right);
+    const sprinting = isActionDown('sprint') && playerStats.sprint > 0 && (pi.up || pi.down || pi.left || pi.right);
     if (sprinting) {
       spd *= 1.6;
       playerStats.sprint = Math.max(0, playerStats.sprint - 1);

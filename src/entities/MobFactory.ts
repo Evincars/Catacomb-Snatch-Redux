@@ -7,44 +7,48 @@ export type MobType = 'mummy' | 'scarab' | 'snake' | 'bat' | 'pharao';
 type MobConfig = {
   health: number;
   speed: number;
+  strength: number;
   deathPoints: number;
+  /** Stutter in the walk cycle; the mob pauses when walkTime/12 % limp === 0. */
+  limp: number;
   radius: { x: number; y: number };
   sheet: string;
   frameCount: number;
   regenInterval: number;
 };
 
+/** Values taken verbatim from the original's resources/constants/constants.txt. */
 const MOB_CONFIGS: Record<MobType, MobConfig> = {
+  bat: {
+    health: 1, speed: 1, strength: 1, deathPoints: 1, limp: 0,
+    radius: { x: 6, y: 6 },
+    sheet: 'enemy_bat_32',
+    frameCount: 4,
+    regenInterval: 150,
+  },
   mummy: {
-    health: 8, speed: 0.7, deathPoints: 2,
+    health: 7, speed: 0.5, strength: 2, deathPoints: 4, limp: 3,
     radius: { x: 8, y: 8 },
     sheet: 'enemy_mummy_anim_48',
     frameCount: 4,
     regenInterval: 300,
   },
   scarab: {
-    health: 4, speed: 1.1, deathPoints: 1,
+    health: 5, speed: 0.7, strength: 2, deathPoints: 4, limp: 4,
     radius: { x: 6, y: 6 },
     sheet: 'enemy_scarab_anim_48',
     frameCount: 4,
     regenInterval: 200,
   },
   snake: {
-    health: 6, speed: 0.9, deathPoints: 2,
+    health: 3, speed: 1.5, strength: 1, deathPoints: 2, limp: 4,
     radius: { x: 7, y: 7 },
     sheet: 'enemy_snake_anim_48',
     frameCount: 4,
     regenInterval: 240,
   },
-  bat: {
-    health: 3, speed: 1.4, deathPoints: 1,
-    radius: { x: 6, y: 6 },
-    sheet: 'enemy_bat_32',
-    frameCount: 4,
-    regenInterval: 150,
-  },
   pharao: {
-    health: 30, speed: 0.6, deathPoints: 10,
+    health: 40, speed: 1.0, strength: 3, deathPoints: 30, limp: 3,
     radius: { x: 10, y: 10 },
     sheet: 'enemy_pharao_anim_48',
     frameCount: 4,
@@ -74,11 +78,14 @@ export function createMob(
     regenAmount: 1,
     regenTimer: cfg.regenInterval,
     deathPoints: cfg.deathPoints,
+    strength: cfg.strength,
     speed: cfg.speed,
+    // Mobs bleed off nearly all momentum each tick, as in Java's Mob.walk().
+    friction: 0.2,
     facing: Facing.South,
     aimVector: { x: 0, y: 1 },
     walkTime: 0,
-    limp: 2,
+    limp: cfg.limp,
     yOffset: 8,
     bump: { x: 0, y: 0 },
     slide: { x: 0, y: 0 },

@@ -147,6 +147,8 @@ export async function loadTmxLevel(path: string, costMod = 1): Promise<Level> {
             case 17: spawnSpawner(level, 'snake',  wx, wy); break;
             case 18: spawnSpawner(level, 'scarab', wx, wy); break;
             case 19: spawnSpawner(level, 'mummy',  wx, wy); break;
+            // "Do not darken": the map author marks these tiles pre-explored.
+            case 24: level.markSeen(tx, ty); break;
           }
         } else if (id >= WALL_BASE && id < P1_BASE) {
           const local = id - WALL_BASE;

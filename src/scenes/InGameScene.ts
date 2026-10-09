@@ -1,5 +1,5 @@
-import { Container, Graphics, Sprite, Ticker } from 'pixi.js';
-import type { Application, Text } from 'pixi.js';
+import { Container, Graphics, Ticker } from 'pixi.js';
+import type { Application } from 'pixi.js';
 import type { Scene, SceneManager } from '../game/SceneManager';
 import { world, Team } from '../world';
 import type { Entity } from '../world';
@@ -29,11 +29,13 @@ import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
 import { gameState } from '../game/GameState';
 import { sound } from '../audio/SoundPlayer';
-import { camera, GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
-import { frameTexture } from '../render/Sheets';
+import { camera, GAME_WIDTH, GAME_HEIGHT, VIEW_HEIGHT } from '../render/Camera';
+import { HudPanel } from '../ui/HudPanel';
+import { DarknessRenderer } from '../level/DarknessRenderer';
+import { keyLabel } from '../game/Settings';
 
-const HUD_H = 26;
-const BAR_W = 60;
+/** Tiles of sight around the player, as in Java's Player.tick(). */
+const REVEAL_RADIUS = 5;
 
 export class InGameScene implements Scene {
   container: Container;
@@ -45,12 +47,8 @@ export class InGameScene implements Scene {
   private player!: Entity;
   private ticker = new Ticker();
 
-  private scoreText!: Text;
-  private weaponText!: Text;
-  private promptText!: Text;
-  private noticeText!: Text;
-  private healthBar!: Graphics;
-  private sprintBar!: Graphics;
+  private hud!: HudPanel;
+  private darkness = new DarknessRenderer();
 
   private paused = false;
   private finished = false;
@@ -109,6 +107,10 @@ export class InGameScene implements Scene {
     levelSprite.zIndex = -Number.MAX_SAFE_INTEGER;
     this.gameLayer.addChild(levelSprite);
 
+    // Fog sits above every world sprite but below the HUD.
+    this.darkness.container.zIndex = Number.MAX_SAFE_INTEGER;
+    this.gameLayer.addChild(this.darkness.container);
+
     const spawn =
       this.level.getRandomSpawnPoint(Team.One) ??
       { x: 2 * TILE_WIDTH, y: 2 * TILE_HEIGHT };
@@ -143,77 +145,26 @@ export class InGameScene implements Scene {
   }
 
   private buildHud(): void {
-    const bg = new Graphics();
-    bg.rect(0, GAME_HEIGHT - HUD_H, GAME_WIDTH, HUD_H).fill({ color: 0x000000, alpha: 0.7 });
-    this.hudLayer.addChild(bg);
-
-    const y = GAME_HEIGHT - HUD_H + 4;
-
-    this.scoreText = makeText('0', 0xffdd44, 9);
-    this.scoreText.x = 20;
-    this.scoreText.y = y + 6;
-    this.hudLayer.addChild(this.scoreText);
-
-    const coin = new Sprite(frameTexture('pickup_coin_gold_16', 0, 0));
-    coin.x = 5;
-    coin.y = y + 4;
-    this.hudLayer.addChild(coin);
-
-    const hpLabel = makeText('HP', 0xaaaaaa, 7);
-    hpLabel.x = 96;
-    hpLabel.y = y + 2;
-    this.hudLayer.addChild(hpLabel);
-    this.healthBar = new Graphics();
-    this.healthBar.x = 112;
-    this.healthBar.y = y + 3;
-    this.hudLayer.addChild(this.healthBar);
-
-    const spLabel = makeText('SP', 0xaaaaaa, 7);
-    spLabel.x = 96;
-    spLabel.y = y + 12;
-    this.hudLayer.addChild(spLabel);
-    this.sprintBar = new Graphics();
-    this.sprintBar.x = 112;
-    this.sprintBar.y = y + 13;
-    this.hudLayer.addChild(this.sprintBar);
-
-    const hint = makeText('WASD move · mouse aim · click shoot · E use · ESC pause', 0x777777, 6, 'right');
-    hint.x = GAME_WIDTH - 4;
-    hint.y = GAME_HEIGHT - 9;
-    this.hudLayer.addChild(hint);
-
-    this.weaponText = makeText('rifle', 0xdddddd, 7);
-    this.weaponText.x = 190;
-    this.weaponText.y = y + 2;
-    this.hudLayer.addChild(this.weaponText);
-
-    // Shop prompt and purchase feedback, shown just above the HUD strip.
-    this.promptText = makeText('', 0xffee88, 8, 'center');
-    this.promptText.x = GAME_WIDTH / 2;
-    this.promptText.y = GAME_HEIGHT - HUD_H - 14;
-    this.hudLayer.addChild(this.promptText);
-
-    this.noticeText = makeText('', 0xffffff, 8, 'center');
-    this.noticeText.x = GAME_WIDTH / 2;
-    this.noticeText.y = 6;
-    this.hudLayer.addChild(this.noticeText);
+    this.hud = new HudPanel();
+    this.hudLayer.addChild(this.hud.container);
   }
 
   /** Shows what the player is standing next to, or what they are carrying. */
   private updatePrompt(): void {
-    const notices = takeNotices();
-    this.noticeText.text = notices.map((n) => n.text).join('\n');
+    this.hud.setNotices(takeNotices().map((n) => n.text));
 
     const held = carriedByPlayer(this.player);
     if (held) {
-      this.promptText.text = `Carrying ${held.building!.type} — [E] to place`;
+      this.hud.setPrompt(`Carrying ${held.building!.type} — [${keyLabel('use')}] to place`);
       return;
     }
 
     const shop = shopItemNear(this.player);
-    this.promptText.text = shop
-      ? `${SHOP_DEFS[shop.shopItem!.kind].label} — ${shop.shopItem!.cost} coins — [E] to buy`
-      : '';
+    this.hud.setPrompt(
+      shop
+        ? `${SHOP_DEFS[shop.shopItem!.kind].label} — ${shop.shopItem!.cost} coins — [${keyLabel('use')}] to buy`
+        : '',
+    );
   }
 
   private togglePause(): void {
@@ -227,27 +178,27 @@ export class InGameScene implements Scene {
 
     const title = makeTitle('Paused');
     title.x = GAME_WIDTH / 2;
-    title.y = 70;
+    title.y = 110;
     this.overlay.addChild(title);
 
-    const resume = new PixelButton('Resume', 120, 22);
-    resume.x = (GAME_WIDTH - 120) / 2;
-    resume.y = 110;
+    const resume = new PixelButton('Resume', 200, 28);
+    resume.x = (GAME_WIDTH - 200) / 2;
+    resume.y = 170;
     resume.onPress = () => this.togglePause();
     this.overlay.addChild(resume);
 
-    const quit = new PixelButton('Quit to Menu', 120, 22);
-    quit.x = (GAME_WIDTH - 120) / 2;
-    quit.y = 140;
+    const quit = new PixelButton('Quit to Menu', 200, 28);
+    quit.x = (GAME_WIDTH - 200) / 2;
+    quit.y = 210;
     quit.onPress = () => this.manager.goto('title');
     this.overlay.addChild(quit);
   }
 
   private centerCameraOn(x: number, y: number): void {
     const maxX = Math.max(0, this.level.width * TILE_WIDTH - GAME_WIDTH);
-    const maxY = Math.max(0, this.level.height * TILE_HEIGHT - (GAME_HEIGHT - HUD_H));
+    const maxY = Math.max(0, this.level.height * TILE_HEIGHT - VIEW_HEIGHT);
     camera.x = Math.min(Math.max(x - GAME_WIDTH / 2, 0), maxX);
-    camera.y = Math.min(Math.max(y - (GAME_HEIGHT - HUD_H) / 2, 0), maxY);
+    camera.y = Math.min(Math.max(y - VIEW_HEIGHT / 2, 0), maxY);
     this.gameLayer.x = -Math.round(camera.x);
     this.gameLayer.y = -Math.round(camera.y);
   }
@@ -284,12 +235,15 @@ export class InGameScene implements Scene {
     if (pos) {
       this.centerCameraOn(pos.x, pos.y);
       sound.setListener(pos.x, pos.y);
+      this.level.reveal(
+        Math.floor(pos.x / TILE_WIDTH),
+        Math.floor(pos.y / TILE_HEIGHT),
+        REVEAL_RADIUS,
+      );
     }
+    this.darkness.update(this.level);
 
-    if (stats) this.scoreText.text = `${stats.score}`;
-    if (health) this.drawBar(this.healthBar, health.current / health.max, 0xcc3333);
-    if (stats) this.drawBar(this.sprintBar, stats.sprint / stats.maxSprint, 0x3399dd);
-    this.weaponText.text = this.player.weapon?.type ?? '';
+    this.hud.update(this.player, this.level);
     this.updatePrompt();
 
     // The player entity is removed by DeathSystem once health hits zero.
@@ -300,13 +254,6 @@ export class InGameScene implements Scene {
     }
   }
 
-  private drawBar(g: Graphics, fraction: number, color: number): void {
-    const f = Math.max(0, Math.min(1, fraction));
-    g.clear();
-    g.rect(0, 0, BAR_W, 6).fill(0x222222);
-    if (f > 0) g.rect(0, 0, Math.max(1, BAR_W * f), 6).fill(color);
-    g.rect(0, 0, BAR_W, 6).stroke({ color: 0x000000, width: 1 });
-  }
 
   private end(winner: number): void {
     this.finished = true;
@@ -319,6 +266,7 @@ export class InGameScene implements Scene {
     window.removeEventListener('keydown', this.onKeyDown);
     this.ticker.stop();
     this.ticker.destroy();
+    this.darkness.destroy();
     clearSprites();
     this.container.destroy({ children: true });
   }

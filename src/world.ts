@@ -40,6 +40,9 @@ export type Entity = {
   // --- movement ---
   facing?: Facing;
   speed?: number;
+  /** Per-tick velocity retention: 0.2 for mobs, 0.4 for players (from Java). */
+  friction?: number;
+  strength?: number;
   aimVector?: { x: number; y: number };
   walkTime?: number;
   stepTime?: number;

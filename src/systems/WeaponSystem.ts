@@ -17,9 +17,10 @@ export function updateWeapons(_dt: number): void {
     if (weapon.currentCooldown > 0) weapon.currentCooldown--;
     if (stats && stats.muzzleTicks > 0) stats.muzzleTicks--;
 
+    // Firing is deliberately allowed while frozen — Java calls handleWeaponFire
+    // regardless of freezeTime, so being hit never disarms the player.
     if (!pi.shoot) continue;
     if (weapon.currentCooldown > 0) continue;
-    if ((entity.freezeTime ?? 0) > 0) continue;
     if (aim.x === 0 && aim.y === 0) continue;
 
     weapon.currentCooldown = weapon.cooldown;

@@ -6,6 +6,9 @@ import { DifficultySelectScene } from '../scenes/DifficultySelectScene';
 import { CharacterSelectScene } from '../scenes/CharacterSelectScene';
 import { InGameScene } from '../scenes/InGameScene';
 import { GameOverScene } from '../scenes/GameOverScene';
+import { OptionsScene } from '../scenes/OptionsScene';
+import { KeyBindingsScene } from '../scenes/KeyBindingsScene';
+import { HowToPlayScene } from '../scenes/HowToPlayScene';
 import { GAME_WIDTH, GAME_HEIGHT, SCALE } from '../render/Camera';
 import { sound } from '../audio/SoundPlayer';
 
@@ -41,7 +44,10 @@ export class Game {
       .register('difficulty_select', (m) => new DifficultySelectScene(m))
       .register('character_select',  (m) => new CharacterSelectScene(m))
       .register('in_game',           (m) => new InGameScene(m))
-      .register('game_over',         (m) => new GameOverScene(m));
+      .register('game_over',         (m) => new GameOverScene(m))
+      .register('options',           (m) => new OptionsScene(m))
+      .register('key_bindings',      (m) => new KeyBindingsScene(m))
+      .register('how_to_play',       (m) => new HowToPlayScene(m));
 
     this.manager.goto('title');
   }

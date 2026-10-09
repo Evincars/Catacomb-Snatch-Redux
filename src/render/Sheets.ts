@@ -33,6 +33,10 @@ const SHEETS: Record<string, SheetInfo> = {
   rails:       { frameWidth: 32, frameHeight: 38 },
   bullet:      { frameWidth: 16, frameHeight: 16 },
   weapon_list: { frameWidth: 32, frameHeight: 32 },
+  dark:        { frameWidth: 32, frameHeight: 32 },
+  // 101-frame depletion strips, one row per percentage step.
+  panel_healthbar: { frameWidth: 100, frameHeight: 6 },
+  panel_xpbar:     { frameWidth: 100, frameHeight: 6 },
 
   // Player base pieces: 2 columns x 3 rows per character.
   start_lordlard_left:        { frameWidth: 32, frameHeight: 32 },

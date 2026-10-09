@@ -38,6 +38,8 @@ export function createPlayer(
     regenAmount: 1,
     regenTimer: 60 * 3,
     speed: CHARACTER_SPEED[character],
+    // Java's Player damps movement by 0.4 each tick, capping speed at ~1.7x.
+    friction: 0.4,
     facing: Facing.South,
     aimVector: { x: 0, y: 1 },
     walkTime: 0,

@@ -1,5 +1,6 @@
 import { loadAllAssets } from './assets/AssetLoader';
 import { sound } from './audio/SoundPlayer';
+import { settings } from './game/Settings';
 import { Game } from './game/Game';
 
 function showFatal(err: unknown): void {
@@ -15,6 +16,9 @@ async function main(): Promise<void> {
   // background since playback is gated on a user gesture anyway.
   await loadAllAssets();
   void sound.load();
+
+  sound.setSfxVolume(settings.sfxVolume);
+  sound.setMusicVolume(settings.musicVolume);
 
   const game = new Game();
   await game.init();

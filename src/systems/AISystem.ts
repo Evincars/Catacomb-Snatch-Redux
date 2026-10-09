@@ -41,8 +41,13 @@ export function updateAI(level: Level, _dt: number): void {
 
     if ((entity.freezeTime ?? 0) > 0) continue;
 
+    // Java's limp: the mob skips movement on part of its walk cycle, which is
+    // a large part of why mobs read as slow and lurching rather than sprinting.
+    entity.walkTime = (entity.walkTime ?? 0) + 1;
+    const limp = entity.limp ?? 0;
+    if (limp > 0 && Math.floor(entity.walkTime / 12) % limp === 0) continue;
+
     if (ai.type === 'wander') {
-      entity.walkTime = (entity.walkTime ?? 0) + 1;
 
       if (entity.walkTime % WANDER_TURN_TICKS === 0 || entity.facing === undefined) {
         entity.facing = Math.floor(Math.random() * 4);
