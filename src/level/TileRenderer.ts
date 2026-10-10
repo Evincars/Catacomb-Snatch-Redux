@@ -43,6 +43,18 @@ const BASE_STEMS: Record<string, string> = {
   countess_cruller: 'cruller',
 };
 
+const SPAWN_SHEET_KEYS: Record<string, string> = {
+  lord_lard: 'start_lordlard',
+  herr_von_speck: 'start_herrspeck',
+  duchess_donut: 'start_donut',
+  countess_cruller: 'start_cruller',
+};
+
+function spawnSheet(team: Team): string {
+  const character = team === Team.One ? gameState.selectedCharacter : null;
+  return character ? (SPAWN_SHEET_KEYS[character] ?? 'start_no_opponent') : 'start_no_opponent';
+}
+
 function frameOf(tex: Texture, col: number, row: number, w: number, h: number): Texture {
   return new Texture({
     source: tex.source,
@@ -84,6 +96,17 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
       s.y = ty * TILE_HEIGHT;
       container.addChild(s);
     }
+  }
+
+  // Spawn platform art sits above the floor, below base pieces.
+  for (const sp of level.spawnTiles) {
+    const sheet = spawnSheet(sp.team);
+    const col = sp.img % 4;
+    const row = Math.floor(sp.img / 4);
+    const s = new Sprite(frameOf(getTexture(sheet), col, row, TILE_WIDTH, TILE_HEIGHT));
+    s.x = sp.tileX * TILE_WIDTH;
+    s.y = sp.tileY * TILE_HEIGHT;
+    container.addChild(s);
   }
 
   // Player base platforms sit above the floor but below walls.

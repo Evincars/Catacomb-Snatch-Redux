@@ -184,6 +184,10 @@ function readPlayerTile(
 
   if (SPAWN_OFFSETS.has(offset)) {
     level.addSpawnPoint(cx, cy, team);
+    // img 0-11 maps the 12 spawn offsets to frames in the 4×3 spawn sheet.
+    // offset groups: 0-3 → img 0-3, 8-11 → img 4-7, 16-19 → img 8-11.
+    const img = Math.floor(offset / 8) * 4 + (offset % 4);
+    level.addSpawnTile(tx, ty, team, img);
     return;
   }
 

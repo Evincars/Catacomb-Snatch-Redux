@@ -18,6 +18,19 @@ export type BaseTile = {
   img: number;
 };
 
+/**
+ * A tile of the central spawn-platform art drawn under the player's spawn
+ * positions. Java uses start_<char>.png (4 cols × 3 rows) with frame
+ * selection [img % 4][img / 4], img 0-11.
+ */
+export type SpawnTile = {
+  tileX: number;
+  tileY: number;
+  team: Team;
+  /** 0-11, mapped to col = img%4, row = img/4 in the spawn sheet. */
+  img: number;
+};
+
 export class Level {
   readonly width: number;
   readonly height: number;
@@ -29,6 +42,7 @@ export class Level {
   private spawnPointsP2: SpawnPoint[] = [];
 
   readonly baseTiles: BaseTile[] = [];
+  readonly spawnTiles: SpawnTile[] = [];
 
   /**
    * Fog of war, stored per tile *corner* on a (width+1) x (height+1) grid so
@@ -168,6 +182,10 @@ export class Level {
 
   addBaseTile(tileX: number, tileY: number, team: Team, side: 'left' | 'right', img: number): void {
     this.baseTiles.push({ tileX, tileY, team, side, img });
+  }
+
+  addSpawnTile(tileX: number, tileY: number, team: Team, img: number): void {
+    this.spawnTiles.push({ tileX, tileY, team, img });
   }
 
   addSpawnPoint(x: number, y: number, team: Team): void {

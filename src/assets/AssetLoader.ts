@@ -35,6 +35,13 @@ export const ASSETS: AssetManifest = {
     start_no_opponent_left:  '/art/player/start_no_opponent_left.png',
     start_no_opponent_right: '/art/player/start_no_opponent_right.png',
 
+    // Player spawn-area platform art (4×3 sprite sheet, rendered per-tile)
+    start_lordlard:     '/art/player/start_lordlard.png',
+    start_herrspeck:    '/art/player/start_herrspeck.png',
+    start_donut:        '/art/player/start_donut.png',
+    start_cruller:      '/art/player/start_cruller.png',
+    start_no_opponent:  '/art/player/start_no_opponent.png',
+
     // Mobs
     enemy_mummy_anim_48:   '/art/mob/enemy_mummy_anim_48.png',
     enemy_scarab_anim_48:  '/art/mob/enemy_scarab_anim_48.png',

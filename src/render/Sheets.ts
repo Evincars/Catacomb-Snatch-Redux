@@ -49,6 +49,13 @@ const SHEETS: Record<string, SheetInfo> = {
   start_cruller_right:        { frameWidth: 32, frameHeight: 32 },
   start_no_opponent_left:     { frameWidth: 32, frameHeight: 32 },
   start_no_opponent_right:    { frameWidth: 32, frameHeight: 32 },
+
+  // Spawn platform art: 4 cols × 3 rows (art[img%4][img/4] in Java).
+  start_lordlard:    { frameWidth: 32, frameHeight: 32 },
+  start_herrspeck:   { frameWidth: 32, frameHeight: 32 },
+  start_donut:       { frameWidth: 32, frameHeight: 32 },
+  start_cruller:     { frameWidth: 32, frameHeight: 32 },
+  start_no_opponent: { frameWidth: 32, frameHeight: 32 },
 };
 
 const cache = new Map<string, Texture>();
