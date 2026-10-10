@@ -7,14 +7,20 @@ import { getTexture } from '../assets/AssetLoader';
 import { settings, saveSettings, resetBindings, codeLabel, ACTION_LABELS } from '../game/Settings';
 import type { ActionName } from '../game/Settings';
 
-/** Laid out in two columns like the original's key bindings screen. */
-const LEFT: ActionName[] = ['up', 'down', 'left', 'right', 'sprint'];
-const RIGHT: ActionName[] = ['fire', 'build', 'use', 'upgrade'];
+/** Laid out in two columns matching the original key bindings screen. */
+const LEFT: ActionName[] = [
+  'up', 'down', 'left', 'right', 'sprint',
+  'fire', 'weapon_slot_1', 'weapon_slot_2', 'weapon_slot_3', 'console',
+];
+const RIGHT: ActionName[] = [
+  'fire_up', 'fire_down', 'fire_left', 'fire_right',
+  'build', 'use', 'upgrade', 'next_weapon', 'prev_weapon', 'chat',
+];
 
-const ROW_H = 32;
-const BTN_W = 130;
-const BTN_H = 24;
-const TOP = 90;
+const ROW_H = 28;
+const BTN_W = 120;
+const BTN_H = 22;
+const TOP = 72;
 
 export class KeyBindingsScene implements Scene {
   container: Container;
@@ -34,20 +40,20 @@ export class KeyBindingsScene implements Scene {
 
     const title = makeTitle('Key Bindings');
     title.x = GAME_WIDTH / 2;
-    title.y = 36;
+    title.y = 26;
     this.container.addChild(title);
 
-    this.buildColumn(LEFT, 40);
-    this.buildColumn(RIGHT, GAME_WIDTH / 2 + 18);
+    this.buildColumn(LEFT, 20);
+    this.buildColumn(RIGHT, GAME_WIDTH / 2 + 10);
 
     const hint = makeText('Click a binding, then press a key', 0xaaaaaa, 9, 'center');
     hint.x = GAME_WIDTH / 2;
-    hint.y = GAME_HEIGHT - 96;
+    hint.y = GAME_HEIGHT - 50;
     this.container.addChild(hint);
 
-    const reset = new PixelButton('Reset', 110, 24);
-    reset.x = GAME_WIDTH / 2 - 120;
-    reset.y = GAME_HEIGHT - 66;
+    const reset = new PixelButton('Reset', 100, 22);
+    reset.x = GAME_WIDTH / 2 - 110;
+    reset.y = GAME_HEIGHT - 34;
     reset.onPress = () => {
       resetBindings();
       this.capturing = null;
@@ -55,9 +61,9 @@ export class KeyBindingsScene implements Scene {
     };
     this.container.addChild(reset);
 
-    const back = new PixelButton('Back', 110, 24);
+    const back = new PixelButton('Back', 100, 22);
     back.x = GAME_WIDTH / 2 + 10;
-    back.y = GAME_HEIGHT - 66;
+    back.y = GAME_HEIGHT - 34;
     back.onPress = () => manager.goto('options');
     this.container.addChild(back);
 
@@ -86,13 +92,13 @@ export class KeyBindingsScene implements Scene {
     actions.forEach((action, i) => {
       const y = TOP + i * ROW_H;
 
-      const label = makeText(`${ACTION_LABELS[action]}:`, 0xffffff, 11, 'right');
-      label.x = x + 80;
+      const label = makeText(`${ACTION_LABELS[action]}:`, 0xffffff, 8, 'right');
+      label.x = x + 96;
       label.y = y + 6;
       this.container.addChild(label);
 
       const btn = new PixelButton('', BTN_W, BTN_H);
-      btn.x = x + 92;
+      btn.x = x + 100;
       btn.y = y;
       btn.onPress = () => {
         this.capturing = action;

@@ -130,7 +130,17 @@ export class Level {
 
   /** Returns AABB obstacles for physics movement around the given world rect. */
   getClipBBs(cx: number, cy: number, rx: number, ry: number): BB[] {
-    const result: BB[] = [];
+    const W = this.width * TILE_WIDTH;
+    const H = this.height * TILE_HEIGHT;
+    // Hard map boundary walls — Java's Level.getClipBBs adds these explicitly
+    // so entities can never leave the map regardless of tile types.
+    const result: BB[] = [
+      new BB(-TILE_WIDTH, 0, 0, H),
+      new BB(0, -TILE_HEIGHT, W, 0),
+      new BB(W, 0, W + TILE_WIDTH, H),
+      new BB(0, H, W, H + TILE_HEIGHT),
+    ];
+
     const tx0 = Math.floor((cx - rx) / TILE_WIDTH) - 1;
     const ty0 = Math.floor((cy - ry) / TILE_HEIGHT) - 1;
     const tx1 = Math.ceil((cx + rx) / TILE_WIDTH) + 1;

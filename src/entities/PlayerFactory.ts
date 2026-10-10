@@ -26,7 +26,7 @@ export function createPlayer(
   return world.add({
     position: { x, y },
     velocity: { x: 0, y: 0 },
-    radius: { x: 8, y: 8 },
+    radius: { x: 10, y: 10 },
     blocking: true,
     physicsSlide: true,
     team,

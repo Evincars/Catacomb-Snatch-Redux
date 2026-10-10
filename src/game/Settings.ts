@@ -2,7 +2,11 @@
 
 export type ActionName =
   | 'up' | 'down' | 'left' | 'right' | 'sprint'
-  | 'fire' | 'build' | 'use' | 'upgrade';
+  | 'fire' | 'fire_up' | 'fire_down' | 'fire_left' | 'fire_right'
+  | 'build' | 'use' | 'upgrade'
+  | 'weapon_slot_1' | 'weapon_slot_2' | 'weapon_slot_3'
+  | 'next_weapon' | 'prev_weapon'
+  | 'console' | 'chat';
 
 export const ACTION_LABELS: Record<ActionName, string> = {
   up: 'UP',
@@ -11,9 +15,20 @@ export const ACTION_LABELS: Record<ActionName, string> = {
   right: 'RIGHT',
   sprint: 'SPRINT',
   fire: 'FIRE',
+  fire_up: 'FIRE UP',
+  fire_down: 'FIRE DOWN',
+  fire_left: 'FIRE LEFT',
+  fire_right: 'FIRE RIGHT',
   build: 'BUILD',
   use: 'USE',
   upgrade: 'UPGRADE',
+  weapon_slot_1: 'WEAPON SLOT 1',
+  weapon_slot_2: 'WEAPON SLOT 2',
+  weapon_slot_3: 'WEAPON SLOT 3',
+  next_weapon: 'NEXT WEAPON',
+  prev_weapon: 'PREV WEAPON',
+  console: 'CONSOLE',
+  chat: 'CHAT',
 };
 
 /** Defaults match the original's key bindings screen. */
@@ -24,9 +39,20 @@ const DEFAULT_BINDINGS: Record<ActionName, string> = {
   right: 'KeyD',
   sprint: 'ShiftLeft',
   fire: 'Space',
+  fire_up: 'ArrowUp',
+  fire_down: 'ArrowDown',
+  fire_left: 'ArrowLeft',
+  fire_right: 'ArrowRight',
   build: 'KeyR',
   use: 'KeyE',
   upgrade: 'KeyF',
+  weapon_slot_1: 'Digit1',
+  weapon_slot_2: 'Digit2',
+  weapon_slot_3: 'Digit3',
+  next_weapon: 'KeyZ',
+  prev_weapon: 'KeyX',
+  console: 'Tab',
+  chat: 'KeyT',
 };
 
 export type Settings = {

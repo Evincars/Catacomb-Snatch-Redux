@@ -190,19 +190,21 @@ function readPlayerTile(
   const shop = SHOP_OFFSETS[offset];
   if (shop) {
     createShopItem(cx, cy, shop, team, costMod);
-    level.addBaseTile(tx, ty, team, 'left', 0);
     return;
   }
 
   const left = BASE_LEFT_OFFSETS[offset];
   if (left !== undefined) {
     level.addBaseTile(tx, ty, team, 'left', left);
+    // The barrel/trunk decorations that form the base wall must block movement.
+    level.setTile(tx, ty, createTile(TileType.UnpassableSand, 0));
     return;
   }
 
   const right = BASE_RIGHT_OFFSETS[offset];
   if (right !== undefined) {
     level.addBaseTile(tx, ty, team, 'right', right);
+    level.setTile(tx, ty, createTile(TileType.UnpassableSand, 0));
     return;
   }
 
