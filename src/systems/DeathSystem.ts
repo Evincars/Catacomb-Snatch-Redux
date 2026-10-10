@@ -33,6 +33,10 @@ export function updateDeath(_level: Level, _dt: number): void {
 
     if (entity.playerInput) {
       sound.playSound('death');
+    } else if (entity.spawner) {
+      // Clearing a nest is a milestone, so it reads louder than a mob death.
+      sound.playSound('explosion', pos.x, pos.y);
+      awardExperience(deathPts);
     } else if (entity.ai) {
       sound.playOneOf(['enemyDeath1', 'enemyDeath2'], pos.x, pos.y);
       awardExperience(deathPts);

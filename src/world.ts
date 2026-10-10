@@ -133,10 +133,12 @@ export type Entity = {
   shopItem?: { kind: ShopKind; cost: number };
   /** Set while a player is carrying this building around. */
   carriedBy?: number;
+  /** Set on the player, pointing at whatever they are carrying. */
+  carryingId?: number;
   /** Auto-targeting gun turret. */
   turret?: { radius: number; delay: number; cooldown: number; damage: number };
-  /** Explodes when destroyed, damaging nearby mobs. */
-  bomb?: { blastRadius: number; blastDamage: number };
+  /** Explodes when destroyed, damaging nearby mobs. `lit` counts down the fuse. */
+  bomb?: { blastRadius: number; blastDamage: number; lit: boolean; fuse: number };
   /** Vacuums up nearby loot. */
   harvester?: { radius: number; collected: number };
   /** 8-way sprite column, for things whose art is directional. */

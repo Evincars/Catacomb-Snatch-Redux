@@ -58,6 +58,8 @@ export function updateRandomSpawner(level: Level): void {
     blocking: true,
     health: { current: 20, max: 20 },
     hurtTime: 0,
+    // Destroying a nest is worth far more than a single mob.
+    deathPoints: 25,
     yOffset: 12,
     visual: { sheet: 'spawner' },
     spawner: {

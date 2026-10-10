@@ -50,7 +50,11 @@ export function createBuilding(
     entity.turret = { radius: 3 * TILE_WIDTH, delay: 24, cooldown: 10, damage: 1 };
     entity.facing8 = 0;
   }
-  if (type === 'bomb') entity.bomb = { blastRadius: 50, blastDamage: 5 };
+  // Bombs ignore damage entirely; a bullet lights the fuse instead.
+  if (type === 'bomb') {
+    entity.bomb = { blastRadius: 50, blastDamage: 5, lit: false, fuse: 40 };
+    entity.health!.immortal = true;
+  }
   if (type === 'harvester') entity.harvester = { radius: 60, collected: 0 };
 
   return world.add(entity);

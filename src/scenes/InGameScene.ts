@@ -1,4 +1,4 @@
-import { Container, Graphics, Ticker } from 'pixi.js';
+import { Container, Graphics, Sprite, Ticker } from 'pixi.js';
 import type { Application } from 'pixi.js';
 import type { Scene, SceneManager } from '../game/SceneManager';
 import { world, Team } from '../world';
@@ -25,6 +25,7 @@ import { updateRandomSpawner } from '../systems/RandomSpawnerSystem';
 import { updateInteraction, takeNotices, shopItemNear, carriedByPlayer } from '../systems/InteractionSystem';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { updateTurrets, updateHarvesters, updateBombs } from '../systems/BuildingSystem';
+import { updateHoles } from '../systems/HoleSystem';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
 import { gameState } from '../game/GameState';
@@ -32,6 +33,7 @@ import { sound } from '../audio/SoundPlayer';
 import { camera, GAME_WIDTH, GAME_HEIGHT, VIEW_HEIGHT } from '../render/Camera';
 import { HudPanel } from '../ui/HudPanel';
 import { DarknessRenderer } from '../level/DarknessRenderer';
+import { Crosshair } from '../ui/Crosshair';
 import { keyLabel } from '../game/Settings';
 
 /** Tiles of sight around the player, as in Java's Player.tick(). */
@@ -47,8 +49,10 @@ export class InGameScene implements Scene {
   private player!: Entity;
   private ticker = new Ticker();
 
+  private levelSprite?: Sprite;
   private hud!: HudPanel;
   private darkness = new DarknessRenderer();
+  private crosshair = new Crosshair();
 
   private paused = false;
   private finished = false;
@@ -103,9 +107,9 @@ export class InGameScene implements Scene {
     this.container.addChild(this.hudLayer);
     this.container.addChild(this.overlay);
 
-    const levelSprite = buildLevelSprite(this.app, this.level);
-    levelSprite.zIndex = -Number.MAX_SAFE_INTEGER;
-    this.gameLayer.addChild(levelSprite);
+    this.levelSprite = buildLevelSprite(this.app, this.level);
+    this.levelSprite.zIndex = -Number.MAX_SAFE_INTEGER;
+    this.gameLayer.addChild(this.levelSprite);
 
     // Fog sits above every world sprite but below the HUD.
     this.darkness.container.zIndex = Number.MAX_SAFE_INTEGER;
@@ -118,7 +122,19 @@ export class InGameScene implements Scene {
 
     updateSprites(this.gameLayer);
     this.buildHud();
+    // The crosshair stands in for the OS pointer while playing.
+    this.container.addChild(this.crosshair.graphics);
+    (this.app.canvas as HTMLCanvasElement).style.cursor = 'none';
     this.centerCameraOn(spawn.x, spawn.y);
+  }
+
+  /** Redraws the static tile texture after bombs change the terrain. */
+  private rebuildLevelSprite(): void {
+    this.level.tilesDirty = false;
+    this.levelSprite?.destroy();
+    this.levelSprite = buildLevelSprite(this.app, this.level);
+    this.levelSprite.zIndex = -Number.MAX_SAFE_INTEGER;
+    this.gameLayer.addChild(this.levelSprite);
   }
 
   private showLoadError(err: unknown): void {
@@ -207,7 +223,7 @@ export class InGameScene implements Scene {
     if (this.paused || this.finished) return;
 
     updateInput(dt);
-    updateInteraction();
+    updateInteraction(this.level);
     updateAI(this.level, dt);
     updateWeapons(dt);
     updateTurrets(this.level, dt);
@@ -222,8 +238,10 @@ export class InGameScene implements Scene {
     updateSpawners(this.level, dt);
     updateRandomSpawner(this.level);
     // Bombs must detonate before DeathSystem clears the destroyed entity.
-    updateBombs(dt);
+    updateBombs(this.level, dt);
     updateDeath(this.level, dt);
+    updateHoles(this.level);
+    if (this.level.tilesDirty) this.rebuildLevelSprite();
     updateSprites(this.gameLayer);
     updateAnimation(dt);
     updateRender(dt);
@@ -244,6 +262,7 @@ export class InGameScene implements Scene {
     this.darkness.update(this.level);
 
     this.hud.update(this.player, this.level);
+    this.crosshair.update();
     this.updatePrompt();
 
     // The player entity is removed by DeathSystem once health hits zero.
@@ -267,6 +286,8 @@ export class InGameScene implements Scene {
     this.ticker.stop();
     this.ticker.destroy();
     this.darkness.destroy();
+    this.crosshair.destroy();
+    (this.app.canvas as HTMLCanvasElement).style.cursor = '';
     clearSprites();
     this.container.destroy({ children: true });
   }

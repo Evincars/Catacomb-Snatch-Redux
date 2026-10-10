@@ -153,7 +153,10 @@ export async function loadTmxLevel(path: string, costMod = 1): Promise<Level> {
         } else if (id >= WALL_BASE && id < P1_BASE) {
           const local = id - WALL_BASE;
           if (local === 0 || local === 1) {
-            level.setTile(tx, ty, createTile(TileType.Wall, Math.floor(Math.random() * WALL_VARIANTS)));
+            const wall = createTile(TileType.Wall, Math.floor(Math.random() * WALL_VARIANTS));
+            // Offset 1 is the destroyable "cracked" wall.
+            if (local === 1) wall.destroyable = true;
+            level.setTile(tx, ty, wall);
           }
         } else if (id >= P1_BASE && id < P2_BASE) {
           readPlayerTile(level, id - P1_BASE, tx, ty, Team.One, costMod);

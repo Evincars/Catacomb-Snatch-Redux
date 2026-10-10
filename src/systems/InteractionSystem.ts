@@ -5,6 +5,7 @@ import type { BuildingType } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { sound } from '../audio/SoundPlayer';
 import { wasUsePressed } from './InputSystem';
+import type { Level } from '../level/Level';
 
 /** Matches Java's INTERACT_DISTANCE of 20px, measured from the reach point. */
 const INTERACT_RANGE = 20;
@@ -126,15 +127,27 @@ function buy(player: Entity, item: Entity): void {
 
 function pickUp(player: Entity, building: Entity): void {
   world.addComponent(building, 'carriedBy', world.id(player)!);
+  world.addComponent(player, 'carryingId', world.id(building)!);
   // A carried building must not collide with its carrier.
   world.removeComponent(building, 'blocking');
 }
 
-function drop(building: Entity): void {
+/** Refuses to place into a wall, so buildings cannot end up unreachable. */
+function drop(player: Entity, building: Entity, level: Level): boolean {
+  const pos = building.position!;
+  const tile = level.getTileAt(pos.x, pos.y);
+  if (!tile || !tile.buildable) {
+    notify('Cannot build there');
+    sound.playSound('fail');
+    return false;
+  }
+
   world.removeComponent(building, 'carriedBy');
+  world.removeComponent(player, 'carryingId');
   world.addComponent(building, 'blocking', true);
   building.building!.justDroppedTicks = 80;
-  sound.playSound('trackPlace', building.position!.x, building.position!.y);
+  sound.playSound('trackPlace', pos.x, pos.y);
+  return true;
 }
 
 function carriedBy(player: Entity): Entity | null {
@@ -146,7 +159,7 @@ function carriedBy(player: Entity): Entity | null {
 }
 
 /** Handles the use key: buy, pick up, and place. */
-export function updateInteraction(): void {
+export function updateInteraction(level: Level): void {
   updateNotices();
 
   for (const player of world.with('position', 'playerInput', 'playerStats', 'weaponInventory')) {
@@ -161,7 +174,7 @@ export function updateInteraction(): void {
     if (!wasUsePressed()) continue;
 
     if (held) {
-      drop(held);
+      drop(player, held, level);
       continue;
     }
 

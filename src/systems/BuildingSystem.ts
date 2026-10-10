@@ -4,6 +4,7 @@ import type { Level } from '../level/Level';
 import { createBullet } from '../entities/BulletFactory';
 import { hurtEntity } from './CombatSystem';
 import { Mth } from '../math/Mth';
+import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { sound } from '../audio/SoundPlayer';
 
 /** Turrets shoot the nearest mob in range that they have line of sight to. */
@@ -76,12 +77,19 @@ export function updateHarvesters(_dt: number): void {
  * Detonates bombs that have been destroyed, damaging every mob in the blast.
  * Runs before DeathSystem so the bomb still exists when it goes off.
  */
-export function updateBombs(_dt: number): void {
+export function updateBombs(level: Level, _dt: number): void {
   for (const bombEntity of world.with('position', 'bomb', 'health')) {
-    if (bombEntity.health!.current > 0) continue;
     if (bombEntity.removed) continue;
 
-    const { blastRadius, blastDamage } = bombEntity.bomb!;
+    const data = bombEntity.bomb!;
+    // A lit bomb burns down before going off, so there is time to back away.
+    if (!data.lit) continue;
+    if (data.fuse-- > 0) {
+      bombEntity.flashTime = 2;
+      continue;
+    }
+
+    const { blastRadius, blastDamage } = data;
     const pos = bombEntity.position!;
 
     for (const mob of world.with('position', 'health', 'ai')) {
@@ -89,8 +97,23 @@ export function updateBombs(_dt: number): void {
       if (d < blastRadius) hurtEntity(mob, bombEntity, blastDamage);
     }
 
+    // Bombs exist mainly to open up cracked walls.
+    const t0x = Math.floor((pos.x - blastRadius) / TILE_WIDTH);
+    const t1x = Math.floor((pos.x + blastRadius) / TILE_WIDTH);
+    const t0y = Math.floor((pos.y - blastRadius) / TILE_HEIGHT);
+    const t1y = Math.floor((pos.y + blastRadius) / TILE_HEIGHT);
+    for (let ty = t0y; ty <= t1y; ty++) {
+      for (let tx = t0x; tx <= t1x; tx++) {
+        const tile = level.getTile(tx, ty);
+        if (!tile?.destroyable) continue;
+        const cx = tx * TILE_WIDTH + TILE_WIDTH / 2;
+        const cy = ty * TILE_HEIGHT + TILE_HEIGHT / 2;
+        if (Math.hypot(cx - pos.x, cy - pos.y) > blastRadius) continue;
+        level.removeTile(tx, ty);
+      }
+    }
+
     sound.playSound('explosion2', pos.x, pos.y);
-    // Clear the component so a single bomb cannot explode twice.
-    world.removeComponent(bombEntity, 'bomb');
+    world.addComponent(bombEntity, 'removed', true);
   }
 }

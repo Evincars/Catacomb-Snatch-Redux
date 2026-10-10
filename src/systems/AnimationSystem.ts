@@ -25,7 +25,10 @@ export function updateAnimation(_dt: number): void {
       }
     }
 
-    const row = entity.facing ?? anim.frameY;
+    // Player sheets hold 8 facings, then the same 8 again for carrying.
+    let row = entity.facing ?? anim.frameY;
+    if (entity.playerInput && entity.carryingId !== undefined) row += 8;
+
     entity.sprite!.texture = frameTexture(anim.sheet, anim.frameX % cols, row);
   }
 }

@@ -20,6 +20,8 @@ export type TileData = {
   buildable: boolean;
   castsShadow: boolean;
   imageVariant: number;
+  /** Cracked walls, which a bomb blast clears away. */
+  destroyable?: boolean;
   shadowedNorth: boolean;
   shadowedEast: boolean;
   shadowedWest: boolean;

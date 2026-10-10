@@ -5,6 +5,9 @@ import { Team } from '../world';
 
 export type SpawnPoint = { x: number; y: number };
 
+/** How far a wall's collision box rises above its tile (Java WallTile.addClipBBs). */
+const WALL_CLIP_RISE = 6;
+
 /** A decorative piece of a player's home base, drawn over the floor. */
 export type BaseTile = {
   tileX: number;
@@ -109,9 +112,15 @@ export class Level {
     this.tileStacks[x + y * this.width].push(tile);
   }
 
+  /** Set when tiles change, so the cached level sprite can be rebuilt. */
+  tilesDirty = false;
+
   removeTile(x: number, y: number): void {
     const stack = this.tileStacks[x + y * this.width];
-    if (stack.length > 1) stack.pop();
+    if (stack.length > 1) {
+      stack.pop();
+      this.tilesDirty = true;
+    }
   }
 
   canPass(worldX: number, worldY: number): boolean {
@@ -132,9 +141,12 @@ export class Level {
         const tile = this.getTile(tx, ty);
         // A null tile is outside the map, which must block or entities walk into the void.
         if (!tile || !tile.passable) {
+          // Walls stand 56px tall, so Java extends their box 6px above the tile;
+          // without this you can walk up into the base of a wall.
+          const topInset = !tile || tile.type === TileType.Wall ? WALL_CLIP_RISE : 0;
           result.push(new BB(
             tx * TILE_WIDTH,
-            ty * TILE_HEIGHT,
+            ty * TILE_HEIGHT - topInset,
             (tx + 1) * TILE_WIDTH,
             (ty + 1) * TILE_HEIGHT,
           ));

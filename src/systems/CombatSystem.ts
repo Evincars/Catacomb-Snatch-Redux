@@ -50,13 +50,29 @@ export function updateBulletCollision(_dt: number): void {
       if (target === bullet) continue;
       const tpos = target.position!;
       const trad = target.radius!;
-      const tbb = BB.fromCenter(tpos.x, tpos.y, trad.x, trad.y);
+      // Test against where the sprite is actually drawn (position minus the
+      // visual offset) so shots connect with what the player is aiming at,
+      // rather than with an invisible box down at the entity's feet.
+      const tbb = BB.fromCenter(
+        tpos.x,
+        tpos.y - (target.yOffset ?? 0),
+        trad.x,
+        trad.y + (target.yOffset ?? 0) / 2,
+      );
 
       if (!bbb.intersects(tbb)) continue;
 
       // Don't hit the shooter
       const shooterId = bdata.ownerId;
       if (world.id(target) === shooterId) continue;
+
+      // A shot does not damage a bomb, it lights it.
+      if (target.bomb) {
+        target.bomb.lit = true;
+        world.removeComponent(bullet, 'bullet');
+        world.addComponent(bullet, 'removed', true);
+        break;
+      }
 
       hurtEntity(target, bullet, bdata.damage);
       world.removeComponent(bullet, 'bullet');

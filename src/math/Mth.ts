@@ -30,6 +30,14 @@ export class Mth {
     return (8 + Math.trunc((angle / Math.PI) * 4)) & 7;
   }
 
+  /**
+   * Player sprite row for an aim vector. Ported from Java's Player.updateFacing:
+   * `(int)(atan2(-x, y) * 8 / (2*PI) + 8.5) & 7`.
+   */
+  static aimToFacing8(ax: number, ay: number): number {
+    return Math.trunc((Math.atan2(-ax, ay) * 8) / (Math.PI * 2) + 8.5) & 7;
+  }
+
   static facingToVector(facing: number): { x: number; y: number } {
     switch (facing) {
       case 0: return { x: 0, y: -1 };  // North

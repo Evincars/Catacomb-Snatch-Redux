@@ -149,12 +149,12 @@ export function updateMovement(level: Level, _dt: number): void {
       }
     }
 
-    // Face the aim direction, falling back to the movement direction.
+    // The player sheet has 8 directional rows, so aim maps to one of eight.
     const aim = entity.aimVector;
     if (aim && (aim.x !== 0 || aim.y !== 0)) {
-      entity.facing = angleToFacing(aim.x, aim.y);
+      entity.facing = Mth.aimToFacing8(aim.x, aim.y);
     } else if (moving) {
-      entity.facing = angleToFacing(vel.x, vel.y);
+      entity.facing = Mth.aimToFacing8(vel.x, vel.y);
     }
   }
 }

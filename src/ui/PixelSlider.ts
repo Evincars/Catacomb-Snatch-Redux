@@ -10,6 +10,7 @@ export class PixelSlider extends Container {
   private bar = new Graphics();
   private text: Text;
   private _value: number;
+  private dragging = false;
 
   onChange: ((value: number) => void) | null = null;
 
@@ -26,11 +27,22 @@ export class PixelSlider extends Container {
 
     this.eventMode = 'static';
     this.cursor = 'pointer';
-    this.on('pointerdown', (e) => this.setFromPointer(e.global.x));
-    this.on('globalpointermove', (e) => {
-      // Only drag while the button is held over this control.
-      if (e.buttons & 1) this.setFromPointer(e.global.x);
+
+    // Only the slider that received the press may follow the pointer, otherwise
+    // every slider on screen reacts to the same drag.
+    this.on('pointerdown', (e) => {
+      this.dragging = true;
+      this.setFromPointer(e.global.x);
     });
+    this.on('globalpointermove', (e) => {
+      if (this.dragging) this.setFromPointer(e.global.x);
+    });
+    const stop = () => { this.dragging = false; };
+    this.on('pointerup', stop);
+    this.on('pointerupoutside', stop);
+    // Releasing anywhere, including off the canvas, must end the drag.
+    window.addEventListener('pointerup', stop);
+    this.on('destroyed', () => window.removeEventListener('pointerup', stop));
 
     this.draw();
   }
