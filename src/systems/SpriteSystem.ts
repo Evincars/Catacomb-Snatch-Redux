@@ -2,7 +2,7 @@ import { Sprite } from 'pixi.js';
 import type { Container } from 'pixi.js';
 import { q, world } from '../world';
 import { frameTexture } from '../render/Sheets';
-import { makeText } from '../ui/PixelText';
+import { PixelLabel } from '../ui/PixelText';
 import { destroyAttachments } from './BarSystem';
 
 /**
@@ -20,8 +20,7 @@ export function updateSprites(gameLayer: Container): void {
 
     // Stalls show their price just beneath, as in Java's ShopItem.render.
     if (entity.shopItem) {
-      const price = makeText(String(entity.shopItem.cost), 0xffffff, 8, 'center');
-      price.style.stroke = { color: 0x000000, width: 2 };
+      const price = new PixelLabel(String(entity.shopItem.cost), { align: 'center', outline: true });
       price.x = Math.round(entity.position!.x);
       price.y = Math.round(entity.position!.y) + 10;
       price.zIndex = entity.position!.y + 0.5;

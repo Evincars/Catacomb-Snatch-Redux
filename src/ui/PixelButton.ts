@@ -1,14 +1,24 @@
-import { Container, Graphics, Text, TextStyle, NineSliceSprite, Texture } from 'pixi.js';
-import { getTexture } from '../assets/AssetLoader';
+import { Container, NineSliceSprite } from 'pixi.js';
+import { frameTexture } from '../render/Sheets';
+import { PixelLabel } from './PixelText';
 
 const BUTTON_W = 128;
 const BUTTON_H = 24;
-const HOVER_COLOR = 0xffe0a0;
-const NORMAL_COLOR = 0xffffff;
+const NORMAL_COLOR = 0xfff0d0;
+const HOVER_COLOR = 0xffd860;
+/** Border of the stone-and-copper frame in button.png, kept unstretched. */
+const BORDER = 8;
+/** Frame rows in button.png. */
+const STATE_NORMAL = 0;
+const STATE_HOVER = 1;
+const STATE_DISABLED = 2;
 
+/** A button drawn from the original's three-state button art. */
 export class PixelButton extends Container {
-  private bg: Graphics;
-  private btnLabel: Text;
+  private bg: NineSliceSprite;
+  private btnLabel: PixelLabel;
+  private readonly w: number;
+  private readonly h: number;
   private _hovered = false;
   private _enabled = true;
 
@@ -16,62 +26,63 @@ export class PixelButton extends Container {
 
   constructor(text: string, width = BUTTON_W, height = BUTTON_H) {
     super();
+    this.w = width;
+    this.h = height;
 
-    this.bg = new Graphics();
+    this.bg = new NineSliceSprite({
+      texture: frameTexture('button', 0, STATE_NORMAL),
+      leftWidth: BORDER,
+      topHeight: BORDER,
+      rightWidth: BORDER,
+      bottomHeight: BORDER,
+      width,
+      height,
+    });
     this.addChild(this.bg);
 
-    this.btnLabel = new Text({
-      text,
-      style: new TextStyle({
-        fontFamily: 'monospace',
-        fontSize: 10,
-        fill: NORMAL_COLOR,
-        align: 'center',
-      }),
+    this.btnLabel = new PixelLabel(text.toUpperCase(), {
+      color: NORMAL_COLOR,
+      scale: height >= 30 ? 2 : 1,
+      align: 'center',
+      shadow: true,
     });
-    this.btnLabel.anchor.set(0.5, 0.5);
-    this.btnLabel.x = width / 2;
-    this.btnLabel.y = height / 2;
     this.addChild(this.btnLabel);
-
-    this.draw(width, height, false);
+    this.positionLabel();
 
     this.eventMode = 'static';
     this.cursor = 'pointer';
 
     this.on('pointerover', () => {
       this._hovered = true;
-      this.draw(width, height, true);
-      this.btnLabel.style.fill = HOVER_COLOR;
+      this.refresh();
     });
     this.on('pointerout', () => {
       this._hovered = false;
-      this.draw(width, height, false);
-      this.btnLabel.style.fill = NORMAL_COLOR;
+      this.refresh();
     });
     this.on('pointertap', () => {
       if (this._enabled && this.onPress) this.onPress();
     });
   }
 
-  private draw(w: number, h: number, hovered: boolean): void {
-    this.bg.clear();
-    // Outer frame
-    this.bg.rect(0, 0, w, h).fill(0x000000);
-    // Inner fill
-    this.bg.rect(1, 1, w - 2, h - 2).fill(hovered ? 0x5a3010 : 0x3a1a00);
-    // Top/left highlight
-    this.bg.moveTo(1, h - 2).lineTo(1, 1).lineTo(w - 2, 1).stroke({ color: hovered ? 0xffe090 : 0x9a5a20, width: 1 });
-    // Bottom/right shadow
-    this.bg.moveTo(2, h - 2).lineTo(w - 2, h - 2).lineTo(w - 2, 2).stroke({ color: 0x1a0800, width: 1 });
+  private positionLabel(): void {
+    this.btnLabel.x = Math.round(this.w / 2);
+    this.btnLabel.y = Math.round((this.h - this.btnLabel.textHeight + 1) / 2);
+  }
+
+  private refresh(): void {
+    const state = !this._enabled ? STATE_DISABLED : this._hovered ? STATE_HOVER : STATE_NORMAL;
+    this.bg.texture = frameTexture('button', 0, state);
+    this.btnLabel.fill = this._hovered && this._enabled ? HOVER_COLOR : NORMAL_COLOR;
   }
 
   setEnabled(enabled: boolean): void {
     this._enabled = enabled;
-    this.alpha = enabled ? 1 : 0.4;
+    this.refresh();
   }
 
   setText(text: string): void {
-    this.btnLabel.text = text;
+    this.btnLabel.text = text.toUpperCase();
+    this.positionLabel();
   }
 }

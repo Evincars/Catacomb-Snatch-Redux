@@ -2,7 +2,6 @@ import { world } from '../world';
 import type { Level } from '../level/Level';
 import { BB } from '../math/BB';
 import { Mth } from '../math/Mth';
-import { isActionDown } from './InputSystem';
 import { screenToWorld } from '../render/Camera';
 
 const angleToFacing = (x: number, y: number) => Mth.angleToFacing(x, y);
@@ -124,7 +123,7 @@ export function updateMovement(level: Level, _dt: number): void {
     // while carrying), then locks out until the key is released. The meter refills
     // one tick at a time whenever the player is not sprinting.
     const moving = pi.up || pi.down || pi.left || pi.right;
-    const sprintHeld = isActionDown('sprint');
+    const sprintHeld = pi.sprint;
     if (!sprintHeld) playerStats.sprintLocked = false;
 
     playerStats.sprinting = false;
@@ -144,8 +143,12 @@ export function updateMovement(level: Level, _dt: number): void {
 
     entity.walkTime = moving ? (entity.walkTime ?? 0) + 1 : 0;
 
-    // Aim at the cursor, converting from screen space to world space.
-    if (pi.mouseAiming && entity.aimVector) {
+    // The directional fire keys aim without the cursor, which is left alone.
+    if (pi.keyAim && entity.aimVector) {
+      entity.aimVector.x = pi.keyAim.x;
+      entity.aimVector.y = pi.keyAim.y;
+    } else if (pi.mouseAiming && entity.aimVector) {
+      // Aim at the cursor, converting from screen space to world space.
       const target = screenToWorld(pi.mouseX, pi.mouseY);
       const dx = target.x - pos.x;
       const dy = target.y - pos.y;

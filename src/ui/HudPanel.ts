@@ -1,5 +1,4 @@
 import { Container, Sprite, Graphics, Texture } from 'pixi.js';
-import type { Text } from 'pixi.js';
 import type { Entity } from '../world';
 import { world } from '../world';
 import type { Level } from '../level/Level';
@@ -7,6 +6,7 @@ import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { getTexture } from '../assets/AssetLoader';
 import { frameTexture } from '../render/Sheets';
 import { makeText } from './PixelText';
+import { PixelLabel } from './PixelText';
 import { GAME_WIDTH, GAME_HEIGHT, camera } from '../render/Camera';
 import { gameState } from '../game/GameState';
 
@@ -23,15 +23,17 @@ export class HudPanel {
 
   private healthBar = new Sprite();
   private xpBar = new Sprite();
-  private healthText!: Text;
-  private levelText!: Text;
-  private expText!: Text;
-  private nextText!: Text;
-  private coinText!: Text;
-  private scoreText!: Text;
-  private weaponText!: Text;
-  private promptText!: Text;
-  private noticeText!: Text;
+  private healthText!: PixelLabel;
+  private levelText!: PixelLabel;
+  private expText!: PixelLabel;
+  private nextText!: PixelLabel;
+  private coinText!: PixelLabel;
+  private scoreText!: PixelLabel;
+  private weaponText!: PixelLabel;
+  private promptText!: PixelLabel;
+  private hint = '';
+  private weaponName = '';
+  private noticeText!: PixelLabel;
 
   private minimap = new Sprite();
   private minimapCanvas: HTMLCanvasElement;
@@ -62,13 +64,13 @@ export class HudPanel {
     this.container.addChild(coin);
 
     // LVL / EXP / NEXT stack, in the green of the original panel.
-    this.addCaption('LVL', GAME_HEIGHT - 74);
-    this.addCaption('EXP', GAME_HEIGHT - 64);
-    this.addCaption('NEXT', GAME_HEIGHT - 54);
+    this.addCaption('LVL', GAME_HEIGHT - 72);
+    this.addCaption('EXP', GAME_HEIGHT - 62);
+    this.addCaption('NEXT', GAME_HEIGHT - 52);
 
-    this.levelText = this.label(360, GAME_HEIGHT - 74);
-    this.expText = this.label(360, GAME_HEIGHT - 64);
-    this.nextText = this.label(360, GAME_HEIGHT - 54);
+    this.levelText = this.label(360, GAME_HEIGHT - 72);
+    this.expText = this.label(360, GAME_HEIGHT - 62);
+    this.nextText = this.label(360, GAME_HEIGHT - 52);
     this.coinText = this.label(332, GAME_HEIGHT - 42);
     this.healthText = this.label(332, GAME_HEIGHT - 24);
 
@@ -84,12 +86,12 @@ export class HudPanel {
     this.container.addChild(this.weaponText);
 
     // Context prompt sits just above the panel, in the world view.
-    this.promptText = makeText('', 0xffee88, 9, 'center');
+    this.promptText = new PixelLabel('', { color: 0xffee88, align: 'center', outline: true });
     this.promptText.x = GAME_WIDTH / 2;
     this.promptText.y = PANEL_TOP - 16;
     this.container.addChild(this.promptText);
 
-    this.noticeText = makeText('', 0xffffff, 9, 'center');
+    this.noticeText = new PixelLabel('', { color: 0xffffff, align: 'center', outline: true });
     this.noticeText.x = GAME_WIDTH / 2;
     this.noticeText.y = 8;
     this.container.addChild(this.noticeText);
@@ -127,6 +129,17 @@ export class HudPanel {
     return frameTexture(sheet, 0, index);
   }
 
+  /** Name of the item being hovered or reached for; replaces the weapon name while set. */
+  setHint(text: string): void {
+    this.hint = text;
+    this.renderWeaponLabel();
+  }
+
+  private renderWeaponLabel(): void {
+    this.weaponText.text = (this.hint || this.weaponName).toUpperCase();
+    this.weaponText.fill = this.hint ? 0xffd860 : 0xdddddd;
+  }
+
   setPrompt(text: string): void {
     this.promptText.text = text;
   }
@@ -154,7 +167,8 @@ export class HudPanel {
 
       const pct = Math.floor((stats.score * 100) / gameState.targetScore);
       this.scoreText.text = `${characterLabel()}: ${pct}%`;
-      this.weaponText.text = (player.weapon?.type ?? '').toUpperCase();
+      this.weaponName = player.weapon?.type ?? '';
+      this.renderWeaponLabel();
     }
 
     // The minimap only changes as the map is explored, so redraw it sparingly.

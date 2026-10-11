@@ -10,6 +10,8 @@ export const enum TileType {
   PlayerRail = 8,
   /** Machine/tent pieces of a player's base: solid, but drawn over plain sand. */
   PlayerBase = 9,
+  /** Invisible fence that closes a player's base; drawn as plain sand. */
+  Barrier = 10,
 }
 
 export const TILE_WIDTH = 32;
@@ -22,6 +24,8 @@ export type TileData = {
   buildable: boolean;
   castsShadow: boolean;
   imageVariant: number;
+  /** Which player's base a PlayerRail piece belongs to. */
+  team?: number;
   /** Cracked walls, which a bomb blast clears away. */
   destroyable?: boolean;
   shadowedNorth: boolean;
@@ -57,6 +61,7 @@ export function createTile(type: TileType, imageVariant = 0): TileData {
       return { ...base, buildable: true };
     case TileType.UnpassableSand:
     case TileType.PlayerBase:
+    case TileType.Barrier:
       return { ...base, solid: true, passable: false };
     case TileType.Rail:
     case TileType.PlayerRail:

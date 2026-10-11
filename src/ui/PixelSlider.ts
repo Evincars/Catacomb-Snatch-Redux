@@ -1,6 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
-import type { Text } from 'pixi.js';
 import { makeText } from './PixelText';
+import type { PixelLabel } from './PixelText';
 
 const HEIGHT = 22;
 const KNOB = 10;
@@ -8,7 +8,7 @@ const KNOB = 10;
 /** Horizontal 0..1 slider rendered as a filled bar with a percentage label. */
 export class PixelSlider extends Container {
   private bar = new Graphics();
-  private text: Text;
+  private text: PixelLabel;
   private _value: number;
   private dragging = false;
 
@@ -22,7 +22,7 @@ export class PixelSlider extends Container {
     this.addChild(this.bar);
     this.text = makeText('', 0xffffff, 11);
     this.text.x = 8;
-    this.text.y = HEIGHT / 2 - 7;
+    this.text.y = HEIGHT / 2 - 4;
     this.addChild(this.text);
 
     this.eventMode = 'static';

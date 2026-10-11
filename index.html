@@ -7,7 +7,8 @@
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-      canvas { image-rendering: pixelated; }
+      /* Fill as much of the window as the 4:3 game surface allows. */
+      canvas { image-rendering: pixelated; width: min(100vw, calc(100vh * 4 / 3)); height: auto; }
     </style>
   </head>
   <body>

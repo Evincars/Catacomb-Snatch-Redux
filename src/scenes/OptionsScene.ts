@@ -33,7 +33,7 @@ export class OptionsScene implements Scene {
     const bindings = new PixelButton('Key Bindings', 240, 26);
     bindings.x = COL_X;
     bindings.y = y;
-    bindings.onPress = () => manager.goto('key_bindings');
+    bindings.onPress = () => manager.open('key_bindings');
     this.container.addChild(bindings);
     y += ROW_H;
 
@@ -85,7 +85,7 @@ export class OptionsScene implements Scene {
     const back = new PixelButton('Back', 240, 26);
     back.x = COL_X;
     back.y = GAME_HEIGHT - 60;
-    back.onPress = () => manager.goto('title');
+    back.onPress = () => manager.back('title');
     this.container.addChild(back);
   }
 

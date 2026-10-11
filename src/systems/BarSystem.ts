@@ -88,4 +88,5 @@ export function destroyAttachments(entity: Entity): void {
   entity.sprintBar?.destroy();
   entity.hurtOverlay?.destroy();
   entity.priceLabel?.destroy();
+  entity.marker?.destroy();
 }

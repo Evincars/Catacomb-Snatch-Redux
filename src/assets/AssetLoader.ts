@@ -74,8 +74,12 @@ export const ASSETS: AssetManifest = {
 
     // Buildings
     turret:    '/art/building/turret.png',
+    turret2:   '/art/building/turret2.png',
+    turret3:   '/art/building/turret3.png',
     bomb:      '/art/building/bomb.png',
     harvester: '/art/building/bot_vacuum.png',
+    harvester2: '/art/building/bot_vacuum2.png',
+    harvester3: '/art/building/bot_vacuum3.png',
     chest_large: '/art/building/chest_large.png',
     chest_small: '/art/building/chest_small.png',
 
@@ -83,6 +87,9 @@ export const ASSETS: AssetManifest = {
     pickup_coin_gold_16:    '/art/pickup/pickup_coin_gold_16.png',
     pickup_coin_silver_16:  '/art/pickup/pickup_coin_silver_16.png',
     pickup_coin_bronze_16:  '/art/pickup/pickup_coin_bronze_16.png',
+    pickup_coin_gold_small_8:   '/art/pickup/pickup_coin_gold_small_8.png',
+    pickup_coin_silver_small_8: '/art/pickup/pickup_coin_silver_small_8.png',
+    pickup_coin_bronze_small_8: '/art/pickup/pickup_coin_bronze_small_8.png',
     pickup_gem_diamond_24:  '/art/pickup/pickup_gem_diamond_24.png',
     pickup_gem_ruby_12:     '/art/pickup/pickup_gem_ruby_12.png',
     pickup_gem_emerald_12:  '/art/pickup/pickup_gem_emerald_12.png',
@@ -98,6 +105,10 @@ export const ASSETS: AssetManifest = {
     game_over:      '/art/screen/game_over.png',
     how_to_play:    '/art/screen/how_to_play.png',
     pause_screen:   '/art/screen/pause_screen.png',
+    tooltip_background: '/art/screen/tooltipBackground.png',
+    tooltip_turret:     '/art/screen/atlasTurretText.png',
+    tooltip_harvester:  '/art/screen/atlasHarvesterText.png',
+    tooltip_bomb:       '/art/screen/atlasBombText.png',
     panel:          '/art/screen/panel/panel.png',
     panel_healthbar: '/art/screen/panel/panel_healthbar.png',
     panel_xpbar:    '/art/screen/panel/panel_xpbar.png',

@@ -18,7 +18,7 @@ export class PixelCheckbox extends Container {
 
     const text = makeText(label, 0xffffff, 11);
     text.x = BOX + 10;
-    text.y = BOX / 2 - 7;
+    text.y = BOX / 2 - 4;
     this.addChild(text);
 
     this.eventMode = 'static';

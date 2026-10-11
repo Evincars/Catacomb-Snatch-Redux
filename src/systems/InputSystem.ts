@@ -4,21 +4,18 @@ import { bindingFor } from '../game/Settings';
 import type { ActionName } from '../game/Settings';
 
 const keys = new Set<string>();
+/** Key codes that went down since the last tick, ignoring OS key repeat. */
+const pending = new Set<string>();
+let pressed = new Set<string>();
+let wheel = 0;
 let mouseX = 0;
 let mouseY = 0;
 let mouseDown = false;
 let mouseRight = false;
+let rightPending = false;
 let bound = false;
 
-// The use key is edge-triggered: holding it must not buy or drop repeatedly.
-let usePressed = false;
-let useWasDown = false;
-
-export function wasUsePressed(): boolean {
-  return usePressed;
-}
-
-/** Logical (unscaled) pointer position within the 320x240 surface. */
+/** Logical (unscaled) pointer position within the 512x384 surface. */
 export function pointer(): { x: number; y: number } {
   return { x: mouseX, y: mouseY };
 }
@@ -27,14 +24,35 @@ export function isKeyDown(code: string): boolean {
   return keys.has(code);
 }
 
+/** True while the key bound to this action is held. */
+export function isActionDown(action: ActionName): boolean {
+  const code = bindingFor(action);
+  return code !== '' && keys.has(code);
+}
+
+/** True for the single tick after the key bound to this action went down. */
+export function wasActionPressed(action: ActionName): boolean {
+  const code = bindingFor(action);
+  return code !== '' && pressed.has(code);
+}
+
+/** Forgets queued presses, so keys hit while paused do not fire on resume. */
+export function resetInput(): void {
+  pending.clear();
+  pressed.clear();
+  wheel = 0;
+  rightPending = false;
+}
+
 export function initInput(canvas: HTMLCanvasElement): void {
   if (bound) return;
   bound = true;
 
   window.addEventListener('keydown', (e) => {
     keys.add(e.code);
+    if (!e.repeat) pending.add(e.code);
     // Stop the page from scrolling under the canvas.
-    if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
+    if (e.code.startsWith('Arrow') || e.code === 'Space' || e.code === 'Tab') e.preventDefault();
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
   window.addEventListener('blur', () => keys.clear());
@@ -46,35 +64,74 @@ export function initInput(canvas: HTMLCanvasElement): void {
   });
   canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) mouseDown = true;
-    if (e.button === 2) mouseRight = true;
+    if (e.button === 2) {
+      mouseRight = true;
+      rightPending = true;
+    }
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) mouseDown = false;
     if (e.button === 2) mouseRight = false;
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener(
+    'wheel',
+    (e) => {
+      wheel += Math.sign(e.deltaY);
+      e.preventDefault();
+    },
+    { passive: false },
+  );
 }
 
-/** True while the key bound to this action is held. */
-export function isActionDown(action: ActionName): boolean {
-  return keys.has(bindingFor(action));
-}
+const WEAPON_SLOTS: ActionName[] = ['weapon_slot_1', 'weapon_slot_2', 'weapon_slot_3'];
+const FIRE_DIRECTIONS: Array<[ActionName, number, number]> = [
+  ['fire_up', 0, -1],
+  ['fire_down', 0, 1],
+  ['fire_left', -1, 0],
+  ['fire_right', 1, 0],
+];
 
+/** Turns raw keyboard and mouse state into components on each player. */
 export function updateInput(_dt: number): void {
-  const useDown = mouseRight || isActionDown('use');
-  usePressed = useDown && !useWasDown;
-  useWasDown = useDown;
+  pressed = new Set(pending);
+  pending.clear();
+
+  const rightClick = rightPending;
+  rightPending = false;
+  const step = Math.sign(wheel);
+  wheel = 0;
+
+  let aimX = 0;
+  let aimY = 0;
+  for (const [action, dx, dy] of FIRE_DIRECTIONS) {
+    if (!isActionDown(action)) continue;
+    aimX += dx;
+    aimY += dy;
+  }
+  const keyAimed = aimX !== 0 || aimY !== 0;
+  const aimLen = Math.hypot(aimX, aimY) || 1;
 
   for (const entity of q.players) {
     const pi = entity.playerInput!;
-    pi.up    = isActionDown('up')    || keys.has('ArrowUp');
-    pi.down  = isActionDown('down')  || keys.has('ArrowDown');
-    pi.left  = isActionDown('left')  || keys.has('ArrowLeft');
-    pi.right = isActionDown('right') || keys.has('ArrowRight');
-    pi.shoot = mouseDown || isActionDown('fire');
-    pi.use   = useDown;
+    pi.up    = isActionDown('up');
+    pi.down  = isActionDown('down');
+    pi.left  = isActionDown('left');
+    pi.right = isActionDown('right');
+    pi.sprint = isActionDown('sprint');
+    pi.keyAim = keyAimed ? { x: aimX / aimLen, y: aimY / aimLen } : null;
+    pi.shoot = mouseDown || isActionDown('fire') || keyAimed;
+    pi.use   = mouseRight || isActionDown('use');
     pi.mouseX = mouseX;
     pi.mouseY = mouseY;
     pi.mouseAiming = true;
+
+    const it = pi.intents;
+    it.use = rightClick || wasActionPressed('use');
+    it.build = wasActionPressed('build');
+    it.upgrade = wasActionPressed('upgrade');
+    it.weaponSlot = WEAPON_SLOTS.findIndex((a) => wasActionPressed(a));
+    it.weaponStep =
+      (wasActionPressed('next_weapon') ? 1 : 0) - (wasActionPressed('prev_weapon') ? 1 : 0) || step;
   }
 }

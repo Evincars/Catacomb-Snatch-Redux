@@ -1,5 +1,6 @@
 import { World } from 'miniplex';
-import type { Sprite, Container, Text } from 'pixi.js';
+import type { Sprite, Container } from 'pixi.js';
+import type { PixelLabel } from './ui/PixelText';
 
 export const enum Team {
   Neutral = 0,
@@ -13,6 +14,17 @@ export const enum Facing {
   South = 2,
   West = 3,
 }
+
+/** Edge-triggered player requests, cleared by InputSystem at the start of every tick. */
+export type PlayerIntents = {
+  /** Zero-based inventory slot to equip, or -1. */
+  weaponSlot: number;
+  /** +1 / -1 to step through the inventory, 0 for none. */
+  weaponStep: number;
+  use: boolean;
+  build: boolean;
+  upgrade: boolean;
+};
 
 export type ShopKind = 'turret' | 'harvester' | 'bomb' | 'rifle' | 'shotgun' | 'raygun';
 
@@ -69,7 +81,7 @@ export type Entity = {
   /** Solid-colour copy of `sprite` laid over it for hit flashes. */
   hurtOverlay?: Sprite;
   /** Cost text under a shop stall. */
-  priceLabel?: Text;
+  priceLabel?: PixelLabel;
   /** Short-lived animated sprite (muzzle flash, death blast) that removes itself when done. */
   fx?: {
     age: number;
@@ -102,9 +114,14 @@ export type Entity = {
     right: boolean;
     shoot: boolean;
     use: boolean;
+    sprint: boolean;
     mouseX: number;
     mouseY: number;
     mouseAiming: boolean;
+    /** Aim set by the directional fire keys; overrides the cursor while held. */
+    keyAim: { x: number; y: number } | null;
+    /** One-shot requests raised for a single tick by key presses. */
+    intents: PlayerIntents;
   };
   playerStats?: {
     score: number;
@@ -134,7 +151,15 @@ export type Entity = {
   buffs?: Array<{ type: 'poison' | 'troll_perk'; duration: number; strength: number }>;
 
   // --- loot ---
-  loot?: { value: number; velX: number; velY: number; suckRadius: number };
+  loot?: {
+    value: number;
+    velX: number;
+    velY: number;
+    /** Distance at which a nearby player starts drawing the coin in. */
+    suckRadius: number;
+    /** Current glide speed toward a player, ramping up the longer the coin is pulled. */
+    glide: number;
+  };
 
   // --- bullet ---
   bullet?: {
@@ -158,10 +183,25 @@ export type Entity = {
     justDroppedTicks?: number;
   };
 
+  /** Text shown in a tooltip while a player hovers over or stands next to this entity. */
+  tooltip?: { title: string; lines?: string[]; image?: string };
+  /** Levels a building can be raised through; `costs[i]` buys level i + 2. */
+  upgradable?: { level: number; maxLevel: number; costs: number[] };
+  /** Set while it is the thing a player would interact with, so a marker is drawn. */
+  targeted?: true;
+  /** Set while the pointer is over it. */
+  hovered?: true;
+  /** Runtime corner brackets drawn around a targeted entity; owned by MarkerSystem. */
+  marker?: Container;
+  /** A wall tile drawn as a depth-sorted sprite so actors can walk behind it. */
+  wallTile?: { tileX: number; tileY: number };
+
   /** A purchasable item sitting in a player's base. */
   shopItem?: { kind: ShopKind; cost: number };
   /** Set while a player is carrying this building around. */
   carriedBy?: number;
+  /** Set on the player: the entity within reach that use / upgrade would act on. */
+  targetId?: number;
   /** Set on the player, pointing at whatever they are carrying. */
   carryingId?: number;
   /** Auto-targeting gun turret. */
@@ -228,4 +268,8 @@ export const q = {
   shopItems:     world.with('position', 'shopItem'),
   turrets:       world.with('position', 'turret'),
   harvesters:    world.with('position', 'harvester'),
+  tooltips:      world.with('position', 'tooltip'),
+  targeted:      world.with('position', 'targeted'),
+  upgradables:   world.with('position', 'upgradable'),
+  walls:         world.with('position', 'wallTile'),
 };

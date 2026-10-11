@@ -1,3 +1,4 @@
+import { TextureSource } from 'pixi.js';
 import { loadAllAssets } from './assets/AssetLoader';
 import { sound } from './audio/SoundPlayer';
 import { settings } from './game/Settings';
@@ -12,6 +13,9 @@ function showFatal(err: unknown): void {
 }
 
 async function main(): Promise<void> {
+  // Everything here is pixel art drawn at 2x; smoothing only blurs it.
+  TextureSource.defaultOptions.scaleMode = 'nearest';
+
   // Art must be ready before the first scene draws; audio can finish in the
   // background since playback is gated on a user gesture anyway.
   await loadAllAssets();

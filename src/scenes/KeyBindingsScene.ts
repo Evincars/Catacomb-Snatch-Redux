@@ -48,7 +48,7 @@ export class KeyBindingsScene implements Scene {
 
     const hint = makeText('Click a binding, then press a key', 0xaaaaaa, 9, 'center');
     hint.x = GAME_WIDTH / 2;
-    hint.y = GAME_HEIGHT - 50;
+    hint.y = 50;
     this.container.addChild(hint);
 
     const reset = new PixelButton('Reset', 100, 22);
@@ -64,7 +64,7 @@ export class KeyBindingsScene implements Scene {
     const back = new PixelButton('Back', 100, 22);
     back.x = GAME_WIDTH / 2 + 10;
     back.y = GAME_HEIGHT - 34;
-    back.onPress = () => manager.goto('options');
+    back.onPress = () => manager.back('options');
     this.container.addChild(back);
 
     this.onKeyDown = (e: KeyboardEvent) => {

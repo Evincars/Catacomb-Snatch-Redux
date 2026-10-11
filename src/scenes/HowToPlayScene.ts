@@ -71,7 +71,7 @@ export class HowToPlayScene implements Scene {
     const back = new PixelButton('Back', 200, 28);
     back.x = GAME_WIDTH - 220;
     back.y = GAME_HEIGHT - 38;
-    back.onPress = () => manager.goto('title');
+    back.onPress = () => manager.back('title');
     this.container.addChild(back);
   }
 

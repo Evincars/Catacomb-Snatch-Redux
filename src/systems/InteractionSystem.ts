@@ -1,90 +1,22 @@
 import { world } from '../world';
 import type { Entity, ShopKind } from '../world';
-import { createBuilding } from '../entities/BuildingFactory';
+import { createBuilding, applyUpgradeLevel, upgradeCostOf } from '../entities/BuildingFactory';
 import type { BuildingType } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { WEAPON_STATS } from '../entities/WeaponStats';
 import { sound } from '../audio/SoundPlayer';
-import { wasUsePressed } from './InputSystem';
+import { notify, updateNotices } from '../game/Notices';
+import { keyLabel } from '../game/Settings';
+import { targetOf } from './TargetingSystem';
 import type { Level } from '../level/Level';
 
-/** Matches Java's INTERACT_DISTANCE of 20px, measured from the reach point. */
-const INTERACT_RANGE = 20;
-/** Java probes a point this far in front of the player rather than the player itself. */
-const INTERACT_REACH = 30;
 /** Carried buildings float above the player's head. */
 const CARRY_OFFSET_Y = 20;
 
 const WEAPON_KINDS: ShopKind[] = ['rifle', 'shotgun', 'raygun'];
 
-export type Notice = { text: string; ticks: number };
-const notices: Notice[] = [];
-
-export function takeNotices(): Notice[] {
-  return notices;
-}
-
-function notify(text: string): void {
-  notices.push({ text, ticks: 120 });
-  if (notices.length > 3) notices.shift();
-}
-
-export function updateNotices(): void {
-  for (let i = notices.length - 1; i >= 0; i--) {
-    if (--notices[i].ticks <= 0) notices.splice(i, 1);
-  }
-}
-
-/** Exposed so the HUD can prompt for whatever the player is standing next to. */
-export function shopItemNear(player: Entity): Entity | null {
-  return nearestShopItem(player);
-}
-
 export function carriedByPlayer(player: Entity): Entity | null {
   return carriedBy(player);
-}
-
-/** The point the player is reaching toward, ahead of them in their aim direction. */
-function reachPoint(player: Entity): { x: number; y: number } {
-  const pos = player.position!;
-  const aim = player.aimVector;
-  const len = aim ? Math.hypot(aim.x, aim.y) : 0;
-  if (!aim || len === 0) return { x: pos.x, y: pos.y };
-  return { x: pos.x + (aim.x / len) * INTERACT_REACH, y: pos.y + (aim.y / len) * INTERACT_REACH };
-}
-
-function nearestShopItem(player: Entity): Entity | null {
-  const reach = reachPoint(player);
-  let best: Entity | null = null;
-  let bestDist = INTERACT_RANGE * INTERACT_RANGE;
-
-  for (const item of world.with('position', 'shopItem')) {
-    if (item.team !== player.team) continue;
-    const d = (item.position!.x - reach.x) ** 2 + (item.position!.y - reach.y) ** 2;
-    if (d < bestDist) {
-      bestDist = d;
-      best = item;
-    }
-  }
-  return best;
-}
-
-/** A dropped building the player is standing next to, so it can be picked back up. */
-function nearestCarryable(player: Entity): Entity | null {
-  const reach = reachPoint(player);
-  let best: Entity | null = null;
-  let bestDist = INTERACT_RANGE * INTERACT_RANGE;
-
-  for (const b of world.with('position', 'building')) {
-    if (b.carriedBy !== undefined) continue;
-    if (b.building!.type === 'treasure' || b.building!.type === 'chest') continue;
-    const d = (b.position!.x - reach.x) ** 2 + (b.position!.y - reach.y) ** 2;
-    if (d < bestDist) {
-      bestDist = d;
-      best = b;
-    }
-  }
-  return best;
 }
 
 function buy(player: Entity, item: Entity): void {
@@ -106,7 +38,11 @@ function buy(player: Entity, item: Entity): void {
     stats.score -= cost;
     inv.weapons.push(kind);
     inv.current = inv.weapons.length - 1;
-    player.weapon = { type: kind, cooldown: WEAPON_STATS[kind].cooldown, currentCooldown: 0 };
+    player.weapon = {
+      type: kind,
+      cooldown: WEAPON_STATS[kind].cooldown,
+      currentCooldown: player.weapon?.currentCooldown ?? 0,
+    };
     notify(`Bought ${SHOP_DEFS[kind].label}`);
     sound.playSound('upgrade');
     return;
@@ -116,11 +52,48 @@ function buy(player: Entity, item: Entity): void {
   stats.score -= cost;
   const built = createBuilding(player.position!.x, player.position!.y, kind as BuildingType, player.team);
   pickUp(player, built);
-  notify(`Bought ${SHOP_DEFS[kind].label} — press E to place`);
+  notify(`Bought ${SHOP_DEFS[kind].label} - press ${keyLabel('use')} to place`);
   sound.playSound('upgrade');
 }
 
+function upgrade(player: Entity, target: Entity | null): void {
+  const up = target?.upgradable;
+  if (!target || !up) {
+    notify('Nothing to upgrade here');
+    return;
+  }
+
+  const cost = upgradeCostOf(target);
+  const name = target.tooltip?.title ?? 'Building';
+  if (cost === null) {
+    notify(`${name} is fully upgraded`);
+    return;
+  }
+
+  const stats = player.playerStats!;
+  if (stats.score < cost) {
+    notify(`Need ${cost} coins to upgrade ${name}`);
+    sound.playSound('fail');
+    return;
+  }
+
+  stats.score -= cost;
+  up.level++;
+  applyUpgradeLevel(target);
+  // An upgrade comes with a repair.
+  if (target.health) target.health.current = target.health.max;
+  notify(`${name} upgraded to level ${up.level}`);
+  sound.playSound('upgrade', target.position!.x, target.position!.y);
+}
+
 function pickUp(player: Entity, building: Entity): void {
+  // A harvester hands over everything it has sucked up when it is lifted.
+  const stash = building.harvester;
+  if (stash && stash.collected > 0) {
+    player.playerStats!.score += stash.collected;
+    notify(`Collected ${stash.collected} coins`);
+    stash.collected = 0;
+  }
   world.addComponent(building, 'carriedBy', world.id(player)!);
   world.addComponent(player, 'carryingId', world.id(building)!);
   // A carried building must not collide with its carrier.
@@ -153,7 +126,7 @@ function carriedBy(player: Entity): Entity | null {
   return null;
 }
 
-/** Handles the use key: buy, pick up, and place. */
+/** Handles the use, build and upgrade intents: buy, pick up, place and upgrade. */
 export function updateInteraction(level: Level): void {
   updateNotices();
 
@@ -166,20 +139,28 @@ export function updateInteraction(level: Level): void {
       held.position!.y = player.position!.y - CARRY_OFFSET_Y;
     }
 
-    if (!wasUsePressed()) continue;
+    const intents = player.playerInput!.intents;
+    const target = targetOf(player);
+
+    if (intents.upgrade) {
+      if (held) notify('Place it before upgrading');
+      else upgrade(player, target);
+      continue;
+    }
+
+    if (!intents.use && !intents.build) continue;
 
     if (held) {
       drop(player, held, level);
       continue;
     }
 
-    const shop = nearestShopItem(player);
-    if (shop) {
-      buy(player, shop);
-      continue;
+    if (!target) continue;
+    if (target.shopItem) {
+      // The build key only moves things around; it never spends coins.
+      if (intents.use) buy(player, target);
+    } else if (target.building) {
+      pickUp(player, target);
     }
-
-    const carryable = nearestCarryable(player);
-    if (carryable) pickUp(player, carryable);
   }
 }

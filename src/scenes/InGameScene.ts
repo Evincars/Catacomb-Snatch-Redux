@@ -8,32 +8,25 @@ import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { loadTmxLevel } from '../level/TmxLoader';
 import { buildLevelSprite } from '../level/TileRenderer';
 import { createPlayer } from '../entities/PlayerFactory';
-import { initInput, updateInput } from '../systems/InputSystem';
-import { updateMovement } from '../systems/MovementSystem';
-import { updateRender } from '../systems/RenderSystem';
-import { updateSprites, clearSprites } from '../systems/SpriteSystem';
-import { updateCombatTimers, updateBulletCollision, updateContactDamage } from '../systems/CombatSystem';
-import { updateWeapons } from '../systems/WeaponSystem';
-import { updateBullets } from '../systems/BulletSystem';
-import { updateAI } from '../systems/AISystem';
-import { updateAnimation } from '../systems/AnimationSystem';
-import { updateBuffs } from '../systems/BuffSystem';
-import { updateLoot } from '../systems/LootSystem';
-import { updateDeath } from '../systems/DeathSystem';
-import { updateSpawners } from '../systems/SpawnerSystem';
-import { updateRandomSpawner, spawnInitialSpawners } from '../systems/RandomSpawnerSystem';
-import { updateFx } from '../systems/FxSystem';
-import { updateBars } from '../systems/BarSystem';
-import { updateInteraction, takeNotices, shopItemNear, carriedByPlayer } from '../systems/InteractionSystem';
+import { initInput, resetInput } from '../systems/InputSystem';
+import { runSystems, SIMULATION, PRESENTATION } from '../systems/Simulation';
+import type { FrameContext } from '../systems/Simulation';
+import { clearSprites, updateSprites } from '../systems/SpriteSystem';
+import { spawnInitialSpawners } from '../systems/RandomSpawnerSystem';
+import { carriedByPlayer } from '../systems/InteractionSystem';
+import { targetOf } from '../systems/TargetingSystem';
+import { syncWalls, resetWalls } from '../systems/WallSystem';
+import { upgradeCostOf } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
-import { updateTurrets, updateHarvesters, updateBombs } from '../systems/BuildingSystem';
-import { updateHoles } from '../systems/HoleSystem';
+import { takeNotices, clearNotices } from '../game/Notices';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
 import { gameState } from '../game/GameState';
 import { sound } from '../audio/SoundPlayer';
 import { camera, GAME_WIDTH, GAME_HEIGHT, VIEW_HEIGHT } from '../render/Camera';
+import { getTexture } from '../assets/AssetLoader';
 import { HudPanel } from '../ui/HudPanel';
+import { TooltipView } from '../ui/Tooltip';
 import { DarknessRenderer } from '../level/DarknessRenderer';
 import { Crosshair } from '../ui/Crosshair';
 import { keyLabel } from '../game/Settings';
@@ -55,6 +48,7 @@ export class InGameScene implements Scene {
   private hud!: HudPanel;
   private darkness = new DarknessRenderer();
   private crosshair = new Crosshair();
+  private tooltip = new TooltipView();
 
   private paused = false;
   private finished = false;
@@ -75,7 +69,8 @@ export class InGameScene implements Scene {
     initInput(this.app.canvas as HTMLCanvasElement);
 
     this.onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Escape' && !this.finished) this.togglePause();
+      // Settings opened from the pause menu own the keyboard until they close.
+      if (e.code === 'Escape' && !this.finished && !this.manager.hasOverlay) this.togglePause();
     };
     window.addEventListener('keydown', this.onKeyDown);
 
@@ -99,6 +94,8 @@ export class InGameScene implements Scene {
   private async load(): Promise<void> {
     // Drop everything from any previous session before building this one.
     clearSprites();
+    resetWalls();
+    clearNotices();
     for (const entity of world.entities.slice()) world.remove(entity);
 
     this.level = await loadTmxLevel(gameState.selectedLevel.path, gameState.difficulty.shopCostMod);
@@ -124,6 +121,7 @@ export class InGameScene implements Scene {
     // Placed after the player so no nest lands within sight of the start.
     spawnInitialSpawners(this.level);
 
+    syncWalls(this.level);
     updateSprites(this.gameLayer);
     this.buildHud();
     // The crosshair stands in for the OS pointer while playing.
@@ -132,14 +130,15 @@ export class InGameScene implements Scene {
     this.centerCameraOn(spawn.x, spawn.y);
   }
 
-  /** Redraws the static tile texture after bombs change the terrain. */
-  private rebuildLevelSprite(): void {
+  /** Redraws the floor texture and wall entities after bombs change the terrain. */
+  private rebuildTerrain = (): void => {
     this.level.tilesDirty = false;
     this.levelSprite?.destroy();
     this.levelSprite = buildLevelSprite(this.app, this.level);
     this.levelSprite.zIndex = -Number.MAX_SAFE_INTEGER;
     this.gameLayer.addChild(this.levelSprite);
-  }
+    syncWalls(this.level);
+  };
 
   private showLoadError(err: unknown): void {
     const title = makeTitle('Could not load level');
@@ -167,51 +166,81 @@ export class InGameScene implements Scene {
   private buildHud(): void {
     this.hud = new HudPanel();
     this.hudLayer.addChild(this.hud.container);
+    this.hudLayer.addChild(this.tooltip.container);
   }
 
   /** Shows what the player is standing next to, or what they are carrying. */
   private updatePrompt(): void {
     this.hud.setNotices(takeNotices().map((n) => n.text));
 
+    const hover = world.with('hovered').first ?? null;
+    const target = targetOf(this.player);
+    this.hud.setHint((hover ?? target)?.tooltip?.title ?? '');
+
     const held = carriedByPlayer(this.player);
     if (held) {
-      this.hud.setPrompt(`Carrying ${held.building!.type} — [${keyLabel('use')}] to place`);
+      this.hud.setPrompt(`Carrying ${held.building!.type} - [${keyLabel('use')}] to place`);
+      return;
+    }
+    if (!target) {
+      this.hud.setPrompt('');
       return;
     }
 
-    const shop = shopItemNear(this.player);
-    this.hud.setPrompt(
-      shop
-        ? `${SHOP_DEFS[shop.shopItem!.kind].label} — ${shop.shopItem!.cost} coins — [${keyLabel('use')}] to buy`
-        : '',
-    );
+    if (target.shopItem) {
+      const { kind, cost } = target.shopItem;
+      this.hud.setPrompt(`${SHOP_DEFS[kind].label} - ${cost} coins - [${keyLabel('use')}] to buy`);
+      return;
+    }
+
+    const title = target.tooltip?.title ?? 'Building';
+    const cost = upgradeCostOf(target);
+    const upgrade = cost === null ? '' : ` - [${keyLabel('upgrade')}] upgrade ${cost}`;
+    this.hud.setPrompt(`${title} - [${keyLabel('build')}] pick up${upgrade}`);
   }
 
   private togglePause(): void {
     this.paused = !this.paused;
-    this.overlay.removeChildren();
+    this.overlay.removeChildren().forEach((c) => c.destroy({ children: true }));
+    const canvas = this.app.canvas as HTMLCanvasElement;
+    this.crosshair.graphics.visible = !this.paused;
+    canvas.style.cursor = this.paused ? '' : 'none';
+    resetInput();
     if (!this.paused) return;
 
     const dim = new Graphics();
-    dim.rect(0, 0, GAME_WIDTH, GAME_HEIGHT).fill({ color: 0x000000, alpha: 0.65 });
+    dim.rect(0, 0, GAME_WIDTH, GAME_HEIGHT).fill({ color: 0x000000, alpha: 0.6 });
     this.overlay.addChild(dim);
 
-    const title = makeTitle('Paused');
-    title.x = GAME_WIDTH / 2;
-    title.y = 110;
+    const title = new Sprite(getTexture('pause_screen'));
+    title.width = GAME_WIDTH;
+    title.height = GAME_HEIGHT;
     this.overlay.addChild(title);
 
-    const resume = new PixelButton('Resume', 200, 28);
-    resume.x = (GAME_WIDTH - 200) / 2;
-    resume.y = 170;
-    resume.onPress = () => this.togglePause();
-    this.overlay.addChild(resume);
+    const entries: Array<{ label: string; action: () => void }> = [
+      { label: 'Resume', action: () => this.togglePause() },
+      { label: 'Help', action: () => this.manager.pushOverlay('how_to_play') },
+      { label: 'Options', action: () => this.manager.pushOverlay('options') },
+      { label: 'Main', action: () => this.manager.goto('title') },
+      { label: 'Exit Game', action: () => this.exitGame() },
+    ];
 
-    const quit = new PixelButton('Quit to Menu', 200, 28);
-    quit.x = (GAME_WIDTH - 200) / 2;
-    quit.y = 210;
-    quit.onPress = () => this.manager.goto('title');
-    this.overlay.addChild(quit);
+    const BTN_W = 220;
+    const BTN_H = 28;
+    entries.forEach(({ label, action }, i) => {
+      const button = new PixelButton(label, BTN_W, BTN_H);
+      button.x = (GAME_WIDTH - BTN_W) / 2;
+      button.y = 120 + i * (BTN_H + 12);
+      button.onPress = action;
+      this.overlay.addChild(button);
+    });
+  }
+
+  /** Browsers only allow closing tabs a script opened, so fall back to the main menu. */
+  private exitGame(): void {
+    sound.stopBackgroundMusic();
+    window.close();
+    this.manager.goto('title');
   }
 
   private centerCameraOn(x: number, y: number): void {
@@ -226,31 +255,14 @@ export class InGameScene implements Scene {
   private tick(dt: number): void {
     if (this.paused || this.finished) return;
 
-    updateInput(dt);
-    updateInteraction(this.level);
-    updateAI(this.level, dt);
-    updateWeapons(dt);
-    updateTurrets(this.level, dt);
-    updateMovement(this.level, dt);
-    updateBullets(this.level, dt);
-    updateCombatTimers(dt);
-    updateBulletCollision(dt);
-    updateContactDamage(dt);
-    updateBuffs(dt);
-    updateLoot(dt);
-    updateHarvesters(dt);
-    updateSpawners(this.level, dt);
-    updateRandomSpawner(this.level);
-    // Bombs must detonate before DeathSystem clears the destroyed entity.
-    updateBombs(this.level, dt);
-    updateDeath(this.level, dt);
-    updateHoles(this.level);
-    if (this.level.tilesDirty) this.rebuildLevelSprite();
-    updateSprites(this.gameLayer);
-    updateFx();
-    updateAnimation(dt);
-    updateRender(dt);
-    updateBars(this.gameLayer);
+    const ctx: FrameContext = {
+      level: this.level,
+      dt,
+      gameLayer: this.gameLayer,
+      rebuildTerrain: this.rebuildTerrain,
+    };
+    runSystems(SIMULATION, ctx);
+    runSystems(PRESENTATION, ctx);
 
     const pos = this.player.position;
     const stats = this.player.playerStats;
@@ -268,6 +280,7 @@ export class InGameScene implements Scene {
     this.darkness.update(this.level);
 
     this.hud.update(this.player, this.level);
+    this.tooltip.update();
     this.crosshair.update();
     this.updatePrompt();
 
@@ -293,6 +306,7 @@ export class InGameScene implements Scene {
     this.ticker.destroy();
     this.darkness.destroy();
     this.crosshair.destroy();
+    this.tooltip.destroy();
     (this.app.canvas as HTMLCanvasElement).style.cursor = '';
     clearSprites();
     this.container.destroy({ children: true });

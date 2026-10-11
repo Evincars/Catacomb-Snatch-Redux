@@ -3,13 +3,48 @@ import { createBullet } from '../entities/BulletFactory';
 import { WEAPON_STATS } from '../entities/WeaponStats';
 import { spawnMuzzleFlash } from '../entities/FxFactory';
 import { sound } from '../audio/SoundPlayer';
+import { notify } from '../game/Notices';
+import { SHOP_DEFS } from '../entities/ShopItemFactory';
+import type { Entity, ShopKind } from '../world';
+
+/** Equips a weapon from the inventory, keeping the cooldown so swapping cannot skip it. */
+function equip(entity: Entity, index: number): void {
+  const inv = entity.weaponInventory!;
+  const type = inv.weapons[index];
+  if (type === undefined || index === inv.current) return;
+
+  inv.current = index;
+  entity.weapon = {
+    type,
+    cooldown: WEAPON_STATS[type].cooldown,
+    currentCooldown: entity.weapon?.currentCooldown ?? 0,
+  };
+  notify(SHOP_DEFS[type as ShopKind]?.label ?? type);
+  sound.playSound('trackPlace');
+}
+
+/** Applies the slot keys, next/previous keys and mouse wheel. */
+function updateWeaponSelection(entity: Entity): void {
+  const inv = entity.weaponInventory;
+  const intents = entity.playerInput?.intents;
+  if (!inv || !intents) return;
+
+  if (intents.weaponSlot >= 0) equip(entity, intents.weaponSlot);
+
+  if (intents.weaponStep !== 0 && inv.weapons.length > 1) {
+    const n = inv.weapons.length;
+    equip(entity, (inv.current + intents.weaponStep + n) % n);
+  }
+}
 
 /** Fires player weapons while the shoot input is held, respecting cooldowns. */
 export function updateWeapons(_dt: number): void {
   for (const entity of world.with('position', 'playerInput', 'weapon', 'aimVector')) {
-    const weapon = entity.weapon!;
     const pi = entity.playerInput!;
     const aim = entity.aimVector!;
+
+    updateWeaponSelection(entity);
+    const weapon = entity.weapon!;
 
     if (weapon.currentCooldown > 0) weapon.currentCooldown--;
 

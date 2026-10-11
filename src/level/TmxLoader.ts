@@ -47,7 +47,7 @@ const GEAR_STALLS: ShopKind[] = ['turret', 'harvester', 'bomb'];
 /**
  * Arranges each base around its spawn flag: weapons stand in a column on the
  * flag's left, turret/harvester/bomb in a row beneath it, and the stumps that
- * fence the base are cleared. The rifle stall is dropped because players
+ * fence the base are hidden. The rifle stall is dropped because players
  * start with a rifle. A team with no flag keeps the stalls where the map put them.
  */
 function layoutSpawnAreas(level: Level, shops: PendingShop[], costMod: number): void {
@@ -77,10 +77,12 @@ function layoutSpawnAreas(level: Level, shops: PendingShop[], costMod: number): 
     const base = level.baseTiles.filter((t) => t.team === team);
     const x0 = Math.min(minX, ...base.map((t) => t.tileX));
     const x1 = Math.max(...flag.map((t) => t.tileX), ...base.map((t) => t.tileX));
+    // The map fences the base with unpassable sand. It must keep blocking, but the
+    // original shows plain sand there, so it becomes an invisible barrier.
     for (let ty = minY - 1; ty <= maxY + 1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         if (level.getTile(tx, ty)?.type === TileType.UnpassableSand) {
-          level.setTile(tx, ty, createTile(TileType.Sand, 0));
+          level.setTile(tx, ty, createTile(TileType.Barrier, 0));
         }
       }
     }
@@ -264,6 +266,8 @@ function readPlayerTile(
   }
 
   if (offset === PLAYER_RAIL_OFFSET) {
-    level.setTile(tx, ty, createTile(TileType.PlayerRail, 0));
+    const rail = createTile(TileType.PlayerRail, 0);
+    rail.team = team;
+    level.setTile(tx, ty, rail);
   }
 }

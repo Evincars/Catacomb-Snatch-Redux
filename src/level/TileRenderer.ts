@@ -6,12 +6,25 @@ import { getTexture } from '../assets/AssetLoader';
 import { Team } from '../world';
 import { gameState } from '../game/GameState';
 
-/** Walls are taller than a tile and hang upward over the row above. */
-const WALL_HEIGHT = 56;
-const WALL_OVERHANG = WALL_HEIGHT - TILE_HEIGHT;
-
 const FLOOR_COLS = 8;
-const WALL_COLS = 23;
+
+/** Rail art is 38px tall: the top 6px stand up over the tile above. */
+const RAIL_HEIGHT = 38;
+const RAIL_RISE = RAIL_HEIGHT - TILE_HEIGHT;
+
+/** rails.png frames. */
+const RAIL_HORIZONTAL = 0;
+const RAIL_VERTICAL = 1;
+/** Dead-end loop of a base whose exit points north (team 1): left half, right half. */
+const RAIL_LOOP_UP = [4, 5];
+/** Dead-end loop of a base whose exit points south (team 2). */
+const RAIL_LOOP_DOWN = [2, 3];
+
+/** Stone floor with sand blown over one edge: north, east, south, west. */
+const SAND_EDGE_NORTH = 8;
+const SAND_EDGE_EAST = 9;
+const SAND_EDGE_SOUTH = 10;
+const SAND_EDGE_WEST = 11;
 
 /**
  * Index into floortiles.png, matching Java's Tile.img:
@@ -22,6 +35,8 @@ function floorImageIndex(type: TileType, variant: number): number {
     case TileType.Hole:           return 4;
     case TileType.Sand:           return 5;
     case TileType.PlayerBase:     return 5;
+    case TileType.PlayerRail:     return 5;
+    case TileType.Barrier:        return 5;
     case TileType.UnpassableSand: return 6;
     default:                      return variant & 3;
   }
@@ -63,10 +78,54 @@ function frameOf(tex: Texture, col: number, row: number, w: number, h: number): 
   });
 }
 
-/** Renders the static tilemap into a single texture. */
+const SANDY = new Set([
+  TileType.Sand,
+  TileType.UnpassableSand,
+  TileType.PlayerBase,
+  TileType.PlayerRail,
+  TileType.Barrier,
+]);
+
+function isSandy(level: Level, tx: number, ty: number): boolean {
+  const tile = level.getTile(tx, ty);
+  return tile !== null && SANDY.has(tile.type);
+}
+
+/** Frame of a stone floor tile bordering sand, so the two blend instead of meeting in a hard line. */
+function sandEdgeImage(level: Level, tx: number, ty: number): number | null {
+  if (isSandy(level, tx, ty + 1)) return SAND_EDGE_SOUTH;
+  if (isSandy(level, tx, ty - 1)) return SAND_EDGE_NORTH;
+  if (isSandy(level, tx + 1, ty)) return SAND_EDGE_EAST;
+  if (isSandy(level, tx - 1, ty)) return SAND_EDGE_WEST;
+  return null;
+}
+
+function isRail(level: Level, tx: number, ty: number): boolean {
+  const type = level.getTile(tx, ty)?.type;
+  return type === TileType.Rail || type === TileType.UnbreakableRail || type === TileType.PlayerRail;
+}
+
+/** Picks the rails.png frame for a rail piece from the pieces around it. */
+function railFrame(level: Level, tx: number, ty: number): number {
+  const tile = level.getTile(tx, ty)!;
+
+  if (tile.type === TileType.PlayerRail) {
+    const isLeft = !isRail(level, tx - 1, ty);
+    const isRight = !isRail(level, tx + 1, ty);
+    const loop = tile.team === Team.Two ? RAIL_LOOP_DOWN : RAIL_LOOP_UP;
+    if (isLeft) return loop[0];
+    if (isRight) return loop[1];
+    return RAIL_HORIZONTAL;
+  }
+
+  const vertical = isRail(level, tx, ty - 1) || isRail(level, tx, ty + 1);
+  const horizontal = isRail(level, tx - 1, ty) || isRail(level, tx + 1, ty);
+  return vertical && !horizontal ? RAIL_VERTICAL : RAIL_HORIZONTAL;
+}
+
+/** Renders the static floor into a single texture; walls are separate depth-sorted entities. */
 export function buildLevelSprite(app: Application, level: Level): Sprite {
   const floorTex = getTexture('floortiles');
-  const wallTex = getTexture('walltiles');
   const railTex = getTexture('rails');
 
   const container = new Container();
@@ -77,7 +136,9 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
       const tile = level.getTile(tx, ty);
       if (!tile || tile.type === TileType.Wall) continue;
 
-      const img = floorImageIndex(tile.type, tile.imageVariant);
+      const img = tile.type === TileType.Floor
+        ? sandEdgeImage(level, tx, ty) ?? floorImageIndex(tile.type, tile.imageVariant)
+        : floorImageIndex(tile.type, tile.imageVariant);
       const s = new Sprite(frameOf(floorTex, img % FLOOR_COLS, Math.floor(img / FLOOR_COLS), TILE_WIDTH, TILE_HEIGHT));
       s.x = tx * TILE_WIDTH;
       s.y = ty * TILE_HEIGHT;
@@ -89,12 +150,11 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
   for (let ty = 0; ty < level.height; ty++) {
     for (let tx = 0; tx < level.width; tx++) {
       const tile = level.getTile(tx, ty);
-      if (!tile) continue;
-      if (tile.type !== TileType.Rail && tile.type !== TileType.UnbreakableRail) continue;
+      if (!tile || !isRail(level, tx, ty)) continue;
 
-      const s = new Sprite(frameOf(railTex, 0, 0, TILE_WIDTH, TILE_HEIGHT));
+      const s = new Sprite(frameOf(railTex, railFrame(level, tx, ty), 0, TILE_WIDTH, RAIL_HEIGHT));
       s.x = tx * TILE_WIDTH;
-      s.y = ty * TILE_HEIGHT;
+      s.y = ty * TILE_HEIGHT - RAIL_RISE;
       container.addChild(s);
     }
   }
@@ -117,20 +177,6 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
     s.x = base.tileX * TILE_WIDTH;
     s.y = base.tileY * TILE_HEIGHT;
     container.addChild(s);
-  }
-
-  // Walls last, top-to-bottom so lower walls overlap higher ones.
-  for (let ty = 0; ty < level.height; ty++) {
-    for (let tx = 0; tx < level.width; tx++) {
-      const tile = level.getTile(tx, ty);
-      if (!tile || tile.type !== TileType.Wall) continue;
-
-      const col = tile.imageVariant % WALL_COLS;
-      const s = new Sprite(frameOf(wallTex, col, 0, TILE_WIDTH, WALL_HEIGHT));
-      s.x = tx * TILE_WIDTH;
-      s.y = ty * TILE_HEIGHT - WALL_OVERHANG;
-      container.addChild(s);
-    }
   }
 
   const rt = RenderTexture.create({
