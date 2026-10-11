@@ -21,6 +21,9 @@ import { updateAnimation } from './AnimationSystem';
 import { updateRender } from './RenderSystem';
 import { updateBars } from './BarSystem';
 import { updateMarkers } from './MarkerSystem';
+import { updateRanges } from './RangeSystem';
+import { updateDust } from './DustSystem';
+import { updateEphemerals } from './EphemeralSystem';
 
 /** Everything a system may need to know about the running game. */
 export type FrameContext = {
@@ -42,6 +45,8 @@ export const SIMULATION: readonly System[] = [
   ({ dt }) => updateWeapons(dt),
   ({ level, dt }) => updateTurrets(level, dt),
   ({ level, dt }) => updateMovement(level, dt),
+  ({ level }) => updateDust(level),
+  () => updateEphemerals(),
   ({ level, dt }) => updateBullets(level, dt),
   ({ dt }) => updateCombatTimers(dt),
   ({ dt }) => updateBulletCollision(dt),
@@ -67,6 +72,7 @@ export const PRESENTATION: readonly System[] = [
   ({ dt }) => updateAnimation(dt),
   ({ dt }) => updateRender(dt),
   ({ gameLayer }) => updateBars(gameLayer),
+  ({ gameLayer }) => updateRanges(gameLayer),
   ({ gameLayer }) => updateMarkers(gameLayer),
 ];
 

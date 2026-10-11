@@ -2,20 +2,20 @@ import { world } from '../world';
 import type { Entity } from '../world';
 import { screenToWorld } from '../render/Camera';
 
-/** Matches Java's INTERACT_DISTANCE of 20px, measured from the reach point. */
-export const INTERACT_RANGE = 20;
-/** Java probes a point this far in front of the player rather than the player itself. */
-export const INTERACT_REACH = 30;
+/** How far ahead of the player their aim line reaches. */
+export const INTERACT_REACH = 36;
+/** Slack added to a candidate's own radius when testing the aim line against it. */
+const HIT_SLACK = 2;
 /** How close the pointer must be to an entity's centre to count as hovering it. */
 const HOVER_RADIUS = 18;
 
 /** The point the player is reaching toward, ahead of them in their aim direction. */
-export function reachPoint(player: Entity): { x: number; y: number } {
+export function reachPoint(player: Entity, distance = INTERACT_REACH): { x: number; y: number } {
   const pos = player.position!;
   const aim = player.aimVector;
   const len = aim ? Math.hypot(aim.x, aim.y) : 0;
   if (!aim || len === 0) return { x: pos.x, y: pos.y };
-  return { x: pos.x + (aim.x / len) * INTERACT_REACH, y: pos.y + (aim.y / len) * INTERACT_REACH };
+  return { x: pos.x + (aim.x / len) * distance, y: pos.y + (aim.y / len) * distance };
 }
 
 /** Whether a player may interact with this entity: stalls belong to a team, buildings are free for all. */
@@ -31,16 +31,49 @@ function centreOf(entity: Entity): { x: number; y: number } {
   return { x: p.x, y: p.y - (entity.yOffset ?? 0) };
 }
 
-function closest(player: Entity, from: { x: number; y: number }, maxDist: number, useCentre: boolean): Entity | null {
+/** Nearest candidate to a point, used for pointer hover. */
+function closest(player: Entity, from: { x: number; y: number }, maxDist: number): Entity | null {
   let best: Entity | null = null;
   let bestDist = maxDist * maxDist;
 
   for (const candidate of world.with('position', 'tooltip')) {
     if (!usableBy(player, candidate)) continue;
-    const at = useCentre ? centreOf(candidate) : candidate.position!;
+    const at = centreOf(candidate);
     const d = (at.x - from.x) ** 2 + (at.y - from.y) ** 2;
     if (d < bestDist) {
       bestDist = d;
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/** The first candidate the player's aim line runs into within reach, or null. */
+function hitByAimLine(player: Entity): Entity | null {
+  const from = player.position!;
+  const aim = player.aimVector;
+  const len = aim ? Math.hypot(aim.x, aim.y) : 0;
+  if (!aim || len === 0) return null;
+  const dx = aim.x / len;
+  const dy = aim.y / len;
+
+  let best: Entity | null = null;
+  let bestAlong = Infinity;
+
+  for (const candidate of world.with('position', 'tooltip')) {
+    if (!usableBy(player, candidate)) continue;
+    const at = candidate.position!;
+    const rx = at.x - from.x;
+    const ry = at.y - from.y;
+    const along = rx * dx + ry * dy;
+    const radius = (candidate.radius?.x ?? 10) + HIT_SLACK;
+    // The segment may begin inside an object the player is standing against.
+    if (along < -radius || along > INTERACT_REACH + radius) continue;
+
+    const across = Math.abs(rx * dy - ry * dx);
+    if (across > radius) continue;
+    if (along < bestAlong) {
+      bestAlong = along;
       best = candidate;
     }
   }
@@ -63,7 +96,7 @@ export function updateTargeting(): void {
       continue;
     }
 
-    const target = closest(player, reachPoint(player), INTERACT_RANGE, false);
+    const target = hitByAimLine(player);
     if (target) {
       player.targetId = world.id(target)!;
       world.addComponent(target, 'targeted', true);
@@ -72,7 +105,7 @@ export function updateTargeting(): void {
     }
 
     const pi = player.playerInput!;
-    const hovered = closest(player, screenToWorld(pi.mouseX, pi.mouseY), HOVER_RADIUS, true);
+    const hovered = closest(player, screenToWorld(pi.mouseX, pi.mouseY), HOVER_RADIUS);
     if (hovered) world.addComponent(hovered, 'hovered', true);
   }
 }

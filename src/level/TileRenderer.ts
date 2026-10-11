@@ -119,7 +119,11 @@ function railFrame(level: Level, tx: number, ty: number): number {
   }
 
   const vertical = isRail(level, tx, ty - 1) || isRail(level, tx, ty + 1);
-  const horizontal = isRail(level, tx - 1, ty) || isRail(level, tx + 1, ty);
+  // Fixed side rails are upright posts: they never turn a neighbouring piece sideways.
+  const sideways = (x: number) => isRail(level, x, ty) && level.getTile(x, ty)!.type !== TileType.UnbreakableRail;
+  const horizontal = sideways(tx - 1) || sideways(tx + 1);
+
+  if (tile.type === TileType.UnbreakableRail) return vertical ? RAIL_VERTICAL : RAIL_HORIZONTAL;
   return vertical && !horizontal ? RAIL_VERTICAL : RAIL_HORIZONTAL;
 }
 

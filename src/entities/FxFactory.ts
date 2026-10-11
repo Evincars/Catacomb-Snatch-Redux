@@ -91,3 +91,32 @@ export function spawnMuzzleFlash(owner: Entity, dirX: number, dirY: number): voi
     orderBias: behind ? -0.5 : 0.5,
   });
 }
+
+/** A coin that drops beside the player when they spend money, then blinks out. */
+export function spawnSpentCoin(owner: Entity): void {
+  const pos = owner.position;
+  if (!pos) return;
+
+  const sheet = 'pickup_coin_gold_small_8';
+  world.add({
+    position: { x: pos.x + (Math.random() * 16 - 8), y: pos.y + 4 },
+    yOffset: 28,
+    visual: { sheet },
+    animation: { sheet, frameX: 0, frameY: 0, frameCount: 6, frameTime: 5, timer: 0, loop: true },
+    ephemeral: { age: 0, life: 70, drop: 28 },
+  });
+}
+
+const DUST_STONE = { sheet: 'fx_dust1_24', frames: 10, scale: 0.5 };
+const DUST_SAND = { sheet: 'fx_dust2_12', frames: 10, scale: 1 };
+
+/** A puff of dust at the feet of a runner, drawn just behind them. */
+export function spawnDust(owner: Entity, x: number, y: number, onSand: boolean): void {
+  const kind = onSand ? DUST_SAND : DUST_STONE;
+  spawnFx(x, y, kind.sheet, kind.frames, 22, {
+    scale: kind.scale,
+    yOffset: 2,
+    orderId: world.id(owner),
+    orderBias: -0.5,
+  });
+}

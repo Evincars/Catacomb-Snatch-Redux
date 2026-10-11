@@ -120,6 +120,7 @@ export function createBuilding(
     entity.turret = { ...tier, cooldown: 10 };
     entity.upgradable = { level: 1, maxLevel: TURRET_UPGRADES.sheets.length, costs: TURRET_UPGRADES.costs };
     entity.facing8 = 0;
+    entity.rangeTicks = 0;
   }
   // Bombs ignore damage entirely; a bullet lights the fuse instead.
   if (type === 'bomb') {
@@ -128,6 +129,7 @@ export function createBuilding(
   }
   if (type === 'harvester') {
     entity.harvester = { ...HARVESTER_UPGRADES.tiers[0], collected: 0 };
+    entity.rangeTicks = 0;
     entity.upgradable = {
       level: 1,
       maxLevel: HARVESTER_UPGRADES.sheets.length,

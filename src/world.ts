@@ -1,5 +1,5 @@
 import { World } from 'miniplex';
-import type { Sprite, Container } from 'pixi.js';
+import type { Sprite, Container, Graphics } from 'pixi.js';
 import type { PixelLabel } from './ui/PixelText';
 
 export const enum Team {
@@ -193,6 +193,14 @@ export type Entity = {
   hovered?: true;
   /** Runtime corner brackets drawn around a targeted entity; owned by MarkerSystem. */
   marker?: Container;
+  /** Ticks left to keep the range circle visible; refreshed while the entity is focused or carried. */
+  rangeTicks?: number;
+  /** Runtime range circle and the radius it was drawn for; owned by RangeSystem. */
+  rangeView?: { gfx: Graphics; radius: number };
+  /** A short-lived prop (a dropped coin) that falls, blinks and removes itself. */
+  ephemeral?: { age: number; life: number; drop: number };
+  /** Ticks until the next footstep puff of dust. */
+  dustTimer?: number;
   /** A wall tile drawn as a depth-sorted sprite so actors can walk behind it. */
   wallTile?: { tileX: number; tileY: number };
 
@@ -272,4 +280,6 @@ export const q = {
   targeted:      world.with('position', 'targeted'),
   upgradables:   world.with('position', 'upgradable'),
   walls:         world.with('position', 'wallTile'),
+  rangeViews:    world.with('position', 'rangeTicks'),
+  ephemerals:    world.with('position', 'ephemeral'),
 };

@@ -56,6 +56,7 @@ const SHEETS: Record<string, SheetInfo> = {
   fx_bombsplosion_big_32:   { frameWidth: 32, frameHeight: 32 },
   fx_bombsplosion_small_32: { frameWidth: 32, frameHeight: 32 },
   fx_dust1_24:              { frameWidth: 24, frameHeight: 24 },
+  fx_dust2_12:              { frameWidth: 12, frameHeight: 12 },
   weapon_list: { frameWidth: 32, frameHeight: 32 },
   dark:        { frameWidth: 32, frameHeight: 32 },
   // 101-frame depletion strips, one row per percentage step.

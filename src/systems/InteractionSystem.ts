@@ -7,11 +7,18 @@ import { WEAPON_STATS } from '../entities/WeaponStats';
 import { sound } from '../audio/SoundPlayer';
 import { notify, updateNotices } from '../game/Notices';
 import { keyLabel } from '../game/Settings';
-import { targetOf } from './TargetingSystem';
+import { spawnSpentCoin } from '../entities/FxFactory';
+import { gameState } from '../game/GameState';
+import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
+import { targetOf, reachPoint } from './TargetingSystem';
 import type { Level } from '../level/Level';
 
 /** Carried buildings float above the player's head. */
 const CARRY_OFFSET_Y = 20;
+
+/** Base price of one piece of track, before the difficulty multiplier. */
+const RAIL_COST = 10;
+const RAIL_TYPES = new Set([TileType.Rail, TileType.UnbreakableRail, TileType.PlayerRail]);
 
 const WEAPON_KINDS: ShopKind[] = ['rifle', 'shotgun', 'raygun'];
 
@@ -45,6 +52,7 @@ function buy(player: Entity, item: Entity): void {
     };
     notify(`Bought ${SHOP_DEFS[kind].label}`);
     sound.playSound('upgrade');
+    spawnSpentCoin(player);
     return;
   }
 
@@ -54,6 +62,7 @@ function buy(player: Entity, item: Entity): void {
   pickUp(player, built);
   notify(`Bought ${SHOP_DEFS[kind].label} - press ${keyLabel('use')} to place`);
   sound.playSound('upgrade');
+  spawnSpentCoin(player);
 }
 
 function upgrade(player: Entity, target: Entity | null): void {
@@ -84,6 +93,57 @@ function upgrade(player: Entity, target: Entity | null): void {
   if (target.health) target.health.current = target.health.max;
   notify(`${name} upgraded to level ${up.level}`);
   sound.playSound('upgrade', target.position!.x, target.position!.y);
+  spawnSpentCoin(player);
+}
+
+function isRailAt(level: Level, tx: number, ty: number): boolean {
+  const tile = level.getTile(tx, ty);
+  return tile !== null && RAIL_TYPES.has(tile.type);
+}
+
+function hasBuildingOn(tx: number, ty: number): boolean {
+  for (const b of world.with('position', 'building')) {
+    if (b.carriedBy !== undefined) continue;
+    if (Math.floor(b.position!.x / TILE_WIDTH) === tx && Math.floor(b.position!.y / TILE_HEIGHT) === ty) return true;
+  }
+  return false;
+}
+
+/** Lays a piece of track on the tile ahead, but only where it continues an existing track. */
+function buildRail(player: Entity, level: Level): void {
+  const at = reachPoint(player, TILE_WIDTH);
+  const tx = Math.floor(at.x / TILE_WIDTH);
+  const ty = Math.floor(at.y / TILE_HEIGHT);
+  const tile = level.getTile(tx, ty);
+
+  const connected =
+    isRailAt(level, tx - 1, ty) || isRailAt(level, tx + 1, ty) ||
+    isRailAt(level, tx, ty - 1) || isRailAt(level, tx, ty + 1);
+
+  if (!tile || !tile.buildable || hasBuildingOn(tx, ty)) {
+    notify('Cannot build a rail there');
+    sound.playSound('fail');
+    return;
+  }
+  if (!connected) {
+    notify('Rails must connect to an existing track');
+    sound.playSound('fail');
+    return;
+  }
+
+  const cost = Math.max(1, Math.round(RAIL_COST * gameState.difficulty.shopCostMod));
+  const stats = player.playerStats!;
+  if (stats.score < cost) {
+    notify(`Need ${cost} coins for a rail`);
+    sound.playSound('fail');
+    return;
+  }
+
+  stats.score -= cost;
+  level.setTile(tx, ty, createTile(TileType.Rail, 0));
+  level.tilesDirty = true;
+  sound.playSound('trackPlace', at.x, at.y);
+  spawnSpentCoin(player);
 }
 
 function pickUp(player: Entity, building: Entity): void {
@@ -155,9 +215,12 @@ export function updateInteraction(level: Level): void {
       continue;
     }
 
-    if (!target) continue;
+    if (!target) {
+      if (intents.build) buildRail(player, level);
+      continue;
+    }
     if (target.shopItem) {
-      // The build key only moves things around; it never spends coins.
+      // Stalls only answer to the use key.
       if (intents.use) buy(player, target);
     } else if (target.building) {
       pickUp(player, target);
