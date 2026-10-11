@@ -1,5 +1,6 @@
 import { world, Team, Facing } from '../world';
 import type { Entity } from '../world';
+import { WEAPON_STATS } from './WeaponStats';
 
 export type CharacterType = 'lord_lard' | 'countess_cruller' | 'herr_von_speck' | 'duchess_donut';
 
@@ -66,13 +67,12 @@ export function createPlayer(
       score: 0,
       level: 1,
       exp: 0,
-      sprint: 100,
+      sprint: 0,
       maxSprint: 100,
-      muzzleTicks: 0,
-      muzzleX: 0,
-      muzzleY: 0,
+      sprintLocked: false,
+      sprinting: false,
     },
-    weapon: { type: 'rifle', cooldown: 15, currentCooldown: 0 },
+    weapon: { type: 'rifle', cooldown: WEAPON_STATS.rifle.cooldown, currentCooldown: 0 },
     weaponInventory: { weapons: ['rifle'], current: 0 },
     money: { amount: 0, max: 100 },
     minimapColor: team === Team.One ? 0x0000ff : 0xff0000,

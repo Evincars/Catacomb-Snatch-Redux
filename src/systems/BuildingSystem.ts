@@ -38,7 +38,7 @@ export function updateTurrets(level: Level, _dt: number): void {
     const dy = closest.position!.y - pos.y;
     turretEntity.facing8 = Mth.angleTo8(dx, dy);
 
-    createBullet(turretEntity, 'rifle', dx, dy);
+    createBullet(turretEntity, 'rifle', dx, dy, t.damage);
     t.cooldown = t.delay;
     sound.playSound('shot2', pos.x, pos.y);
   }

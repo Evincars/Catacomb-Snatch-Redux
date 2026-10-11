@@ -8,6 +8,8 @@ export const enum TileType {
   Wall = 6,
   DropTrap = 7,
   PlayerRail = 8,
+  /** Machine/tent pieces of a player's base: solid, but drawn over plain sand. */
+  PlayerBase = 9,
 }
 
 export const TILE_WIDTH = 32;
@@ -54,6 +56,7 @@ export function createTile(type: TileType, imageVariant = 0): TileData {
     case TileType.Sand:
       return { ...base, buildable: true };
     case TileType.UnpassableSand:
+    case TileType.PlayerBase:
       return { ...base, solid: true, passable: false };
     case TileType.Rail:
     case TileType.PlayerRail:

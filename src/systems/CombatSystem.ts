@@ -1,7 +1,8 @@
-import { world } from '../world';
+import { world, Team } from '../world';
 import type { Entity } from '../world';
 import { BB } from '../math/BB';
 import { sound } from '../audio/SoundPlayer';
+import { gameState } from '../game/GameState';
 
 /**
  * Java's Player.hurt: damage only lands while hurtTime is 0, then 25 ticks of
@@ -19,9 +20,10 @@ export function updateCombatTimers(_dt: number): void {
     if (entity.bounceWallTime !== undefined && entity.bounceWallTime > 0) entity.bounceWallTime--;
     if (entity.flashTime !== undefined && entity.flashTime > 0) entity.flashTime--;
 
-    // Health regen (from Mob.doRegenTime)
+    // Health regen (from Mob.doRegenTime). Neutral things (mobs, nests) only heal on hard difficulties.
     const h = entity.health;
     if (!h || h.immortal) continue;
+    if (entity.team === Team.Neutral && !gameState.difficulty.mobRegen) continue;
     if ((entity.hurtTime ?? 0) <= 0 && h.current < h.max) {
       if (entity.regenTimer !== undefined) {
         entity.regenTimer--;
@@ -34,6 +36,9 @@ export function updateCombatTimers(_dt: number): void {
   }
 }
 
+/** Max distance between collision samples along a bullet's path, so fast pellets cannot skip a mob. */
+const SWEEP_STEP = 6;
+
 /** Applies damage from a bullet entity to entities it overlaps. */
 export function updateBulletCollision(_dt: number): void {
   const bullets = world.with('position', 'bullet', 'radius');
@@ -43,42 +48,57 @@ export function updateBulletCollision(_dt: number): void {
     const bpos = bullet.position!;
     const brad = bullet.radius!;
     const bdata = bullet.bullet!;
+    const vel = bullet.velocity;
 
-    const bbb = BB.fromCenter(bpos.x, bpos.y, brad.x, brad.y);
+    // Walk from where the bullet was last tick to where it is now.
+    const travelled = Math.min(vel ? Math.hypot(vel.x, vel.y) : 0, bdata.traveledRange);
+    const steps = Math.max(1, Math.ceil(travelled / SWEEP_STEP));
 
-    for (const target of targets) {
-      if (target === bullet) continue;
-      const tpos = target.position!;
-      const trad = target.radius!;
-      // Test against where the sprite is actually drawn (position minus the
-      // visual offset) so shots connect with what the player is aiming at,
-      // rather than with an invisible box down at the entity's feet.
-      const tbb = BB.fromCenter(
-        tpos.x,
-        tpos.y - (target.yOffset ?? 0),
-        trad.x,
-        trad.y + (target.yOffset ?? 0) / 2,
+    let hit: Entity | null = null;
+    for (let s = 1; s <= steps && !hit; s++) {
+      const back = vel ? 1 - s / steps : 0;
+      const bbb = BB.fromCenter(
+        bpos.x - (vel?.x ?? 0) * back,
+        bpos.y - (vel?.y ?? 0) * back,
+        brad.x,
+        brad.y,
       );
 
-      if (!bbb.intersects(tbb)) continue;
+      for (const target of targets) {
+        if (target === bullet) continue;
+        // Don't hit the shooter or anyone on their side
+        if (world.id(target) === bdata.ownerId) continue;
+        if (bullet.team !== undefined && bullet.team !== Team.Neutral && target.team === bullet.team) continue;
 
-      // Don't hit the shooter
-      const shooterId = bdata.ownerId;
-      if (world.id(target) === shooterId) continue;
+        const tpos = target.position!;
+        const trad = target.radius!;
+        // Test against where the sprite is actually drawn (position minus the
+        // visual offset) so shots connect with what the player is aiming at,
+        // rather than with an invisible box down at the entity's feet.
+        const tbb = BB.fromCenter(
+          tpos.x,
+          tpos.y - (target.yOffset ?? 0),
+          trad.x,
+          trad.y + (target.yOffset ?? 0) / 2,
+        );
 
-      // A shot does not damage a bomb, it lights it.
-      if (target.bomb) {
-        target.bomb.lit = true;
-        world.removeComponent(bullet, 'bullet');
-        world.addComponent(bullet, 'removed', true);
-        break;
+        if (bbb.intersects(tbb)) {
+          hit = target;
+          break;
+        }
       }
-
-      hurtEntity(target, bullet, bdata.damage);
-      world.removeComponent(bullet, 'bullet');
-      world.addComponent(bullet, 'removed', true);
-      break;
     }
+
+    if (!hit) continue;
+
+    // A shot does not damage a bomb, it lights it.
+    if (hit.bomb) {
+      hit.bomb.lit = true;
+    } else {
+      hurtEntity(hit, bullet, bdata.damage);
+    }
+    world.removeComponent(bullet, 'bullet');
+    world.addComponent(bullet, 'removed', true);
   }
 }
 

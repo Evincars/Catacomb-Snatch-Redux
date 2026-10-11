@@ -24,7 +24,7 @@ export function updateLoot(_dt: number): void {
       const dx = lp.x - pp.x;
       const dy = lp.y - pp.y;
       const distSqr = dx * dx + dy * dy;
-      const suckR = player.playerStats.sprint > 0 ? 40 : 20;
+      const suckR = 40;
 
       if (distSqr < suckR * suckR) {
         // Collect

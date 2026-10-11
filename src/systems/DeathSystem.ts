@@ -1,8 +1,20 @@
 import { world } from '../world';
 import type { Level } from '../level/Level';
 import { createLoot } from '../entities/LootFactory';
+import { spawnDeathFx } from '../entities/FxFactory';
 import { sound } from '../audio/SoundPlayer';
+import type { SfxName } from '../audio/SoundPlayer';
 import { xpForLevel } from '../ui/HudPanel';
+import { destroyAttachments } from './BarSystem';
+
+/** Death cries as in each Java mob's getDeathSound(). */
+const DEATH_SOUNDS: Record<string, SfxName> = {
+  bat: 'explosion',
+  scarab: 'enemyDeath1',
+  mummy: 'enemyDeath2',
+  snake: 'enemyDeath2',
+  pharao: 'pharaoDies',
+};
 
 /** Splits a kill's experience across living players and handles level-ups. */
 function awardExperience(points: number): void {
@@ -36,9 +48,11 @@ export function updateDeath(_level: Level, _dt: number): void {
     } else if (entity.spawner) {
       // Clearing a nest is a milestone, so it reads louder than a mob death.
       sound.playSound('explosion', pos.x, pos.y);
+      spawnDeathFx(entity);
       awardExperience(deathPts);
     } else if (entity.ai) {
-      sound.playOneOf(['enemyDeath1', 'enemyDeath2'], pos.x, pos.y);
+      sound.playSound(DEATH_SOUNDS[entity.mobType ?? ''] ?? 'enemyDeath1', pos.x, pos.y);
+      spawnDeathFx(entity);
       awardExperience(deathPts);
     }
 
@@ -55,7 +69,8 @@ export function updateDeath(_level: Level, _dt: number): void {
 
   // Flush removed entities
   for (const entity of world.with('removed')) {
-    if (entity.sprite) entity.sprite.destroy();
+    destroyAttachments(entity);
+    if (entity.sprite) entity.sprite.destroy({ children: true });
     world.remove(entity);
   }
 }

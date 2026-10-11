@@ -21,7 +21,9 @@ import { updateBuffs } from '../systems/BuffSystem';
 import { updateLoot } from '../systems/LootSystem';
 import { updateDeath } from '../systems/DeathSystem';
 import { updateSpawners } from '../systems/SpawnerSystem';
-import { updateRandomSpawner } from '../systems/RandomSpawnerSystem';
+import { updateRandomSpawner, spawnInitialSpawners } from '../systems/RandomSpawnerSystem';
+import { updateFx } from '../systems/FxSystem';
+import { updateBars } from '../systems/BarSystem';
 import { updateInteraction, takeNotices, shopItemNear, carriedByPlayer } from '../systems/InteractionSystem';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { updateTurrets, updateHarvesters, updateBombs } from '../systems/BuildingSystem';
@@ -119,6 +121,8 @@ export class InGameScene implements Scene {
       this.level.getRandomSpawnPoint(Team.One) ??
       { x: 2 * TILE_WIDTH, y: 2 * TILE_HEIGHT };
     this.player = createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
+    // Placed after the player so no nest lands within sight of the start.
+    spawnInitialSpawners(this.level);
 
     updateSprites(this.gameLayer);
     this.buildHud();
@@ -243,8 +247,10 @@ export class InGameScene implements Scene {
     updateHoles(this.level);
     if (this.level.tilesDirty) this.rebuildLevelSprite();
     updateSprites(this.gameLayer);
+    updateFx();
     updateAnimation(dt);
     updateRender(dt);
+    updateBars(this.gameLayer);
 
     const pos = this.player.position;
     const stats = this.player.playerStats;

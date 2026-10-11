@@ -32,6 +32,20 @@ const SHEETS: Record<string, SheetInfo> = {
   muzzle:      { frameWidth: 16, frameHeight: 16 },
   rails:       { frameWidth: 32, frameHeight: 38 },
   bullet:      { frameWidth: 16, frameHeight: 16 },
+  bullet_buckshot: { frameWidth: 16, frameHeight: 16 },
+  plasmaball:  { frameWidth: 16, frameHeight: 16 },
+
+  // Health / sprint bars: 21 fill steps of 32x4.
+  bar_green:           { frameWidth: 32, frameHeight: 4 },
+  bar_green_underlay:  { frameWidth: 32, frameHeight: 4 },
+  bar_outline:         { frameWidth: 32, frameHeight: 4 },
+  sprint_bar:          { frameWidth: 32, frameHeight: 4 },
+
+  fx_enemydie_64:           { frameWidth: 64, frameHeight: 64 },
+  fx_enemydie_tiny_32:      { frameWidth: 32, frameHeight: 32 },
+  fx_bombsplosion_big_32:   { frameWidth: 32, frameHeight: 32 },
+  fx_bombsplosion_small_32: { frameWidth: 32, frameHeight: 32 },
+  fx_dust1_24:              { frameWidth: 24, frameHeight: 24 },
   weapon_list: { frameWidth: 32, frameHeight: 32 },
   dark:        { frameWidth: 32, frameHeight: 32 },
   // 101-frame depletion strips, one row per percentage step.
@@ -98,4 +112,52 @@ export function frameTexture(key: string, col: number, row: number): Texture {
   });
   cache.set(id, tex);
   return tex;
+}
+
+const whiteSheets = new Map<string, Texture>();
+const whiteFrames = new Map<string, Texture>();
+
+/** Flat-white copy of a sheet with identical alpha, so a tint paints the shape one solid colour (Java's colorBlit). */
+function whiteSheet(key: string): Texture | null {
+  const hit = whiteSheets.get(key);
+  if (hit) return hit;
+
+  const base = getTexture(key);
+  const resource = base.source?.resource as CanvasImageSource | undefined;
+  if (!resource || base.width === 0) return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = base.source.pixelWidth;
+  canvas.height = base.source.pixelHeight;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(resource, 0, 0);
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const tex = Texture.from(canvas);
+  whiteSheets.set(key, tex);
+  return tex;
+}
+
+/** White silhouette of the region of `key` covered by `frame`. */
+export function whiteFrame(key: string, frame: Rectangle): Texture {
+  const id = `${key}:${frame.x}:${frame.y}:${frame.width}:${frame.height}`;
+  const hit = whiteFrames.get(id);
+  if (hit) return hit;
+
+  const sheet = whiteSheet(key);
+  if (!sheet) return Texture.EMPTY;
+
+  const tex = new Texture({
+    source: sheet.source,
+    frame: new Rectangle(frame.x, frame.y, frame.width, frame.height),
+  });
+  whiteFrames.set(id, tex);
+  return tex;
+}
+
+export function whiteFrameTexture(key: string, col: number, row: number): Texture {
+  const base = frameTexture(key, col, row);
+  return base === Texture.EMPTY ? Texture.EMPTY : whiteFrame(key, base.frame);
 }

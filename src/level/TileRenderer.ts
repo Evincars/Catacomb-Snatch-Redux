@@ -21,6 +21,7 @@ function floorImageIndex(type: TileType, variant: number): number {
   switch (type) {
     case TileType.Hole:           return 4;
     case TileType.Sand:           return 5;
+    case TileType.PlayerBase:     return 5;
     case TileType.UnpassableSand: return 6;
     default:                      return variant & 3;
   }

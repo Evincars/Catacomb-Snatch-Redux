@@ -120,13 +120,21 @@ export function updateMovement(level: Level, _dt: number): void {
 
     let spd = entity.speed ?? 1.0;
 
-    // Holding shift drains the sprint meter for extra speed; it refills when idle.
-    const sprinting = isActionDown('sprint') && playerStats.sprint > 0 && (pi.up || pi.down || pi.left || pi.right);
-    if (sprinting) {
-      spd *= 1.6;
-      playerStats.sprint = Math.max(0, playerStats.sprint - 1);
-    } else if (playerStats.sprint < playerStats.maxSprint) {
-      playerStats.sprint = Math.min(playerStats.maxSprint, playerStats.sprint + 0.35);
+    // Java's sprint: holding the key burns up to maxSprint ticks at 1.5x speed (1.0x
+    // while carrying), then locks out until the key is released. The meter refills
+    // one tick at a time whenever the player is not sprinting.
+    const moving = pi.up || pi.down || pi.left || pi.right;
+    const sprintHeld = isActionDown('sprint');
+    if (!sprintHeld) playerStats.sprintLocked = false;
+
+    playerStats.sprinting = false;
+    if (moving && sprintHeld && !playerStats.sprintLocked && playerStats.sprint < playerStats.maxSprint) {
+      playerStats.sprinting = true;
+      playerStats.sprint++;
+      spd *= entity.carryingId !== undefined ? 1.0 : 1.5;
+    } else {
+      if (moving && sprintHeld) playerStats.sprintLocked = true;
+      if (playerStats.sprint > 0) playerStats.sprint--;
     }
 
     if (pi.up)    vel.y -= spd;
@@ -134,7 +142,6 @@ export function updateMovement(level: Level, _dt: number): void {
     if (pi.left)  vel.x -= spd;
     if (pi.right) vel.x += spd;
 
-    const moving = pi.up || pi.down || pi.left || pi.right;
     entity.walkTime = moving ? (entity.walkTime ?? 0) + 1 : 0;
 
     // Aim at the cursor, converting from screen space to world space.

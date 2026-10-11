@@ -1,5 +1,5 @@
 import { World } from 'miniplex';
-import type { Sprite, Container } from 'pixi.js';
+import type { Sprite, Container, Text } from 'pixi.js';
 
 export const enum Team {
   Neutral = 0,
@@ -59,6 +59,29 @@ export type Entity = {
   yOffset?: number;
   flashTime?: number;
   highlight?: boolean;
+  /** Mob kind (`bat`, `mummy`, ...), used to pick death effects and spawn limits. */
+  mobType?: string;
+  /** Shows a depleting health bar this many px below the feet once damaged. */
+  healthBarOffset?: number;
+  /** Runtime display objects for the health bar; owned by BarSystem. */
+  healthBar?: { container: Container; fill: Sprite };
+  sprintBar?: Sprite;
+  /** Solid-colour copy of `sprite` laid over it for hit flashes. */
+  hurtOverlay?: Sprite;
+  /** Cost text under a shop stall. */
+  priceLabel?: Text;
+  /** Short-lived animated sprite (muzzle flash, death blast) that removes itself when done. */
+  fx?: {
+    age: number;
+    duration: number;
+    frames: number;
+    /** Steps through frames every tick instead of spreading them over `duration`. */
+    cycle?: boolean;
+    scale?: number;
+    /** Entity whose y fixes draw order, so the effect can sit just behind or in front of it. */
+    orderId?: number;
+    orderBias?: number;
+  };
 
   // --- animation ---
   animation?: {
@@ -87,11 +110,13 @@ export type Entity = {
     score: number;
     level: number;
     exp: number;
+    /** Ticks spent sprinting; refills one per tick while not sprinting (Java's timeSprint). */
     sprint: number;
     maxSprint: number;
-    muzzleTicks: number;
-    muzzleX: number;
-    muzzleY: number;
+    /** Set when the meter fills; sprinting stays off until the key is released. */
+    sprintLocked: boolean;
+    /** True on ticks where the player is actually sprinting (aim error doubles). */
+    sprinting: boolean;
   };
 
   // --- weapon ---
@@ -118,6 +143,10 @@ export type Entity = {
     freezeTime: number;
     range: number;
     traveledRange: number;
+    /** Damage lost per tick down to a floor of 0.5 (shotgun pellets). */
+    damageFalloff?: number;
+    /** Picks one of this many sheet frames at random each tick (plasma balls). */
+    randomFrames?: number;
   };
 
   // --- building (harvesters, turrets, bombs) ---

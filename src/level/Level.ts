@@ -8,6 +8,9 @@ export type SpawnPoint = { x: number; y: number };
 /** How far a wall's collision box rises above its tile (Java WallTile.addClipBBs). */
 const WALL_CLIP_RISE = 6;
 
+/** Pixels a player-base tile's collision box is pulled in from each side. */
+const BASE_CLIP_INSET = 5;
+
 /** A decorative piece of a player's home base, drawn over the floor. */
 export type BaseTile = {
   tileX: number;
@@ -168,11 +171,13 @@ export class Level {
           // Walls stand 56px tall, so Java extends their box 6px above the tile;
           // without this you can walk up into the base of a wall.
           const topInset = !tile || tile.type === TileType.Wall ? WALL_CLIP_RISE : 0;
+          // Base pieces are slightly smaller than their tile (Java PlayerBaseLeft.addClipBBs).
+          const sideInset = tile?.type === TileType.PlayerBase ? BASE_CLIP_INSET : 0;
           result.push(new BB(
-            tx * TILE_WIDTH,
-            ty * TILE_HEIGHT - topInset,
-            (tx + 1) * TILE_WIDTH,
-            (ty + 1) * TILE_HEIGHT,
+            tx * TILE_WIDTH + sideInset,
+            ty * TILE_HEIGHT - topInset + sideInset,
+            (tx + 1) * TILE_WIDTH - sideInset,
+            (ty + 1) * TILE_HEIGHT - sideInset,
           ));
         }
       }
@@ -196,7 +201,8 @@ export class Level {
   getRandomSpawnPoint(team: Team): SpawnPoint | null {
     const list = team === Team.One ? this.spawnPointsP1 : this.spawnPointsP2;
     if (list.length === 0) return null;
-    return list[Math.floor(Math.random() * list.length)];
+    // Java draws nextInt(size - 1), so the last point is never chosen.
+    return list[Math.floor(Math.random() * Math.max(1, list.length - 1))];
   }
 
   canPlayersSpawn(): boolean {

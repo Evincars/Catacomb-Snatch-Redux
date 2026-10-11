@@ -66,6 +66,7 @@ export const ASSETS: AssetManifest = {
     fx_bombsplosion_big_32:   '/art/effects/fx_bombsplosion_big_32.png',
     fx_bombsplosion_small_32: '/art/effects/fx_bombsplosion_small_32.png',
     fx_enemydie_64:           '/art/effects/fx_enemydie_64.png',
+    fx_enemydie_tiny_32:      '/art/effects/fx_enemydie_tiny_32.png',
     fx_dust1_24:              '/art/effects/fx_dust1_24.png',
     fx_dust2_12:              '/art/effects/fx_dust2_12.png',
     fx_steam1_24:             '/art/effects/fx_steam1_24.png',

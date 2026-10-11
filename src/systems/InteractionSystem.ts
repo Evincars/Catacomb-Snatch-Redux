@@ -3,6 +3,7 @@ import type { Entity, ShopKind } from '../world';
 import { createBuilding } from '../entities/BuildingFactory';
 import type { BuildingType } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
+import { WEAPON_STATS } from '../entities/WeaponStats';
 import { sound } from '../audio/SoundPlayer';
 import { wasUsePressed } from './InputSystem';
 import type { Level } from '../level/Level';
@@ -15,12 +16,6 @@ const INTERACT_REACH = 30;
 const CARRY_OFFSET_Y = 20;
 
 const WEAPON_KINDS: ShopKind[] = ['rifle', 'shotgun', 'raygun'];
-
-const WEAPON_STATS: Record<string, { cooldown: number }> = {
-  rifle:   { cooldown: 15 },
-  shotgun: { cooldown: 28 },
-  raygun:  { cooldown: 10 },
-};
 
 export type Notice = { text: string; ticks: number };
 const notices: Notice[] = [];
