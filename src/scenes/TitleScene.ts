@@ -5,6 +5,7 @@ import type { SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
+import { gameState } from '../game/GameState';
 import { sound } from '../audio/SoundPlayer';
 
 const GW = GAME_WIDTH;
@@ -32,6 +33,7 @@ export class TitleScene implements Scene {
     ];
 
     const BTN_W = 248;
+    const debugLabel = () => `Debug: ${gameState.debug ? 'On' : 'Off'}`;
     const startY = 196;
     menuItems.forEach(({ label, action }, i) => {
       const btn = new PixelButton(label, BTN_W, 30);
@@ -41,6 +43,17 @@ export class TitleScene implements Scene {
       this.buttons.push(btn);
       this.container.addChild(btn);
     });
+
+    // Testing aid: start every game with a pile of coins.
+    const debug = new PixelButton(debugLabel(), BTN_W, 30);
+    debug.x = (GW - BTN_W) / 2;
+    debug.y = startY + menuItems.length * 40;
+    debug.onPress = () => {
+      gameState.debug = !gameState.debug;
+      debug.setText(debugLabel());
+    };
+    this.buttons.push(debug);
+    this.container.addChild(debug);
 
     // Version label
     const ver = makeText('v0.1.0', 0xaaaaaa, 8, 'right');

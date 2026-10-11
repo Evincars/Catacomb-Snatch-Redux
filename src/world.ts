@@ -65,7 +65,7 @@ export type Entity = {
 
   // --- rendering ---
   /** Declares what this entity looks like; SpriteSystem turns it into a `sprite`. */
-  visual?: { sheet: string; col?: number; row?: number };
+  visual?: { sheet: string; col?: number; row?: number; scale?: number };
   sprite?: Sprite;
   container?: Container;
   yOffset?: number;
@@ -132,6 +132,8 @@ export type Entity = {
     maxSprint: number;
     /** Set when the meter fills; sprinting stays off until the key is released. */
     sprintLocked: boolean;
+    /** Ticks since the player last fired; a pause long enough triggers coin harvesting. */
+    restTicks: number;
     /** True on ticks where the player is actually sprinting (aim error doubles). */
     sprinting: boolean;
   };
@@ -157,8 +159,10 @@ export type Entity = {
     velY: number;
     /** Distance at which a nearby player starts drawing the coin in. */
     suckRadius: number;
-    /** Current glide speed toward a player, ramping up the longer the coin is pulled. */
+    /** Current glide speed toward a player; zero until harvesting locks the coin on. */
     glide: number;
+    /** Ticks since the coin dropped; it vanishes once the difficulty's lifespan is up. */
+    age: number;
   };
 
   // --- bullet ---
@@ -229,6 +233,8 @@ export type Entity = {
     path?: Array<{ x: number; y: number }>;
     repathIn?: number;
     retargetIn?: number;
+    /** Ticks until a ranged mob spits again. */
+    shootIn?: number;
   };
 
   // --- spawner ---

@@ -107,14 +107,9 @@ export function spawnSpentCoin(owner: Entity): void {
   });
 }
 
-const DUST_STONE = { sheet: 'fx_dust1_24', frames: 10, scale: 0.5 };
-const DUST_SAND = { sheet: 'fx_dust2_12', frames: 10, scale: 1 };
-
-/** A puff of dust at the feet of a runner, drawn just behind them. */
-export function spawnDust(owner: Entity, x: number, y: number, onSand: boolean): void {
-  const kind = onSand ? DUST_SAND : DUST_STONE;
-  spawnFx(x, y, kind.sheet, kind.frames, 22, {
-    scale: kind.scale,
+/** A puff of sand-coloured dust at the feet of a runner, drawn just behind them. */
+export function spawnDust(owner: Entity, x: number, y: number): void {
+  spawnFx(x, y, 'fx_dust2_12', 10, 22, {
     yOffset: 2,
     orderId: world.id(owner),
     orderBias: -0.5,

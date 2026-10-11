@@ -15,6 +15,7 @@ export function updateSprites(gameLayer: Container): void {
     const v = entity.visual!;
     const sprite = new Sprite(frameTexture(v.sheet, v.col ?? 0, v.row ?? 0));
     sprite.anchor.set(0.5, 0.5);
+    if (v.scale) sprite.scale.set(v.scale);
     gameLayer.addChild(sprite);
     world.addComponent(entity, 'sprite', sprite);
 

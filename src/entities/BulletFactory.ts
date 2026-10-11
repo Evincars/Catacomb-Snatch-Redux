@@ -27,7 +27,7 @@ const BULLET_CONFIGS: Record<BulletType, BulletConfig> = {
   ray:     { damage: 1.5, speed: 5,  range: 250, freezeTime: 5,  radius: { x: 4, y: 4 }, sheet: 'plasmaball', directional: false, randomFrames: 8, yOffset: 2 },
   cannon:  { damage: 8,   speed: 4,  range: 300, freezeTime: 20, radius: { x: 5, y: 5 }, sheet: 'bullet', directional: true, yOffset: 2 },
   flame:   { damage: 1,   speed: 3,  range: 80,  freezeTime: 2,  radius: { x: 3, y: 3 }, sheet: 'bullet', directional: true, yOffset: 2 },
-  poison:  { damage: 1,   speed: 4,  range: 150, freezeTime: 0,  radius: { x: 2, y: 2 }, sheet: 'bullet', directional: true, yOffset: 2 },
+  poison:  { damage: 1,   speed: 2.5, range: 200, freezeTime: 0, radius: { x: 3, y: 3 }, sheet: 'bullet_poison', directional: true, yOffset: 6 },
   melee:   { damage: 4,   speed: 1,  range: 32,  freezeTime: 10, radius: { x: 8, y: 8 }, sheet: 'bullet', directional: true, yOffset: 2 },
 };
 

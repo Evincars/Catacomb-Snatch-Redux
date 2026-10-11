@@ -1,6 +1,6 @@
 import { world } from '../world';
 import type { Level } from '../level/Level';
-import { createLoot } from '../entities/LootFactory';
+import { dropLoot } from '../entities/LootFactory';
 import { spawnDeathFx } from '../entities/FxFactory';
 import { sound } from '../audio/SoundPlayer';
 import type { SfxName } from '../audio/SoundPlayer';
@@ -57,11 +57,7 @@ export function updateDeath(_level: Level, _dt: number): void {
     }
 
     if (deathPts > 0) {
-      const loots = 4;
-      for (let i = 0; i < loots; i++) {
-        const angle = (i / loots) * Math.PI * 2;
-        createLoot(pos.x, pos.y, Math.cos(angle), Math.sin(angle), deathPts);
-      }
+      dropLoot(pos.x, pos.y, deathPts);
     }
 
     world.addComponent(entity, 'removed', true);

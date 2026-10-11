@@ -4,6 +4,7 @@ import { updateInput } from './InputSystem';
 import { updateTargeting } from './TargetingSystem';
 import { updateInteraction } from './InteractionSystem';
 import { updateAI } from './AISystem';
+import { updateMobWeapons } from './MobWeaponSystem';
 import { updateWeapons } from './WeaponSystem';
 import { updateTurrets, updateHarvesters, updateBombs } from './BuildingSystem';
 import { updateMovement } from './MovementSystem';
@@ -43,9 +44,10 @@ export const SIMULATION: readonly System[] = [
   ({ level }) => updateInteraction(level),
   ({ level, dt }) => updateAI(level, dt),
   ({ dt }) => updateWeapons(dt),
+  ({ level }) => updateMobWeapons(level),
   ({ level, dt }) => updateTurrets(level, dt),
   ({ level, dt }) => updateMovement(level, dt),
-  ({ level }) => updateDust(level),
+  () => updateDust(),
   () => updateEphemerals(),
   ({ level, dt }) => updateBullets(level, dt),
   ({ dt }) => updateCombatTimers(dt),

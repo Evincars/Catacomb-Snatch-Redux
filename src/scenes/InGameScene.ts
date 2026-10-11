@@ -21,7 +21,7 @@ import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { takeNotices, clearNotices } from '../game/Notices';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
-import { gameState } from '../game/GameState';
+import { gameState, DEBUG_COINS } from '../game/GameState';
 import { sound } from '../audio/SoundPlayer';
 import { camera, GAME_WIDTH, GAME_HEIGHT, VIEW_HEIGHT } from '../render/Camera';
 import { getTexture } from '../assets/AssetLoader';
@@ -118,6 +118,7 @@ export class InGameScene implements Scene {
       this.level.getRandomSpawnPoint(Team.One) ??
       { x: 2 * TILE_WIDTH, y: 2 * TILE_HEIGHT };
     this.player = createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
+    if (gameState.debug) this.player.playerStats!.score = DEBUG_COINS;
     // Placed after the player so no nest lands within sight of the start.
     spawnInitialSpawners(this.level);
 
@@ -221,19 +222,27 @@ export class InGameScene implements Scene {
       { label: 'Resume', action: () => this.togglePause() },
       { label: 'Help', action: () => this.manager.pushOverlay('how_to_play') },
       { label: 'Options', action: () => this.manager.pushOverlay('options') },
+      { label: 'Debug', action: () => this.enableDebug() },
       { label: 'Main', action: () => this.manager.goto('title') },
       { label: 'Exit Game', action: () => this.exitGame() },
     ];
 
     const BTN_W = 220;
-    const BTN_H = 28;
+    const BTN_H = 26;
     entries.forEach(({ label, action }, i) => {
       const button = new PixelButton(label, BTN_W, BTN_H);
       button.x = (GAME_WIDTH - BTN_W) / 2;
-      button.y = 120 + i * (BTN_H + 12);
+      button.y = 100 + i * (BTN_H + 4);
       button.onPress = action;
       this.overlay.addChild(button);
     });
+  }
+
+  /** Testing aid: fills the purse and stops the coin target from ending the run. */
+  private enableDebug(): void {
+    gameState.debug = true;
+    this.player.playerStats!.score = DEBUG_COINS;
+    this.togglePause();
   }
 
   /** Browsers only allow closing tabs a script opened, so fall back to the main menu. */
@@ -287,7 +296,7 @@ export class InGameScene implements Scene {
     // The player entity is removed by DeathSystem once health hits zero.
     if (!health || health.current <= 0 || this.player.removed) {
       this.end(0);
-    } else if (stats && stats.score >= this.level.targetScore) {
+    } else if (!gameState.debug && stats && stats.score >= this.level.targetScore) {
       this.end(Team.One);
     }
   }

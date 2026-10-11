@@ -69,6 +69,8 @@ export function updateBulletCollision(_dt: number): void {
         // Don't hit the shooter or anyone on their side
         if (world.id(target) === bdata.ownerId) continue;
         if (bullet.team !== undefined && bullet.team !== Team.Neutral && target.team === bullet.team) continue;
+        // Shots from neutral mobs only ever find players, never other mobs or nests.
+        if (bullet.team === Team.Neutral && !target.playerInput) continue;
 
         const tpos = target.position!;
         const trad = target.radius!;
@@ -94,6 +96,8 @@ export function updateBulletCollision(_dt: number): void {
     // A shot does not damage a bomb, it lights it.
     if (hit.bomb) {
       hit.bomb.lit = true;
+    } else if (hit.playerInput) {
+      if ((hit.hurtTime ?? 0) <= 0) hurtPlayer(hit, bullet, bdata.damage);
     } else {
       hurtEntity(hit, bullet, bdata.damage);
     }
@@ -102,7 +106,7 @@ export function updateBulletCollision(_dt: number): void {
   }
 }
 
-/** Mobs have no ranged attack; they damage players by walking into them. */
+/** Most mobs hurt players by walking into them; snakes also spit (see MobWeaponSystem). */
 export function updateContactDamage(_dt: number): void {
   const mobs = world.with('position', 'radius', 'ai', 'health');
   const players = world.with('position', 'radius', 'playerInput', 'health');

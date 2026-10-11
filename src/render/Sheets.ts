@@ -43,6 +43,7 @@ const SHEETS: Record<string, SheetInfo> = {
   rails:       { frameWidth: 32, frameHeight: 38 },
   bullet:      { frameWidth: 16, frameHeight: 16 },
   bullet_buckshot: { frameWidth: 16, frameHeight: 16 },
+  bullet_poison: { frameWidth: 16, frameHeight: 16 },
   plasmaball:  { frameWidth: 16, frameHeight: 16 },
 
   // Health / sprint bars: 21 fill steps of 32x4.

@@ -72,6 +72,7 @@ export function createPlayer(
       sprint: 0,
       maxSprint: 100,
       sprintLocked: false,
+      restTicks: 0,
       sprinting: false,
     },
     weapon: { type: 'rifle', cooldown: WEAPON_STATS.rifle.cooldown, currentCooldown: 0 },

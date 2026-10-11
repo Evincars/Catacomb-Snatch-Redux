@@ -35,12 +35,16 @@ export const LEVELS: LevelInfo[] = [
   { name: 'TheMaze',      path: '/levels/TheMaze.tmx' },
 ];
 
+export const DEBUG_COINS = 99999;
+
 // Mutable singleton, carries choices across scenes
 export const gameState = {
   selectedCharacter: 'lord_lard' as CharacterType,
   difficulty: DIFFICULTIES[1],
   selectedLevel: LEVELS[0],
   winningTeam: 0,
+  /** Debug mode: players start with DEBUG_COINS and the target score cannot end the run. */
+  debug: false,
   // Victory is measured in coins carried, as in the Java GoldRush mode, whose
   // target is 5000. Vanilla's 100 applies to a separate deposited-treasury
   // counter and would end the game before any shop item is affordable.
