@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" alt="Catacomb Snatch Redux" width="800"/>
+  <img src="redux-logo.png" alt="Catacomb Snatch Redux" width="800"/>
 </p>
 
 <br/>
