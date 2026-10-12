@@ -27,6 +27,14 @@ function describe(entity: Entity): Content | null {
   const title = up ? `${tip.title} LV ${up.level}` : tip.title;
   const lines = (tip.lines ?? []).map((text) => ({ text, color: LINE_COLOR }));
 
+  const stash = entity.harvester;
+  if (stash) {
+    lines.push({ text: `Coins: ${stash.collected}/${stash.capacity}`, color: LINE_COLOR });
+    if (entity.targeted && stash.collected > 0) {
+      lines.push({ text: `[${keyLabel('use')}] Take coins`, color: UPGRADE_COLOR });
+    }
+  }
+
   // The upgrade key only works on what the player is actually reaching for.
   if (up && entity.targeted) {
     const cost = upgradeCostOf(entity);

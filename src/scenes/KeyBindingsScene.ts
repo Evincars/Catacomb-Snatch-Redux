@@ -88,6 +88,10 @@ export class KeyBindingsScene implements Scene {
     this.refresh();
   }
 
+  handleEscape(): boolean {
+    return this.capturing !== null;
+  }
+
   private buildColumn(actions: ActionName[], x: number): void {
     actions.forEach((action, i) => {
       const y = TOP + i * ROW_H;

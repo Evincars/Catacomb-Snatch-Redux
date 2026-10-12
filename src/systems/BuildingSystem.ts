@@ -2,10 +2,18 @@ import { world } from '../world';
 import type { Entity } from '../world';
 import type { Level } from '../level/Level';
 import { createBullet } from '../entities/BulletFactory';
+import { pickupSound } from '../entities/LootFactory';
+import { spawnSteam, spawnTakeFx } from '../entities/FxFactory';
 import { hurtEntity } from './CombatSystem';
 import { Mth } from '../math/Mth';
 import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { sound } from '../audio/SoundPlayer';
+
+/** Turret barrels sit this far above its feet, and this far out along the aim. */
+const BARREL_HEIGHT = 13;
+const BARREL_REACH = 8;
+/** Distance between the two barrels of an upgraded turret. */
+const TWIN_SPACING = 5;
 
 /** Turrets shoot the nearest mob in range that they have line of sight to. */
 export function updateTurrets(level: Level, _dt: number): void {
@@ -36,40 +44,84 @@ export function updateTurrets(level: Level, _dt: number): void {
 
     const dx = closest.position!.x - pos.x;
     const dy = closest.position!.y - pos.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = dx / len;
+    const ny = dy / len;
     turretEntity.facing8 = Mth.angleTo8(dx, dy);
 
-    createBullet(turretEntity, 'rifle', dx, dy, t.damage);
+    // From level two the head carries two barrels, side by side across the aim.
+    const barrels = (turretEntity.upgradable?.level ?? 1) >= 2 ? [-1, 1] : [0];
+    for (const side of barrels) {
+      const bullet = createBullet(turretEntity, 'rifle', dx, dy, t.damage);
+      bullet.position!.x = pos.x + nx * BARREL_REACH - ny * side * (TWIN_SPACING / 2);
+      bullet.position!.y = pos.y - BARREL_HEIGHT + ny * BARREL_REACH + nx * side * (TWIN_SPACING / 2);
+    }
     t.cooldown = t.delay;
     sound.playSound('shot2', pos.x, pos.y);
   }
 }
 
-/** Vacuums loot within range toward the harvester and banks its value. */
+/** Distance from which a harvester takes a coin in. */
+const TAKE_DISTANCE = 16;
+/** Coins moved to the player per transfer while emptying, and ticks between transfers. */
+const EMPTY_AMOUNT = 50;
+const EMPTY_INTERVAL = 3;
+const WORKING_TICKS = 30;
+
+/**
+ * Harvesters pull loose coins toward themselves and store them, animate while
+ * working, puff steam, and hand their stash to a player who empties them.
+ */
 export function updateHarvesters(_dt: number): void {
-  for (const harvesterEntity of world.with('position', 'harvester')) {
-    if (harvesterEntity.carriedBy !== undefined) continue;
-    if ((harvesterEntity.health?.current ?? 1) <= 0) continue;
+  for (const entity of world.with('position', 'harvester')) {
+    if (entity.carriedBy !== undefined) continue;
+    if ((entity.health?.current ?? 1) <= 0) continue;
 
-    const h = harvesterEntity.harvester!;
-    const pos = harvesterEntity.position!;
+    const h = entity.harvester!;
+    const pos = entity.position!;
+    h.time++;
+    h.suckTicks--;
 
-    for (const lootEntity of world.with('position', 'loot')) {
-      const lp = lootEntity.position!;
-      const dx = lp.x - pos.x;
-      const dy = lp.y - pos.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > h.radius) continue;
-
-      if (dist < 8) {
-        h.collected += lootEntity.loot!.value;
-        world.removeComponent(lootEntity, 'loot');
-        world.addComponent(lootEntity, 'removed', true);
-        sound.playSound('smallCoin', lp.x, lp.y);
+    if (h.emptying && h.time % EMPTY_INTERVAL === 0) {
+      const player = h.emptyingPlayerId !== undefined ? world.entity(h.emptyingPlayerId) : undefined;
+      if (!player?.playerStats || h.collected <= 0) {
+        h.emptying = false;
       } else {
-        lootEntity.loot!.velX -= (dx / dist) * 1.2;
-        lootEntity.loot!.velY -= (dy / dist) * 1.2;
+        const amount = Math.min(EMPTY_AMOUNT, h.collected);
+        h.collected -= amount;
+        player.playerStats.score += amount;
+        spawnTakeFx(player);
+        sound.playSound('smallCoin', pos.x, pos.y);
       }
     }
+
+    if (h.collected < h.capacity) {
+      const suckPow = (h.radius - 40) / 60;
+      for (const coin of world.with('position', 'loot')) {
+        if (coin.removed || coin.loot!.glide > 0) continue;
+        const lp = coin.position!;
+        const dx = pos.x - lp.x;
+        const dy = pos.y - lp.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist >= h.radius) continue;
+
+        h.suckTicks = WORKING_TICKS;
+        if (dist < TAKE_DISTANCE) {
+          h.collected += coin.loot!.value;
+          sound.playSound(pickupSound(coin.loot!.kind), lp.x, lp.y);
+          world.removeComponent(coin, 'loot');
+          world.addComponent(coin, 'removed', true);
+          continue;
+        }
+        const pull = (1 - dist / h.radius) * 1.6 * (suckPow * 0.5 + 0.5);
+        coin.loot!.velX += (dx / dist) * pull;
+        coin.loot!.velY += (dy / dist) * pull;
+      }
+    }
+
+    const working = h.suckTicks >= 0;
+    entity.frame = working ? 4 + ((h.time >> 3) % 5) : (h.time >> 3) % 4;
+    if (Math.random() < (working ? 0.05 : 0.002)) spawnSteam(pos.x - 6 + Math.random() * 8 - Math.random() * 8, pos.y - 16);
   }
 }
 

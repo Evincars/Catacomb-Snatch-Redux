@@ -198,6 +198,12 @@ export class Level {
     else if (team === Team.Two) this.spawnPointsP2.push({ x, y });
   }
 
+  /** Replaces a team's spawn points. */
+  setSpawnPoints(team: Team, points: SpawnPoint[]): void {
+    if (team === Team.One) this.spawnPointsP1 = points;
+    else if (team === Team.Two) this.spawnPointsP2 = points;
+  }
+
   getRandomSpawnPoint(team: Team): SpawnPoint | null {
     const list = team === Team.One ? this.spawnPointsP1 : this.spawnPointsP2;
     if (list.length === 0) return null;

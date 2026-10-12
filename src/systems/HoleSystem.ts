@@ -43,7 +43,7 @@ function respawnPlayer(player: Entity, level: Level): void {
     for (let i = 0; remaining > 0 && i < 8; i++) {
       const value = Math.max(1, Math.floor(remaining / 2));
       const dir = Math.random() * Math.PI * 2;
-      createLoot(pos.x, pos.y, Math.cos(dir), Math.sin(dir), value);
+      createLoot(pos.x, pos.y, Math.cos(dir), Math.sin(dir), value, true);
       remaining -= value;
     }
   }

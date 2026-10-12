@@ -59,6 +59,28 @@ export function updateBars(gameLayer: Container): void {
     bar.container.visible = true;
   }
 
+  // A harvester's bar fills with the coins it has stored and turns orange when nearly full.
+  for (const entity of world.with('position', 'harvester', 'coinBarOffset')) {
+    const { collected, capacity } = entity.harvester!;
+    let bar = entity.coinBar;
+    if (entity.removed) {
+      if (bar) bar.container.visible = false;
+      continue;
+    }
+    if (!bar) {
+      bar = createHealthBar(gameLayer);
+      world.addComponent(entity, 'coinBar', bar);
+    }
+
+    const pos = entity.position!;
+    bar.fill.texture = whiteFrameTexture('bar_green', Math.min(BAR_STEPS, Math.trunc((collected * BAR_STEPS) / capacity)), 0);
+    bar.fill.tint = capacity - collected < 500 ? 0xff7200 : 0xffd800;
+    bar.container.x = Math.round(pos.x) - BAR_HALF_WIDTH;
+    bar.container.y = Math.round(pos.y) + entity.coinBarOffset!;
+    bar.container.zIndex = pos.y + 0.5;
+    bar.container.visible = true;
+  }
+
   for (const player of world.with('position', 'playerStats')) {
     const stats = player.playerStats!;
     let bar = player.sprintBar;
@@ -85,6 +107,7 @@ export function updateBars(gameLayer: Container): void {
 /** Frees the display objects a removed entity owned besides its main sprite. */
 export function destroyAttachments(entity: Entity): void {
   entity.healthBar?.container.destroy({ children: true });
+  entity.coinBar?.container.destroy({ children: true });
   entity.sprintBar?.destroy();
   entity.hurtOverlay?.destroy();
   entity.priceLabel?.destroy();

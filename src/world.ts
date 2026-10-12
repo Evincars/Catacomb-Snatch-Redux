@@ -66,6 +66,8 @@ export type Entity = {
   // --- rendering ---
   /** Declares what this entity looks like; SpriteSystem turns it into a `sprite`. */
   visual?: { sheet: string; col?: number; row?: number; scale?: number };
+  /** Sprite column set by a system each tick (harvester animation); SpriteSystem applies it. */
+  frame?: number;
   sprite?: Sprite;
   container?: Container;
   yOffset?: number;
@@ -75,7 +77,10 @@ export type Entity = {
   mobType?: string;
   /** Shows a depleting health bar this many px below the feet once damaged. */
   healthBarOffset?: number;
-  /** Runtime display objects for the health bar; owned by BarSystem. */
+  /** Shows a bar of a harvester's stored coins this many px below the feet. */
+  coinBarOffset?: number;
+  /** Runtime display objects for the bars; owned by BarSystem. */
+  coinBar?: { container: Container; fill: Sprite };
   healthBar?: { container: Container; fill: Sprite };
   sprintBar?: Sprite;
   /** Solid-colour copy of `sprite` laid over it for hit flashes. */
@@ -93,6 +98,8 @@ export type Entity = {
     /** Entity whose y fixes draw order, so the effect can sit just behind or in front of it. */
     orderId?: number;
     orderBias?: number;
+    /** Pixels the effect climbs each tick. */
+    rise?: number;
   };
 
   // --- animation ---
@@ -155,6 +162,8 @@ export type Entity = {
   // --- loot ---
   loot?: {
     value: number;
+    /** Index into LOOT_KINDS, which picks the art and the pickup sound. */
+    kind: number;
     velX: number;
     velY: number;
     /** Distance at which a nearby player starts drawing the coin in. */
@@ -163,6 +172,8 @@ export type Entity = {
     glide: number;
     /** Ticks since the coin dropped; it vanishes once the difficulty's lifespan is up. */
     age: number;
+    /** Ticks it may lie around before vanishing. */
+    life: number;
   };
 
   // --- bullet ---
@@ -221,7 +232,18 @@ export type Entity = {
   /** Explodes when destroyed, damaging nearby mobs. `lit` counts down the fuse. */
   bomb?: { blastRadius: number; blastDamage: number; lit: boolean; fuse: number };
   /** Vacuums up nearby loot. */
-  harvester?: { radius: number; collected: number };
+  harvester?: {
+    radius: number;
+    collected: number;
+    capacity: number;
+    /** Free-running tick counter driving the animation. */
+    time: number;
+    /** Ticks left in which the harvester counts as working (it has just pulled in a coin). */
+    suckTicks: number;
+    /** True while a player is draining its stored coins. */
+    emptying: boolean;
+    emptyingPlayerId?: number;
+  };
   /** 8-way sprite column, for things whose art is directional. */
   facing8?: number;
 

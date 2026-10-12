@@ -2,6 +2,7 @@ import { world } from '../world';
 import type { Entity } from '../world';
 import { sound } from '../audio/SoundPlayer';
 import { gameState } from '../game/GameState';
+import { pickupSound } from '../entities/LootFactory';
 
 /** Drop-burst velocity retained per tick. */
 const LOOT_FRICTION = 0.85;
@@ -12,10 +13,12 @@ const GLIDE_START = 0.6;
 /** Speed gained per tick; coins outrun a sprinting player before long. */
 const GLIDE_ACCEL = 0.18;
 const GLIDE_MAX = 5;
-/** How long the player must stop firing before nearby coins are called in. */
-const REST_TO_HARVEST = 60;
-const BLINK_TICKS = 150;
-const BLINK_PERIOD = 6;
+/** Coins are called in the very tick the player lets go of fire. */
+const REST_TO_HARVEST = 1;
+/** Normal difficulty's coinLifespan; a coin's own life (about 10s) scales with how far the difficulty departs from it. */
+const NORMAL_LIFESPAN = 20;
+const BLINK_TICKS = 180;
+const BLINK_PERIOD = 4;
 
 function nearestPlayer(x: number, y: number, range: number): { player: Entity; dist: number } | null {
   let best: { player: Entity; dist: number } | null = null;
@@ -39,7 +42,7 @@ export function updateLoot(_dt: number): void {
     stats.restTicks = player.playerInput!.shoot ? 0 : stats.restTicks + 1;
   }
 
-  const lifespan = gameState.difficulty.coinLifespan * 60;
+  const lifeScale = gameState.difficulty.coinLifespan / NORMAL_LIFESPAN;
 
   for (const coin of world.with('position', 'loot')) {
     if (coin.removed) continue;
@@ -56,7 +59,7 @@ export function updateLoot(_dt: number): void {
 
     if (!locked) {
       ld.age++;
-      const left = lifespan - ld.age;
+      const left = ld.life * lifeScale - ld.age;
       if (coin.sprite) coin.sprite.visible = left > BLINK_TICKS || Math.floor(left / BLINK_PERIOD) % 2 === 0;
       if (left <= 0) {
         world.removeComponent(coin, 'loot');
@@ -74,7 +77,7 @@ export function updateLoot(_dt: number): void {
 
     if (target.dist < PICKUP_RADIUS) {
       target.player.playerStats!.score += ld.value;
-      sound.playSound(ld.value >= 10 ? 'bigCoin' : 'smallCoin', lp.x, lp.y);
+      sound.playSound(pickupSound(ld.kind), lp.x, lp.y);
       world.removeComponent(coin, 'loot');
       world.addComponent(coin, 'removed', true);
       continue;

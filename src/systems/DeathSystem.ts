@@ -1,7 +1,7 @@
 import { world } from '../world';
 import type { Level } from '../level/Level';
-import { dropLoot } from '../entities/LootFactory';
-import { spawnDeathFx } from '../entities/FxFactory';
+import { dropLoot, spillMoney } from '../entities/LootFactory';
+import { spawnDeathFx, spawnFx } from '../entities/FxFactory';
 import { sound } from '../audio/SoundPlayer';
 import type { SfxName } from '../audio/SoundPlayer';
 import { xpForLevel } from '../ui/HudPanel';
@@ -45,6 +45,14 @@ export function updateDeath(_level: Level, _dt: number): void {
 
     if (entity.playerInput) {
       sound.playSound('death');
+    } else if (entity.turret || entity.harvester) {
+      sound.playSound('explosion', pos.x, pos.y);
+      spawnFx(pos.x, pos.y, 'fx_bombsplosion_small_32', 10, 24, { yOffset: 8 });
+      // A wrecked harvester spills everything it had stored, as in the original.
+      if (entity.harvester && entity.harvester.collected > 0) {
+        spillMoney(pos.x, pos.y, entity.harvester.collected);
+        entity.harvester.collected = 0;
+      }
     } else if (entity.spawner) {
       // Clearing a nest is a milestone, so it reads louder than a mob death.
       sound.playSound('explosion', pos.x, pos.y);

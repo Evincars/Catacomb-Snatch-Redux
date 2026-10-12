@@ -16,6 +16,8 @@ export type SceneFactory = (manager: SceneManager) => Scene;
 export interface Scene {
   container: Container;
   destroy(): void;
+  /** Lets a scene consume Escape for itself (cancelling a prompt); true when it did. */
+  handleEscape?(): boolean;
 }
 
 export class SceneManager {
@@ -69,6 +71,13 @@ export class SceneManager {
     if (!scene) return;
     this.app.stage.removeChild(scene.container);
     scene.destroy();
+  }
+
+  /** Escape on a stacked sub-screen: closes it unless it has something of its own to cancel. */
+  escapeOverlay(): void {
+    const top = this.overlays[this.overlays.length - 1];
+    if (!top || top.handleEscape?.()) return;
+    this.popOverlay();
   }
 
   get hasOverlay(): boolean {

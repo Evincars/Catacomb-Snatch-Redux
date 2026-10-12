@@ -39,6 +39,14 @@ export function updateSprites(gameLayer: Container): void {
     entity.sprite!.texture = frameTexture(v.sheet, v.col, v.row ?? 0);
   }
 
+  // Frames chosen by a system (the harvester's animation) rather than by facing.
+  for (const entity of world.with('visual', 'sprite', 'frame')) {
+    const v = entity.visual!;
+    if (v.col === entity.frame) continue;
+    v.col = entity.frame;
+    entity.sprite!.texture = frameTexture(v.sheet, v.col, v.row ?? 0);
+  }
+
   // Nests crack open through four frames as they lose health.
   for (const nest of world.with('spawner', 'visual', 'sprite', 'health')) {
     const v = nest.visual!;

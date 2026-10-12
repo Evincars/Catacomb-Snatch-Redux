@@ -43,6 +43,8 @@ type PendingShop = { kind: ShopKind; team: Team; tx: number; ty: number };
 
 const WEAPON_STALLS: ShopKind[] = ['shotgun', 'raygun'];
 const GEAR_STALLS: ShopKind[] = ['turret', 'harvester', 'bomb'];
+/** Pixels between neighbouring gear stalls. */
+const GEAR_SPACING = 44;
 
 /**
  * Arranges each base around its spawn flag: weapons stand in a column on the
@@ -64,15 +66,28 @@ function layoutSpawnAreas(level: Level, shops: PendingShop[], costMod: number): 
     }
 
     const minX = Math.min(...flag.map((t) => t.tileX));
+    const maxFlagX = Math.max(...flag.map((t) => t.tileX));
     const minY = Math.min(...flag.map((t) => t.tileY));
     const maxY = Math.max(...flag.map((t) => t.tileY));
 
     WEAPON_STALLS.filter((k) => teamShops.some((s) => s.kind === k)).forEach((kind, i) =>
       place(minX - 1, minY + 1 + i, kind, team),
     );
-    GEAR_STALLS.filter((k) => teamShops.some((s) => s.kind === k)).forEach((kind, i) =>
-      place(minX + i, maxY + 1, kind, team),
+    // The gear row is centred under the flag, as in the original, rather than starting at its edge.
+    const flagCentreX = ((minX + maxFlagX + 1) * TILE_WIDTH) / 2;
+    const gear = GEAR_STALLS.filter((k) => teamShops.some((s) => s.kind === k));
+    gear.forEach((kind, i) =>
+      createShopItem(
+        flagCentreX + (i - (gear.length - 1) / 2) * GEAR_SPACING,
+        (maxY + 1) * TILE_HEIGHT + TILE_HEIGHT / 2,
+        kind,
+        team,
+        costMod,
+      ),
     );
+
+    // Players start at the middle of the flag's top row, in line with the rails.
+    level.setSpawnPoints(team, [{ x: flagCentreX, y: minY * TILE_HEIGHT + TILE_HEIGHT / 2 }]);
 
     const base = level.baseTiles.filter((t) => t.team === team);
     const x0 = Math.min(minX, ...base.map((t) => t.tileX));

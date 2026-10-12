@@ -69,8 +69,10 @@ export class InGameScene implements Scene {
     initInput(this.app.canvas as HTMLCanvasElement);
 
     this.onKeyDown = (e: KeyboardEvent) => {
-      // Settings opened from the pause menu own the keyboard until they close.
-      if (e.code === 'Escape' && !this.finished && !this.manager.hasOverlay) this.togglePause();
+      if (e.code !== 'Escape' || this.finished) return;
+      // Escape backs out of a sub-screen first, and only then closes the pause menu.
+      if (this.manager.hasOverlay) this.manager.escapeOverlay();
+      else this.togglePause();
     };
     window.addEventListener('keydown', this.onKeyDown);
 

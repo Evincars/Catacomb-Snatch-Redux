@@ -20,6 +20,7 @@ export function updateFx(): void {
       entity.sprite.scale.set(fx.scale);
     }
 
+    if (fx.rise) entity.position!.y -= fx.rise;
     if (++fx.age >= fx.duration) world.addComponent(entity, 'removed', true);
   }
 }

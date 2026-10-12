@@ -21,6 +21,9 @@ type MobConfig = {
   regenInterval?: number;
 };
 
+/** The original's health values are too fragile for this port's hit detection, so mobs get twice as much. */
+const MOB_HEALTH_BOOST = 2;
+
 /** Values taken verbatim from the original's resources/constants/constants.txt. */
 const MOB_CONFIGS: Record<MobType, MobConfig> = {
   bat: {
@@ -74,7 +77,7 @@ export function createMob(
 ): Entity {
   const cfg = MOB_CONFIGS[type as MobType] ?? MOB_CONFIGS.mummy;
   const difficulty = gameState.difficulty;
-  const health = cfg.health * difficulty.healthMod;
+  const health = cfg.health * MOB_HEALTH_BOOST * difficulty.healthMod;
   const regenInterval = cfg.regenInterval ?? difficulty.regenInterval;
 
   return world.add({

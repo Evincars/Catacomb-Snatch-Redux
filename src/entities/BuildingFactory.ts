@@ -15,39 +15,44 @@ type BuildingConfig = {
 
 /** Health values and art match the Java Building subclasses. */
 const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
-  harvester: { health: 10, radius: { x: 10, y: 10 }, yOffset: 22, sheet: 'harvester' },
-  turret:    { health: 10, radius: { x: 10, y: 10 }, yOffset: 10, sheet: 'turret' },
-  bomb:      { health: 8,  radius: { x: 8,  y: 8  }, yOffset: 7,  sheet: 'bomb' },
+  harvester: { health: 20, radius: { x: 10, y: 10 }, yOffset: 22, sheet: 'harvester' },
+  turret:    { health: 20, radius: { x: 10, y: 10 }, yOffset: 10, sheet: 'turret' },
+  bomb:      { health: 5,  radius: { x: 8,  y: 8  }, yOffset: 7,  sheet: 'bomb' },
   chest:     { health: 10, radius: { x: 8,  y: 8  }, yOffset: 8,  sheet: 'chest_small' },
   treasure:  { health: 50, radius: { x: 10, y: 10 }, yOffset: 12, sheet: 'treasure' },
   shop:      { health: 30, radius: { x: 10, y: 10 }, yOffset: 8 },
 };
 
 type TurretTier = { radius: number; delay: number; damage: number };
-type HarvesterTier = { radius: number };
+/** `radius` is how far the harvester reaches: the original's suck radius plus the 40px every pickup is always drawn from. */
+type HarvesterTier = { radius: number; capacity: number };
 
 type UpgradeTrack<T> = {
   /** Sprite sheet for each level, lowest first. */
   sheets: string[];
-  /** Price of moving from level i + 1 to level i + 2. */
+  /** Price of moving from level i + 1 to level i + 2 (the original's 1000 and 3000). */
   costs: number[];
   tiers: T[];
 };
 
 const TURRET_UPGRADES: UpgradeTrack<TurretTier> = {
   sheets: ['turret', 'turret2', 'turret3'],
-  costs: [200, 400],
+  costs: [1000, 3000],
   tiers: [
     { radius: 3 * TILE_WIDTH, delay: 24, damage: 1 },
-    { radius: 4 * TILE_WIDTH, delay: 17, damage: 2 },
-    { radius: 5 * TILE_WIDTH, delay: 11, damage: 3 },
+    { radius: 5 * TILE_WIDTH, delay: 21, damage: 2 },
+    { radius: 7 * TILE_WIDTH, delay: 18, damage: 3 },
   ],
 };
 
 const HARVESTER_UPGRADES: UpgradeTrack<HarvesterTier> = {
   sheets: ['harvester', 'harvester2', 'harvester3'],
-  costs: [250, 500],
-  tiers: [{ radius: 60 }, { radius: 90 }, { radius: 130 }],
+  costs: [1000, 3000],
+  tiers: [
+    { radius: 1.5 * TILE_WIDTH + 40, capacity: 1500 },
+    { radius: 2 * TILE_WIDTH + 40, capacity: 2500 },
+    { radius: 2.5 * TILE_WIDTH + 40, capacity: 3500 },
+  ],
 };
 
 const BUILDING_TITLES: Partial<Record<BuildingType, { title: string; lines: string[] }>> = {
@@ -77,6 +82,7 @@ export function applyUpgradeLevel(entity: Entity): void {
     setSheet(entity, TURRET_UPGRADES.sheets[idx]);
   } else if (entity.harvester) {
     entity.harvester.radius = HARVESTER_UPGRADES.tiers[idx].radius;
+    entity.harvester.capacity = HARVESTER_UPGRADES.tiers[idx].capacity;
     setSheet(entity, HARVESTER_UPGRADES.sheets[idx]);
   }
 }
@@ -102,7 +108,8 @@ export function createBuilding(
     radius: { ...cfg.radius },
     blocking: true,
     physicsSlide: true,
-    team,
+    // Bombs belong to nobody, so a player's own shot lights them.
+    team: type === 'bomb' ? Team.Neutral : team,
     health: { current: cfg.health, max: cfg.health },
     hurtTime: 0,
     freezeTime: 0,
@@ -121,6 +128,7 @@ export function createBuilding(
     entity.upgradable = { level: 1, maxLevel: TURRET_UPGRADES.sheets.length, costs: TURRET_UPGRADES.costs };
     entity.facing8 = 0;
     entity.rangeTicks = 0;
+    entity.healthBarOffset = 14;
   }
   // Bombs ignore damage entirely; a bullet lights the fuse instead.
   if (type === 'bomb') {
@@ -128,7 +136,10 @@ export function createBuilding(
     entity.health!.immortal = true;
   }
   if (type === 'harvester') {
-    entity.harvester = { ...HARVESTER_UPGRADES.tiers[0], collected: 0 };
+    entity.harvester = { ...HARVESTER_UPGRADES.tiers[0], collected: 0, time: 0, suckTicks: 0, emptying: false };
+    entity.frame = 0;
+    entity.coinBarOffset = 14;
+    entity.healthBarOffset = 20;
     entity.rangeTicks = 0;
     entity.upgradable = {
       level: 1,

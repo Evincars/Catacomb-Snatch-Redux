@@ -6,6 +6,7 @@ import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 /** Wall art is 56px tall: the tile itself plus 24px hanging over the row above. */
 const WALL_HEIGHT = 56;
 const WALL_VARIANTS = 23;
+const CRACKED_WALL_COLUMN = 4;
 
 const wallEntities = new Map<number, Entity>();
 
@@ -32,7 +33,10 @@ export function syncWalls(level: Level): void {
         world.add({
           position: { x: tx * TILE_WIDTH + TILE_WIDTH / 2, y: (ty + 1) * TILE_HEIGHT },
           wallTile: { tileX: tx, tileY: ty },
-          visual: { sheet: 'walltiles', col: tile.imageVariant % WALL_VARIANTS },
+          // Cracked walls, the only ones a bomb can clear, use the treasure sheet's rubble tile.
+          visual: tile.destroyable
+            ? { sheet: 'treasure', col: CRACKED_WALL_COLUMN }
+            : { sheet: 'walltiles', col: tile.imageVariant % WALL_VARIANTS },
           yOffset: WALL_HEIGHT / 2,
         }),
       );

@@ -31,7 +31,7 @@ export function spawnFx(
   sheet: string,
   frames: number,
   duration: number,
-  opts: { scale?: number; cycle?: boolean; yOffset?: number; orderId?: number; orderBias?: number } = {},
+  opts: { scale?: number; cycle?: boolean; yOffset?: number; orderId?: number; orderBias?: number; rise?: number } = {},
 ): Entity {
   return world.add({
     position: { x, y },
@@ -45,6 +45,7 @@ export function spawnFx(
       scale: opts.scale,
       orderId: opts.orderId,
       orderBias: opts.orderBias,
+      rise: opts.rise,
     },
   });
 }
@@ -113,5 +114,21 @@ export function spawnDust(owner: Entity, x: number, y: number): void {
     yOffset: 2,
     orderId: world.id(owner),
     orderBias: -0.5,
+  });
+}
+
+/** A wisp of steam from a working harvester, drifting upward as it fades. */
+export function spawnSteam(x: number, y: number): void {
+  spawnFx(x, y, 'fx_steam2_12', 10, 30, { yOffset: 0, rise: 0.3 });
+}
+
+/** Sparkle at a player's chest when coins are handed over to them. */
+export function spawnTakeFx(player: Entity): void {
+  const pos = player.position;
+  if (!pos) return;
+  spawnFx(pos.x + (Math.random() * 10 - 5), pos.y, 'effect_shine_small', 5, 10, {
+    yOffset: 12 + Math.random() * 6,
+    orderId: world.id(player),
+    orderBias: 0.5,
   });
 }

@@ -23,6 +23,11 @@ export function updateCombatTimers(_dt: number): void {
     // Health regen (from Mob.doRegenTime). Neutral things (mobs, nests) only heal on hard difficulties.
     const h = entity.health;
     if (!h || h.immortal) continue;
+    // Turrets and harvesters shrug damage off once nothing is hurting them (Java's Building.tick).
+    if ((entity.turret || entity.harvester) && (entity.hurtTime ?? 0) <= 0) {
+      h.current = h.max;
+      continue;
+    }
     if (entity.team === Team.Neutral && !gameState.difficulty.mobRegen) continue;
     if ((entity.hurtTime ?? 0) <= 0 && h.current < h.max) {
       if (entity.regenTimer !== undefined) {
@@ -116,6 +121,17 @@ export function updateContactDamage(_dt: number): void {
     const mpos = mob.position!;
     const mrad = mob.radius!;
     const mbb = BB.fromCenter(mpos.x, mpos.y, mrad.x, mrad.y);
+
+    // Mobs also chew on turrets and harvesters they bump into.
+    for (const building of world.with('position', 'radius', 'health', 'building')) {
+      if (!building.turret && !building.harvester) continue;
+      if (building.carriedBy !== undefined || building.removed || building.health!.current <= 0) continue;
+      const bpos = building.position!;
+      const brad = building.radius!;
+      if (mbb.intersects(BB.fromCenter(bpos.x, bpos.y, brad.x, brad.y))) {
+        hurtEntity(building, mob, mob.strength ?? 1);
+      }
+    }
 
     for (const player of players) {
       if (player.health!.current <= 0) continue;

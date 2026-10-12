@@ -146,14 +146,20 @@ function buildRail(player: Entity, level: Level): void {
   spawnSpentCoin(player);
 }
 
-function pickUp(player: Entity, building: Entity): void {
-  // A harvester hands over everything it has sucked up when it is lifted.
-  const stash = building.harvester;
-  if (stash && stash.collected > 0) {
-    player.playerStats!.score += stash.collected;
-    notify(`Collected ${stash.collected} coins`);
-    stash.collected = 0;
+/** Starts draining a harvester's stash into the player's purse. */
+function takeCoins(player: Entity, harvester: Entity): void {
+  const h = harvester.harvester!;
+  if (h.collected <= 0) {
+    notify('Harvester is empty');
+    return;
   }
+  h.emptying = true;
+  h.emptyingPlayerId = world.id(player);
+}
+
+function pickUp(player: Entity, building: Entity): void {
+  // Lifting a harvester interrupts a transfer in progress.
+  if (building.harvester) building.harvester.emptying = false;
   world.addComponent(building, 'carriedBy', world.id(player)!);
   world.addComponent(player, 'carryingId', world.id(building)!);
   // A carried building must not collide with its carrier.
@@ -222,7 +228,10 @@ export function updateInteraction(level: Level): void {
     if (target.shopItem) {
       // Stalls only answer to the use key.
       if (intents.use) buy(player, target);
+    } else if (target.harvester && intents.use) {
+      takeCoins(player, target);
     } else if (target.building) {
+      // The build key lifts any building; use does so too, except on a harvester, which it empties.
       pickUp(player, target);
     }
   }
