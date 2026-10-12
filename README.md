@@ -25,7 +25,7 @@ The architecture follows a strict ECS pattern: all game objects are entities wit
 
 ## Getting Started
 
-**Prerequisites:** Node.js 18+
+**Prerequisites:** Node.js 22+
 
 ```bash
 # Install dependencies
@@ -41,6 +41,23 @@ npm run build
 The dev server runs at `http://localhost:5173`. The production build outputs to `dist/`.
 
 ---
+
+## Original Game
+
+Catacomb Snatch was originally created by Mojang for the 2012 Humble Bundle charity event and later released open-source.
+
+- Original repository: https://github.com/Mojang/CatacombSnatch
+- Modified version reference: https://catacombsnatch.net
+
+This project is an independent fan rewrite using modern web technologies, preserving the core gameplay while replacing the entire Java codebase with TypeScript and a component-based architecture.
+
+---
+
+## License
+
+Based on the original open-source release by Mojang. See the [original repository](https://github.com/Mojang/CatacombSnatch) for license details.
+
+--- 
 
 ## Deployment
 
@@ -59,21 +76,4 @@ The game is automatically built and deployed to **GitHub Pages** on every new ve
 GitHub Actions will build the project and deploy it automatically. The live URL is:  
 `https://evincars.github.io/Catacomb-Snatch-Redux/`
 
-> **One-time setup:** In your GitHub repository settings, go to **Settings → Pages** and set the source to **"GitHub Actions"** (not a branch).
-
 ---
-
-## Original Game
-
-Catacomb Snatch was originally created by Mojang for the 2012 Humble Bundle charity event and later released open-source.
-
-- Original repository: https://github.com/Mojang/CatacombSnatch
-- Modified version reference: https://catacombsnatch.net
-
-This project is an independent fan rewrite using modern web technologies, preserving the core gameplay while replacing the entire Java codebase with TypeScript and a component-based architecture.
-
----
-
-## License
-
-Based on the original open-source release by Mojang. See the [original repository](https://github.com/Mojang/CatacombSnatch) for license details.
