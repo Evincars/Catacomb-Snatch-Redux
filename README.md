@@ -8,8 +8,6 @@
 
 ▶ **Play it:** https://evincars.github.io/Catacomb-Snatch-Redux/
 
----
-
 ## Tech Stack
 
 | Technology | Role |
@@ -40,8 +38,6 @@ npm run build
 
 The dev server runs at `http://localhost:5173`. The production build outputs to `dist/`.
 
----
-
 ## Original Game
 
 Catacomb Snatch was originally created by Mojang for the 2012 Humble Bundle charity event and later released open-source.
@@ -50,8 +46,6 @@ Catacomb Snatch was originally created by Mojang for the 2012 Humble Bundle char
 - Modified version reference: https://catacombsnatch.net
 
 This project is an independent fan rewrite using modern web technologies, preserving the core gameplay while replacing the entire Java codebase with TypeScript and a component-based architecture.
-
----
 
 ## License
 
@@ -75,5 +69,3 @@ The game is automatically built and deployed to **GitHub Pages** on every new ve
 
 GitHub Actions will build the project and deploy it automatically. The live URL is:  
 `https://evincars.github.io/Catacomb-Snatch-Redux/`
-
----
