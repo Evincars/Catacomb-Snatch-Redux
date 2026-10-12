@@ -1,4 +1,5 @@
 import { Level } from './Level';
+import { assetUrl } from '../assets/assetUrl';
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from './TileType';
 import { Team } from '../world';
 import type { ShopKind } from '../world';
@@ -162,7 +163,7 @@ function parseTmx(xml: string): { width: number; height: number; layers: TmxLaye
 
 /** `costMod` scales shop prices by the selected difficulty. */
 export async function loadTmxLevel(path: string, costMod = 1): Promise<Level> {
-  const response = await fetch(path);
+  const response = await fetch(assetUrl(path));
   if (!response.ok) throw new Error(`HTTP ${response.status} loading ${path}`);
   const xml = await response.text();
   const { width, height, layers } = parseTmx(xml);

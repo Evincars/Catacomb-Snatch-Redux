@@ -1,3 +1,4 @@
+import { assetUrl } from '../assets/assetUrl';
 /**
  * Web Audio port of the Java ISoundPlayer. Browsers refuse to start audio
  * before a user gesture, so playback requests made before the first click are
@@ -66,7 +67,7 @@ class SoundPlayer {
     await Promise.all(
       paths.map(async (path) => {
         try {
-          const res = await fetch(path);
+          const res = await fetch(assetUrl(path));
           if (!res.ok) return;
           const bytes = await res.arrayBuffer();
           this.buffers.set(path, await ctx.decodeAudioData(bytes));

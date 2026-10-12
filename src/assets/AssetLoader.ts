@@ -1,4 +1,5 @@
 import { Assets, Texture } from 'pixi.js';
+import { assetUrl } from './assetUrl';
 
 export type AssetManifest = {
   art: Record<string, string>;
@@ -146,7 +147,7 @@ const textures = new Map<string, Texture>();
 
 export async function loadAllAssets(): Promise<void> {
   const entries = Object.entries(ASSETS.art);
-  const bundle = entries.map(([alias, src]) => ({ alias, src }));
+  const bundle = entries.map(([alias, src]) => ({ alias, src: assetUrl(src) }));
   await Assets.load(bundle);
 
   for (const [key] of entries) {
