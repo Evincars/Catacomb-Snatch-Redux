@@ -8,7 +8,7 @@
 
 ▶ **Play it:** https://evincars.github.io/Catacomb-Snatch-Redux/
 
-## Tech Stack
+### Tech Stack
 
 | Technology | Role |
 |---|---|
@@ -19,9 +19,7 @@
 
 The architecture follows a strict ECS pattern: all game objects are entities with components (data), and systems operate on them each tick. Rendering is handled by PixiJS with spritesheets loaded from Tiled-compatible `.tmx` level files.
 
----
-
-## Getting Started
+### Getting started localy
 
 **Prerequisites:** Node.js 22+
 
@@ -49,15 +47,14 @@ This project is an independent fan rewrite using modern web technologies, preser
 
 ## License
 
-Based on the original open-source release by Mojang. See the [original repository](https://github.com/Mojang/CatacombSnatch) for license details.
+This project is licensed under the **GNU General Public License v3.0** (GPLv3) - see the [LICENSE](LICENSE) file for details.
 
---- 
+### Attribution
+Based on the original open-source release of [Catacomb Snatch](https://github.com/Mojang/CatacombSnatch) by Mojang Studios, originally released under the MIT License.
 
 ## Deployment
 
 The game is automatically built and deployed to **GitHub Pages** on every new version tag.
-
-**To release a new version:**
 
 1. Update the `version` field in `package.json` (e.g. `"version": "0.1.1"`)
 2. Commit the change
@@ -66,6 +63,3 @@ The game is automatically built and deployed to **GitHub Pages** on every new ve
    git tag v0.1.1
    git push origin v0.1.1
    ```
-
-GitHub Actions will build the project and deploy it automatically. The live URL is:  
-`https://evincars.github.io/Catacomb-Snatch-Redux/`
