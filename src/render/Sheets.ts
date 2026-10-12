@@ -18,6 +18,7 @@ const SHEETS: Record<string, SheetInfo> = {
   enemy_snake_anim_48:  { frameWidth: 48, frameHeight: 48 },
   enemy_scarab_anim_48: { frameWidth: 48, frameHeight: 48 },
   enemy_bat_32:         { frameWidth: 32, frameHeight: 32 },
+  raildroid:            { frameWidth: 32, frameHeight: 32 },
 
   pickup_coin_gold_16:   { frameWidth: 16, frameHeight: 16 },
   pickup_coin_silver_16: { frameWidth: 16, frameHeight: 16 },

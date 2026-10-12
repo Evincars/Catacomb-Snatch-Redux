@@ -17,7 +17,7 @@ function rangeOf(entity: Entity): number {
 
 function draw(gfx: Graphics, radius: number): void {
   gfx.clear();
-  gfx.circle(0, 0, radius).fill({ color: 0xffffff, alpha: 0.1 }).stroke({ color: 0xffffff, alpha: 0.3, width: 1 });
+  gfx.circle(0, 0, radius).fill({ color: 0xffffff, alpha: 0.1 });
 }
 
 /**

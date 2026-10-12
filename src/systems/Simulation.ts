@@ -17,7 +17,8 @@ import { updateRandomSpawner } from './RandomSpawnerSystem';
 import { updateDeath } from './DeathSystem';
 import { updateHoles } from './HoleSystem';
 import { updateSprites } from './SpriteSystem';
-import { updateFx } from './FxSystem';
+import { updateFx, updateExplosions } from './FxSystem';
+import { updateRailDroids } from './RailDroidSystem';
 import { updateAnimation } from './AnimationSystem';
 import { updateRender } from './RenderSystem';
 import { updateBars } from './BarSystem';
@@ -49,6 +50,7 @@ export const SIMULATION: readonly System[] = [
   ({ level }) => updateMobWeapons(level),
   ({ level, dt }) => updateTurrets(level, dt),
   ({ level, dt }) => updateMovement(level, dt),
+  ({ level }) => updateRailDroids(level),
   () => updateDust(),
   () => updateFootsteps(),
   () => updateEphemerals(),
@@ -63,6 +65,7 @@ export const SIMULATION: readonly System[] = [
   ({ level }) => updateRandomSpawner(level),
   // Bombs must detonate before DeathSystem clears the destroyed entity.
   ({ level, dt }) => updateBombs(level, dt),
+  () => updateExplosions(),
   ({ level, dt }) => updateDeath(level, dt),
   ({ level }) => updateHoles(level),
   ({ level }) => updateFalling(level),

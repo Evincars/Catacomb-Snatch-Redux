@@ -218,6 +218,10 @@ export type Entity = {
   falling?: { age: number; duration: number };
   /** Ticks before a player may lay or lift another rail. */
   railCooldown?: number;
+  /** A rail carriage: heading (0 N, 1 E, 2 S, 3 W, -1 stopped) and the last heading it showed. */
+  railDroid?: { dir: number; lastDir: number };
+  /** A blast in progress that keeps throwing out fireballs until `life` runs out. */
+  explosion?: { life: number; duration: number };
   /** Ticks until the next footstep puff of dust. */
   dustTimer?: number;
   /** A wall tile drawn as a depth-sorted sprite so actors can walk behind it. */

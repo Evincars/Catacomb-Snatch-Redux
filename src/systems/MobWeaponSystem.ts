@@ -46,7 +46,7 @@ export function updateMobWeapons(level: Level): void {
     }
 
     createBullet(mob, 'poison', tp.x - pos.x, tp.y - pos.y);
-    sound.playSound('shot2', pos.x, pos.y);
+    sound.playSound('shot1', pos.x, pos.y);
     ai.shootIn = spec.delay + Math.floor(Math.random() * 40);
   }
 }

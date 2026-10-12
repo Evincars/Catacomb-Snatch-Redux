@@ -12,6 +12,8 @@ import { gameState } from '../game/GameState';
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { targetOf } from './TargetingSystem';
 import { touchesTrack } from '../level/RailLayout';
+import { createRailDroid } from './RailDroidSystem';
+import { BB } from '../math/BB';
 import type { Level } from '../level/Level';
 
 /** Carried buildings float above the player's head. */
@@ -19,7 +21,8 @@ const CARRY_OFFSET_Y = 20;
 
 /** Base price of one piece of track, before the difficulty multiplier. */
 const RAIL_COST = 10;
-const RAIL_REMOVE_COST = 15;
+/** Base price of a rail carriage, bought on the base's own track. */
+const DROID_COST = 50;
 /** Ticks before the next piece can be laid or lifted. */
 const RAIL_DELAY_TICKS = 15;
 
@@ -122,24 +125,27 @@ function toggleRail(player: Entity, level: Level): void {
   const stats = player.playerStats!;
   const mod = gameState.difficulty.shopCostMod;
 
+  // Taking track up is free.
   if (tile.type === TileType.Rail) {
-    const cost = Math.max(1, Math.round(RAIL_REMOVE_COST * mod));
+    level.removeTile(tx, ty);
+    player.railCooldown = RAIL_DELAY_TICKS;
+    sound.playSound('trackPlace', pos.x, pos.y);
+    return;
+  }
+
+  // The base's fixed track is where carriages are bought (Java Player.handleRailBuilding).
+  if (tile.type === TileType.UnbreakableRail || tile.type === TileType.PlayerRail) {
+    const cost = Math.max(1, Math.round(DROID_COST * mod));
     if (stats.score < cost) {
-      notify(`Need ${cost} coins to remove a rail`);
+      notify(`Need ${cost} coins for a carriage`);
       sound.playSound('fail');
       return;
     }
     stats.score -= cost;
-    level.removeTile(tx, ty);
+    createRailDroid(pos.x, pos.y, player.team ?? 0);
     player.railCooldown = RAIL_DELAY_TICKS;
     sound.playSound('trackPlace', pos.x, pos.y);
     spawnSpentCoin(player);
-    return;
-  }
-
-  if (tile.type === TileType.UnbreakableRail || tile.type === TileType.PlayerRail) {
-    notify("That track can't be removed");
-    sound.playSound('fail');
     return;
   }
 
@@ -189,15 +195,52 @@ function pickUp(player: Entity, building: Entity): void {
   world.removeComponent(building, 'blocking');
 }
 
-/** Refuses to place into a wall, so buildings cannot end up unreachable. */
+function fitsAt(level: Level, building: Entity, x: number, y: number): boolean {
+  const tile = level.getTileAt(x, y);
+  if (!tile || !tile.buildable) return false;
+  const r = building.radius ?? { x: 8, y: 8 };
+  const bb = BB.fromCenter(x, y, r.x, r.y);
+  return !level.getClipBBs(x, y, r.x, r.y).some((clip) => clip.intersects(bb));
+}
+
+/**
+ * Where a carried building comes down: over the player's head as usual, or,
+ * when that is inside a wall, the nearest open spot around the player,
+ * favouring the side away from the wall they face.
+ */
+function dropSpot(level: Level, player: Entity, building: Entity): { x: number; y: number } | null {
+  const held = building.position!;
+  if (fitsAt(level, building, held.x, held.y)) return { x: held.x, y: held.y };
+
+  const p = player.position!;
+  const aim = player.aimVector ?? { x: 0, y: 1 };
+  const len = Math.hypot(aim.x, aim.y) || 1;
+  const ax = aim.x / len;
+  const ay = aim.y / len;
+  const candidates: Array<{ x: number; y: number; score: number }> = [];
+  for (let dy = -24; dy <= 24; dy += 4) {
+    for (let dx = -24; dx <= 24; dx += 4) {
+      const dist = Math.hypot(dx, dy);
+      if (dist > 24) continue;
+      // Closer is better; ties go to spots behind the way the player faces.
+      candidates.push({ x: p.x + dx, y: p.y + dy, score: dist + (dx * ax + dy * ay) * 0.5 });
+    }
+  }
+  candidates.sort((a, b) => a.score - b.score);
+  return candidates.find((c) => fitsAt(level, building, c.x, c.y)) ?? null;
+}
+
+/** Puts a carried building down, shifting it out of any wall; refuses only when there is no room at all. */
 function drop(player: Entity, building: Entity, level: Level): boolean {
-  const pos = building.position!;
-  const tile = level.getTileAt(pos.x, pos.y);
-  if (!tile || !tile.buildable) {
+  const spot = dropSpot(level, player, building);
+  if (!spot) {
     notify('Cannot build there');
     sound.playSound('fail');
     return false;
   }
+  const pos = building.position!;
+  pos.x = spot.x;
+  pos.y = spot.y;
 
   world.removeComponent(building, 'carriedBy');
   world.removeComponent(player, 'carryingId');

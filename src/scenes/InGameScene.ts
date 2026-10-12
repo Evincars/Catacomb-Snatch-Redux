@@ -104,6 +104,7 @@ export class InGameScene implements Scene {
 
     this.level = await loadTmxLevel(gameState.selectedLevel.path, gameState.difficulty.shopCostMod);
     this.level.targetScore = gameState.targetScore;
+    if (import.meta.env.DEV) (window as unknown as { __level: Level }).__level = this.level;
 
     this.gameLayer.sortableChildren = true;
     this.container.addChild(this.gameLayer);

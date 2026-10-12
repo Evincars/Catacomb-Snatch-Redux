@@ -198,6 +198,6 @@ export function hurtEntity(
   }
 
   h.current = Math.max(0, h.current - damage);
-  // Mobs and nests get a duller thud than the sharp cry a hurt player gives.
-  if (tpos) sound.playOneOf(['enemyHit1', 'enemyHit3'], tpos.x, tpos.y);
+  // Java's Bullet.collide: a struck enemy gives the dull "Shot 2" thud, not the player's hurt cry.
+  if (tpos) sound.playSound('shot2', tpos.x, tpos.y);
 }

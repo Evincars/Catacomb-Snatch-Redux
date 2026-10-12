@@ -5,6 +5,7 @@ import { createBullet } from '../entities/BulletFactory';
 import { pickupSound } from '../entities/LootFactory';
 import { spawnSteam, spawnTakeFx } from '../entities/FxFactory';
 import { hurtEntity } from './CombatSystem';
+import { spawnExplosion } from './FxSystem';
 import { Mth } from '../math/Mth';
 import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { sound } from '../audio/SoundPlayer';
@@ -57,7 +58,7 @@ export function updateTurrets(level: Level, _dt: number): void {
       bullet.position!.y = pos.y - BARREL_HEIGHT + ny * BARREL_REACH + nx * side * (TWIN_SPACING / 2);
     }
     t.cooldown = t.delay;
-    sound.playSound('shot2', pos.x, pos.y);
+    sound.playSound('shot1', pos.x, pos.y);
   }
 }
 
@@ -165,6 +166,7 @@ export function updateBombs(level: Level, _dt: number): void {
       }
     }
 
+    spawnExplosion(pos.x, pos.y);
     sound.playSound('explosion2', pos.x, pos.y);
     world.addComponent(bombEntity, 'removed', true);
   }

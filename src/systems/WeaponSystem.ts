@@ -85,6 +85,6 @@ export function updateWeapons(_dt: number): void {
     }
 
     const pos = entity.position!;
-    sound.playOneOf(['shot1', 'shot2'], pos.x, pos.y);
+    sound.playSound('shot1', pos.x, pos.y);
   }
 }

@@ -26,7 +26,8 @@ export function isRailTile(level: Level, tx: number, ty: number): boolean {
 export function railJoins(level: Level, tx: number, ty: number, dx: number, dy: number): boolean {
   const there = level.getTile(tx + dx, ty + dy);
   if (!there || !RAIL_TYPES.has(there.type)) return false;
-  return !(there.type === TileType.UnbreakableRail && dx !== 0);
+  if (dx === 0) return true;
+  return there.type !== TileType.UnbreakableRail && level.getTile(tx, ty)?.type !== TileType.UnbreakableRail;
 }
 
 /** Frame for an ordinary track piece, chosen from the pieces around it (Java RailTile.neighbourChanged). */
