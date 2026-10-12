@@ -214,6 +214,10 @@ export type Entity = {
   rangeView?: { gfx: Graphics; radius: number };
   /** A short-lived prop (a dropped coin) that falls, blinks and removes itself. */
   ephemeral?: { age: number; life: number; drop: number };
+  /** A player dropping down a hole: ticks elapsed of the fall before they respawn. */
+  falling?: { age: number; duration: number };
+  /** Ticks before a player may lay or lift another rail. */
+  railCooldown?: number;
   /** Ticks until the next footstep puff of dust. */
   dustTimer?: number;
   /** A wall tile drawn as a depth-sorted sprite so actors can walk behind it. */

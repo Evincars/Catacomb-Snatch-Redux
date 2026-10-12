@@ -2,6 +2,7 @@ import { Container, RenderTexture, Sprite, Texture, Rectangle } from 'pixi.js';
 import type { Application } from 'pixi.js';
 import type { Level } from './Level';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from './TileType';
+import { RAIL_HORIZONTAL, RAIL_VERTICAL, isRailTile, railJoins, railFrameAt } from './RailLayout';
 import { getTexture } from '../assets/AssetLoader';
 import { Team } from '../world';
 import { gameState } from '../game/GameState';
@@ -12,9 +13,6 @@ const FLOOR_COLS = 8;
 const RAIL_HEIGHT = 38;
 const RAIL_RISE = RAIL_HEIGHT - TILE_HEIGHT;
 
-/** rails.png frames. */
-const RAIL_HORIZONTAL = 0;
-const RAIL_VERTICAL = 1;
 /** Dead-end loop of a base whose exit points north (team 1): left half, right half. */
 const RAIL_LOOP_UP = [4, 5];
 /** Dead-end loop of a base whose exit points south (team 2). */
@@ -100,31 +98,24 @@ function sandEdgeImage(level: Level, tx: number, ty: number): number | null {
   return null;
 }
 
-function isRail(level: Level, tx: number, ty: number): boolean {
-  const type = level.getTile(tx, ty)?.type;
-  return type === TileType.Rail || type === TileType.UnbreakableRail || type === TileType.PlayerRail;
-}
-
 /** Picks the rails.png frame for a rail piece from the pieces around it. */
 function railFrame(level: Level, tx: number, ty: number): number {
   const tile = level.getTile(tx, ty)!;
 
   if (tile.type === TileType.PlayerRail) {
-    const isLeft = !isRail(level, tx - 1, ty);
-    const isRight = !isRail(level, tx + 1, ty);
+    const isLeft = !isRailTile(level, tx - 1, ty);
+    const isRight = !isRailTile(level, tx + 1, ty);
     const loop = tile.team === Team.Two ? RAIL_LOOP_DOWN : RAIL_LOOP_UP;
     if (isLeft) return loop[0];
     if (isRight) return loop[1];
     return RAIL_HORIZONTAL;
   }
 
-  const vertical = isRail(level, tx, ty - 1) || isRail(level, tx, ty + 1);
-  // Fixed side rails are upright posts: they never turn a neighbouring piece sideways.
-  const sideways = (x: number) => isRail(level, x, ty) && level.getTile(x, ty)!.type !== TileType.UnbreakableRail;
-  const horizontal = sideways(tx - 1) || sideways(tx + 1);
-
-  if (tile.type === TileType.UnbreakableRail) return vertical ? RAIL_VERTICAL : RAIL_HORIZONTAL;
-  return vertical && !horizontal ? RAIL_VERTICAL : RAIL_HORIZONTAL;
+  // Fixed side rails are upright posts that never join sideways.
+  if (tile.type === TileType.UnbreakableRail) {
+    return railJoins(level, tx, ty, 0, -1) || railJoins(level, tx, ty, 0, 1) ? RAIL_VERTICAL : RAIL_HORIZONTAL;
+  }
+  return railFrameAt(level, tx, ty);
 }
 
 /** Renders the static floor into a single texture; walls are separate depth-sorted entities. */
@@ -154,7 +145,7 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
   for (let ty = 0; ty < level.height; ty++) {
     for (let tx = 0; tx < level.width; tx++) {
       const tile = level.getTile(tx, ty);
-      if (!tile || !isRail(level, tx, ty)) continue;
+      if (!tile || !isRailTile(level, tx, ty)) continue;
 
       const s = new Sprite(frameOf(railTex, railFrame(level, tx, ty), 0, TILE_WIDTH, RAIL_HEIGHT));
       s.x = tx * TILE_WIDTH;

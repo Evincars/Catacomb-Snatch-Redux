@@ -151,7 +151,7 @@ export function updateContactDamage(_dt: number): void {
 /** Damages a player and shoves them clear of whatever hit them. */
 export function hurtPlayer(player: Entity, source: Entity, damage: number): void {
   const h = player.health;
-  if (!h || h.immortal) return;
+  if (!h || h.immortal || player.falling) return;
 
   player.hurtTime = PLAYER_HURT_TIME;
   player.freezeTime = PLAYER_FREEZE_TIME;
@@ -198,5 +198,6 @@ export function hurtEntity(
   }
 
   h.current = Math.max(0, h.current - damage);
-  if (tpos) sound.playSound('hit', tpos.x, tpos.y);
+  // Mobs and nests get a duller thud than the sharp cry a hurt player gives.
+  if (tpos) sound.playOneOf(['enemyHit1', 'enemyHit3'], tpos.x, tpos.y);
 }

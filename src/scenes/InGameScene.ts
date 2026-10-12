@@ -27,6 +27,7 @@ import { camera, GAME_WIDTH, GAME_HEIGHT, VIEW_HEIGHT } from '../render/Camera';
 import { getTexture } from '../assets/AssetLoader';
 import { HudPanel } from '../ui/HudPanel';
 import { TooltipView } from '../ui/Tooltip';
+import { WeaponBar } from '../ui/WeaponBar';
 import { DarknessRenderer } from '../level/DarknessRenderer';
 import { Crosshair } from '../ui/Crosshair';
 import { keyLabel } from '../game/Settings';
@@ -49,6 +50,7 @@ export class InGameScene implements Scene {
   private darkness = new DarknessRenderer();
   private crosshair = new Crosshair();
   private tooltip = new TooltipView();
+  private weaponBar = new WeaponBar();
 
   private paused = false;
   private finished = false;
@@ -169,6 +171,7 @@ export class InGameScene implements Scene {
   private buildHud(): void {
     this.hud = new HudPanel();
     this.hudLayer.addChild(this.hud.container);
+    this.hudLayer.addChild(this.weaponBar.container);
     this.hudLayer.addChild(this.tooltip.container);
   }
 
@@ -291,6 +294,7 @@ export class InGameScene implements Scene {
     this.darkness.update(this.level);
 
     this.hud.update(this.player, this.level);
+    this.weaponBar.update(this.player);
     this.tooltip.update();
     this.crosshair.update();
     this.updatePrompt();
@@ -318,6 +322,7 @@ export class InGameScene implements Scene {
     this.darkness.destroy();
     this.crosshair.destroy();
     this.tooltip.destroy();
+    this.weaponBar.destroy();
     (this.app.canvas as HTMLCanvasElement).style.cursor = '';
     clearSprites();
     this.container.destroy({ children: true });

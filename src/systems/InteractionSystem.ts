@@ -10,7 +10,8 @@ import { keyLabel } from '../game/Settings';
 import { spawnSpentCoin } from '../entities/FxFactory';
 import { gameState } from '../game/GameState';
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
-import { targetOf, reachPoint } from './TargetingSystem';
+import { targetOf } from './TargetingSystem';
+import { touchesTrack } from '../level/RailLayout';
 import type { Level } from '../level/Level';
 
 /** Carried buildings float above the player's head. */
@@ -18,7 +19,9 @@ const CARRY_OFFSET_Y = 20;
 
 /** Base price of one piece of track, before the difficulty multiplier. */
 const RAIL_COST = 10;
-const RAIL_TYPES = new Set([TileType.Rail, TileType.UnbreakableRail, TileType.PlayerRail]);
+const RAIL_REMOVE_COST = 15;
+/** Ticks before the next piece can be laid or lifted. */
+const RAIL_DELAY_TICKS = 15;
 
 const WEAPON_KINDS: ShopKind[] = ['rifle', 'shotgun', 'raygun'];
 
@@ -96,11 +99,6 @@ function upgrade(player: Entity, target: Entity | null): void {
   spawnSpentCoin(player);
 }
 
-function isRailAt(level: Level, tx: number, ty: number): boolean {
-  const tile = level.getTile(tx, ty);
-  return tile !== null && RAIL_TYPES.has(tile.type);
-}
-
 function hasBuildingOn(tx: number, ty: number): boolean {
   for (const b of world.with('position', 'building')) {
     if (b.carriedBy !== undefined) continue;
@@ -109,30 +107,54 @@ function hasBuildingOn(tx: number, ty: number): boolean {
   return false;
 }
 
-/** Lays a piece of track on the tile ahead, but only where it continues an existing track. */
-function buildRail(player: Entity, level: Level): void {
-  const at = reachPoint(player, TILE_WIDTH);
-  const tx = Math.floor(at.x / TILE_WIDTH);
-  const ty = Math.floor(at.y / TILE_HEIGHT);
+/**
+ * The build key works the tile the player stands on: it lays a piece of track
+ * that continues an existing line, or, on a removable piece, takes it up again.
+ */
+function toggleRail(player: Entity, level: Level): void {
+  if ((player.railCooldown ?? 0) > 0) return;
+
+  const pos = player.position!;
+  const tx = Math.floor(pos.x / TILE_WIDTH);
+  const ty = Math.floor(pos.y / TILE_HEIGHT);
   const tile = level.getTile(tx, ty);
+  if (!tile) return;
+  const stats = player.playerStats!;
+  const mod = gameState.difficulty.shopCostMod;
 
-  const connected =
-    isRailAt(level, tx - 1, ty) || isRailAt(level, tx + 1, ty) ||
-    isRailAt(level, tx, ty - 1) || isRailAt(level, tx, ty + 1);
+  if (tile.type === TileType.Rail) {
+    const cost = Math.max(1, Math.round(RAIL_REMOVE_COST * mod));
+    if (stats.score < cost) {
+      notify(`Need ${cost} coins to remove a rail`);
+      sound.playSound('fail');
+      return;
+    }
+    stats.score -= cost;
+    level.removeTile(tx, ty);
+    player.railCooldown = RAIL_DELAY_TICKS;
+    sound.playSound('trackPlace', pos.x, pos.y);
+    spawnSpentCoin(player);
+    return;
+  }
 
-  if (!tile || !tile.buildable || hasBuildingOn(tx, ty)) {
-    notify('Cannot build a rail there');
+  if (tile.type === TileType.UnbreakableRail || tile.type === TileType.PlayerRail) {
+    notify("That track can't be removed");
     sound.playSound('fail');
     return;
   }
-  if (!connected) {
+
+  if (!tile.buildable || hasBuildingOn(tx, ty)) {
+    notify('Cannot build a rail here');
+    sound.playSound('fail');
+    return;
+  }
+  if (!touchesTrack(level, tx, ty)) {
     notify('Rails must connect to an existing track');
     sound.playSound('fail');
     return;
   }
 
-  const cost = Math.max(1, Math.round(RAIL_COST * gameState.difficulty.shopCostMod));
-  const stats = player.playerStats!;
+  const cost = Math.max(1, Math.round(RAIL_COST * mod));
   if (stats.score < cost) {
     notify(`Need ${cost} coins for a rail`);
     sound.playSound('fail');
@@ -142,7 +164,8 @@ function buildRail(player: Entity, level: Level): void {
   stats.score -= cost;
   level.setTile(tx, ty, createTile(TileType.Rail, 0));
   level.tilesDirty = true;
-  sound.playSound('trackPlace', at.x, at.y);
+  player.railCooldown = RAIL_DELAY_TICKS;
+  sound.playSound('trackPlace', pos.x, pos.y);
   spawnSpentCoin(player);
 }
 
@@ -205,6 +228,7 @@ export function updateInteraction(level: Level): void {
       held.position!.y = player.position!.y - CARRY_OFFSET_Y;
     }
 
+    if ((player.railCooldown ?? 0) > 0) player.railCooldown!--;
     const intents = player.playerInput!.intents;
     const target = targetOf(player);
 
@@ -222,7 +246,7 @@ export function updateInteraction(level: Level): void {
     }
 
     if (!target) {
-      if (intents.build) buildRail(player, level);
+      if (intents.build) toggleRail(player, level);
       continue;
     }
     if (target.shopItem) {

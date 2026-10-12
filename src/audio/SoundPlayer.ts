@@ -9,6 +9,8 @@ export const SFX = {
   shot1: '/sound/Shot 1.wav',
   shot2: '/sound/Shot 2.wav',
   hit: '/sound/hit2.wav',
+  enemyHit1: '/sound/hit1.wav',
+  enemyHit3: '/sound/hit3.wav',
   explosion: '/sound/Explosion.wav',
   explosion2: '/sound/Explosion 2.wav',
   death: '/sound/Death.wav',

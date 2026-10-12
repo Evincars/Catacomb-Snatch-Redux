@@ -77,6 +77,17 @@ export function updateRender(_dt: number): void {
     }
     sprite.zIndex = order;
 
+    // A falling player shrinks and sinks away into the hole.
+    if (entity.falling) {
+      const t = Math.min(1, entity.falling.age / entity.falling.duration);
+      sprite.scale.set(1 - 0.7 * t);
+      sprite.alpha = 1 - 0.6 * t;
+      sprite.y += Math.round(10 * t);
+    } else if (sprite.scale.x !== (entity.visual?.scale ?? 1) && entity.playerInput) {
+      sprite.scale.set(1);
+      sprite.alpha = 1;
+    }
+
     syncOverlay(entity, sprite);
   }
 }

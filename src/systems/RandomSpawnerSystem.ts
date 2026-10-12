@@ -14,7 +14,22 @@ const CLEAR_OF_BUILDINGS = 32 * 0.5;
 /** Nests made at level start, as in Java's GameModeVanilla. */
 const INITIAL_SPAWNERS = 11;
 
-const MOB_TYPES = ['bat', 'snake', 'mummy', 'scarab'] as const;
+/** Bats nest far more often than the tougher kinds, which stay rare. */
+const MOB_WEIGHTS: ReadonlyArray<readonly [string, number]> = [
+  ['bat', 10],
+  ['snake', 2],
+  ['mummy', 2],
+  ['scarab', 1],
+];
+const WEIGHT_TOTAL = MOB_WEIGHTS.reduce((sum, [, w]) => sum + w, 0);
+
+function pickMobType(): string {
+  let roll = Math.random() * WEIGHT_TOTAL;
+  for (const [type, weight] of MOB_WEIGHTS) {
+    if ((roll -= weight) < 0) return type;
+  }
+  return 'bat';
+}
 
 /** Java checks an axis-aligned box of radius `r` against each entity's own box. */
 function near(e: { position?: { x: number; y: number }; radius?: { x: number; y: number } }, x: number, y: number, r: number): boolean {
@@ -56,7 +71,7 @@ function tryPlaceSpawner(level: Level, tx: number, ty: number, mobType: string):
 export function updateRandomSpawner(level: Level): void {
   const tx = Math.floor(Math.random() * (level.width - EDGE_MARGIN * 2)) + EDGE_MARGIN;
   const ty = Math.floor(Math.random() * (level.height - EDGE_MARGIN * 2)) + EDGE_MARGIN;
-  tryPlaceSpawner(level, tx, ty, MOB_TYPES[Math.floor(Math.random() * MOB_TYPES.length)]);
+  tryPlaceSpawner(level, tx, ty, pickMobType());
 }
 
 /** Scatters the opening set of bat nests; each attempt is dropped if the spot is taken. */

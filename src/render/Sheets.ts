@@ -32,6 +32,7 @@ const SHEETS: Record<string, SheetInfo> = {
   pickup_gem_emerald_12: { frameWidth: 16, frameHeight: 16 },
   pickup_gem_ruby_12:    { frameWidth: 16, frameHeight: 16 },
   pickup_gem_diamond_24: { frameWidth: 24, frameHeight: 24 },
+  exclamation_mark:      { frameWidth: 4, frameHeight: 13 },
   effect_shine_small:    { frameWidth: 13, frameHeight: 13 },
   fx_steam2_12:          { frameWidth: 12, frameHeight: 12 },
   pickup_coin_gold_small_8:   { frameWidth: 8, frameHeight: 8 },

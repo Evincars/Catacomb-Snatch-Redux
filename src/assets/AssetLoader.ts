@@ -88,6 +88,7 @@ export const ASSETS: AssetManifest = {
     pickup_coin_gold_16:    '/art/pickup/pickup_coin_gold_16.png',
     pickup_coin_silver_16:  '/art/pickup/pickup_coin_silver_16.png',
     pickup_coin_bronze_16:  '/art/pickup/pickup_coin_bronze_16.png',
+    exclamation_mark: '/art/effects/exclamation_mark.png',
     effect_shine_small: '/art/pickup/effect_shine_small_13.png',
     pickup_coin_gold_small_8:   '/art/pickup/pickup_coin_gold_small_8.png',
     pickup_coin_silver_small_8: '/art/pickup/pickup_coin_silver_small_8.png',

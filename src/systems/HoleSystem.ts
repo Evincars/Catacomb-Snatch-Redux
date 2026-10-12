@@ -4,6 +4,11 @@ import type { Level } from '../level/Level';
 import { TileType } from '../level/TileType';
 import { createLoot } from '../entities/LootFactory';
 import { sound } from '../audio/SoundPlayer';
+import { spawnFx } from '../entities/FxFactory';
+
+/** Ticks from stepping off the edge to landing at the spawn; matches the falling cry's length. */
+export const FALL_TICKS = 45;
+const FEMALE_CHARACTERS = ['countess_cruller', 'duchess_donut'];
 
 /**
  * Anything that walks onto a hole falls in. Mobs and buildings are simply lost;
@@ -16,12 +21,27 @@ export function updateHoles(level: Level): void {
     const tile = level.getTileAt(entity.position!.x, entity.position!.y);
     if (tile?.type !== TileType.Hole) continue;
 
-    if (entity.playerInput) respawnPlayer(entity, level);
+    if (entity.playerInput) {
+      if (!entity.falling) startFall(entity);
+    }
     else world.addComponent(entity, 'removed', true);
   }
 }
 
-function respawnPlayer(player: Entity, level: Level): void {
+/** The player slips over the edge: input stops, a "!" pops up over their head and a cry plays. */
+function startFall(player: Entity): void {
+  const pos = player.position!;
+  world.addComponent(player, 'falling', { age: 0, duration: FALL_TICKS });
+  const female = FEMALE_CHARACTERS.some((c) => player.visual?.sheet.startsWith(c));
+  sound.playSound(female ? 'fallingFemale' : 'fallingMale', pos.x, pos.y);
+  spawnFx(pos.x, pos.y, 'exclamation_mark', 1, FALL_TICKS, {
+    yOffset: 36,
+    orderId: world.id(player),
+    orderBias: 0.5,
+  });
+}
+
+export function respawnPlayer(player: Entity, level: Level): void {
   const pos = player.position!;
   const health = player.health!;
 

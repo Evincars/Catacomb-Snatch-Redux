@@ -23,6 +23,8 @@ import { updateRender } from './RenderSystem';
 import { updateBars } from './BarSystem';
 import { updateMarkers } from './MarkerSystem';
 import { updateRanges } from './RangeSystem';
+import { updateFootsteps } from './FootstepSystem';
+import { updateFalling } from './FallSystem';
 import { updateDust } from './DustSystem';
 import { updateEphemerals } from './EphemeralSystem';
 
@@ -48,6 +50,7 @@ export const SIMULATION: readonly System[] = [
   ({ level, dt }) => updateTurrets(level, dt),
   ({ level, dt }) => updateMovement(level, dt),
   () => updateDust(),
+  () => updateFootsteps(),
   () => updateEphemerals(),
   ({ level, dt }) => updateBullets(level, dt),
   ({ dt }) => updateCombatTimers(dt),
@@ -62,6 +65,7 @@ export const SIMULATION: readonly System[] = [
   ({ level, dt }) => updateBombs(level, dt),
   ({ level, dt }) => updateDeath(level, dt),
   ({ level }) => updateHoles(level),
+  ({ level }) => updateFalling(level),
   (ctx) => {
     if (ctx.level.tilesDirty) ctx.rebuildTerrain();
   },
