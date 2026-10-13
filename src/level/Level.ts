@@ -46,6 +46,8 @@ export class Level {
 
   readonly baseTiles: BaseTile[] = [];
   readonly spawnTiles: SpawnTile[] = [];
+  /** Tile rectangles (inclusive) of the players' bases, where no track may be laid. */
+  readonly baseAreas: Array<{ x0: number; y0: number; x1: number; y1: number }> = [];
 
   /**
    * Fog of war, stored per tile *corner* on a (width+1) x (height+1) grid so
@@ -183,6 +185,10 @@ export class Level {
       }
     }
     return result;
+  }
+
+  inBaseArea(tx: number, ty: number): boolean {
+    return this.baseAreas.some((a) => tx >= a.x0 && tx <= a.x1 && ty >= a.y0 && ty <= a.y1);
   }
 
   addBaseTile(tileX: number, tileY: number, team: Team, side: 'left' | 'right', img: number): void {

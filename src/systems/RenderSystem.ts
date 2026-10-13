@@ -70,6 +70,11 @@ export function updateRender(_dt: number): void {
 
     // Entities overlap back-to-front by feet position.
     let order = pos.y;
+    // Something held overhead is drawn with its carrier, in front of them, so a wall
+    // the carrier stands below cannot cover it.
+    if (entity.carriedBy !== undefined) {
+      order = (world.entity(entity.carriedBy)?.position?.y ?? pos.y) + 0.2;
+    }
     const fx = entity.fx;
     if (fx?.orderId !== undefined) {
       order = world.entity(fx.orderId)?.position?.y ?? pos.y;

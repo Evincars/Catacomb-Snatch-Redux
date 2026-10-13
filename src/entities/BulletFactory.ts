@@ -18,13 +18,15 @@ type BulletConfig = {
   /** Sprite centre sits this far above the bullet's position. */
   yOffset: number;
   damageFalloff?: number;
+  /** Times the shot rebounds off walls before dying (Java BulletRay.maxBounceNumber). */
+  bounces?: number;
 };
 
 /** Rifle, shotgun and ray follow the Java Bullet, BulletBuckshot and BulletRay (speed x duration = range). */
 const BULLET_CONFIGS: Record<BulletType, BulletConfig> = {
   rifle:   { damage: 0.5, speed: 6,  range: 240, freezeTime: 5,  radius: { x: 4, y: 4 }, sheet: 'bullet', directional: true, yOffset: 2 },
   shotgun: { damage: 4.5, speed: 18, range: 360, freezeTime: 5,  radius: { x: 2, y: 2 }, sheet: 'bullet_buckshot', directional: false, yOffset: 0, damageFalloff: 0.5 },
-  ray:     { damage: 1.5, speed: 5,  range: 250, freezeTime: 5,  radius: { x: 4, y: 4 }, sheet: 'plasmaball', directional: false, randomFrames: 8, yOffset: 2 },
+  ray:     { damage: 1.5, speed: 5,  range: 250, freezeTime: 5,  radius: { x: 4, y: 4 }, sheet: 'plasmaball', directional: false, randomFrames: 8, yOffset: 2, bounces: 5 },
   cannon:  { damage: 8,   speed: 4,  range: 300, freezeTime: 20, radius: { x: 5, y: 5 }, sheet: 'bullet', directional: true, yOffset: 2 },
   flame:   { damage: 1,   speed: 3,  range: 80,  freezeTime: 2,  radius: { x: 3, y: 3 }, sheet: 'bullet', directional: true, yOffset: 2 },
   poison:  { damage: 1,   speed: 2.5, range: 200, freezeTime: 0, radius: { x: 3, y: 3 }, sheet: 'bullet_poison', directional: true, yOffset: 6 },
@@ -65,6 +67,7 @@ export function createBullet(
       traveledRange: 0,
       damageFalloff: cfg.damageFalloff,
       randomFrames: cfg.randomFrames,
+      bounces: cfg.bounces,
     },
     team: owner.team,
     ...(facing8 !== undefined ? { facing8 } : {}),
