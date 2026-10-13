@@ -71,6 +71,8 @@ export function updateBulletCollision(_dt: number): void {
 
       for (const target of targets) {
         if (target === bullet) continue;
+        // Whatever a player holds overhead is out of the line of fire.
+        if (target.carriedBy !== undefined) continue;
         // Don't hit the shooter or anyone on their side
         if (world.id(target) === bdata.ownerId) continue;
         if (bullet.team !== undefined && bullet.team !== Team.Neutral && target.team === bullet.team) continue;
@@ -122,9 +124,9 @@ export function updateContactDamage(_dt: number): void {
     const mrad = mob.radius!;
     const mbb = BB.fromCenter(mpos.x, mpos.y, mrad.x, mrad.y);
 
-    // Mobs also chew on turrets and harvesters they bump into.
-    for (const building of world.with('position', 'radius', 'health', 'building')) {
-      if (!building.turret && !building.harvester) continue;
+    // Mobs also chew on turrets, harvesters and carriages they bump into.
+    for (const building of world.with('position', 'radius', 'health', 'blocking')) {
+      if (!building.turret && !building.harvester && !building.railDroid) continue;
       if (building.carriedBy !== undefined || building.removed || building.health!.current <= 0) continue;
       const bpos = building.position!;
       const brad = building.radius!;

@@ -18,6 +18,8 @@ import type { Level } from '../level/Level';
 
 /** Carried buildings float above the player's head. */
 const CARRY_OFFSET_Y = 20;
+/** Initial speed of a building put down, as Java's Player.drop (aim * 5). */
+const DROP_SLIDE = 5;
 
 /** Base price of one piece of track, before the difficulty multiplier. */
 const RAIL_COST = 10;
@@ -149,7 +151,7 @@ function toggleRail(player: Entity, level: Level): void {
     return;
   }
 
-  if (!tile.buildable || hasBuildingOn(tx, ty)) {
+  if (!tile.buildable || hasBuildingOn(tx, ty) || level.inBaseArea(tx, ty)) {
     notify('Cannot build a rail here');
     sound.playSound('fail');
     return;
@@ -204,15 +206,14 @@ function fitsAt(level: Level, building: Entity, x: number, y: number): boolean {
 }
 
 /**
- * Where a carried building comes down: over the player's head as usual, or,
- * when that is inside a wall, the nearest open spot around the player,
- * favouring the side away from the wall they face.
+ * Where a carried building comes down: at the player's feet as in Java, or,
+ * when that will not do, the nearest open spot around the player, favouring
+ * the side away from the wall they face.
  */
 function dropSpot(level: Level, player: Entity, building: Entity): { x: number; y: number } | null {
-  const held = building.position!;
-  if (fitsAt(level, building, held.x, held.y)) return { x: held.x, y: held.y };
-
   const p = player.position!;
+  if (fitsAt(level, building, p.x, p.y)) return { x: p.x, y: p.y };
+
   const aim = player.aimVector ?? { x: 0, y: 1 };
   const len = Math.hypot(aim.x, aim.y) || 1;
   const ax = aim.x / len;
@@ -245,14 +246,26 @@ function drop(player: Entity, building: Entity, level: Level): boolean {
   world.removeComponent(building, 'carriedBy');
   world.removeComponent(player, 'carryingId');
   world.addComponent(building, 'blocking', true);
-  building.building!.justDroppedTicks = 80;
+  // It is tossed down and slides a short way in the direction the player faces,
+  // or back the other way when they face a wall, so it never ends up under their feet.
+  const aim = player.aimVector ?? { x: 0, y: 1 };
+  const len = Math.hypot(aim.x, aim.y) || 1;
+  let dx = aim.x / len;
+  let dy = aim.y / len;
+  const reach = Math.max(building.radius?.x ?? 8, building.radius?.y ?? 8) + 4;
+  if (!fitsAt(level, building, pos.x + dx * reach, pos.y + dy * reach)) {
+    dx = -dx;
+    dy = -dy;
+  }
+  world.addComponent(building, 'slide', { x: dx * DROP_SLIDE, y: dy * DROP_SLIDE });
+  if (building.building) building.building.justDroppedTicks = 80;
   sound.playSound('trackPlace', pos.x, pos.y);
   return true;
 }
 
 function carriedBy(player: Entity): Entity | null {
   const id = world.id(player);
-  for (const b of world.with('building', 'carriedBy')) {
+  for (const b of world.with('carriedBy')) {
     if (b.carriedBy === id) return b;
   }
   return null;
@@ -295,10 +308,10 @@ export function updateInteraction(level: Level): void {
     if (target.shopItem) {
       // Stalls only answer to the use key.
       if (intents.use) buy(player, target);
-    } else if (target.harvester && intents.use) {
+    } else if (target.harvester && intents.use && (target.harvester.collected > 0 || target.harvester.emptying)) {
       takeCoins(player, target);
-    } else if (target.building) {
-      // The build key lifts any building; use does so too, except on a harvester, which it empties.
+    } else if (target.building || target.spawner) {
+      // The build key lifts any building or nest; use does so too, except on a harvester, which it empties.
       pickUp(player, target);
     }
   }

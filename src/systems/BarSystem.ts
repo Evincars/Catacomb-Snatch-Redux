@@ -113,4 +113,5 @@ export function destroyAttachments(entity: Entity): void {
   entity.priceLabel?.destroy();
   entity.marker?.destroy();
   entity.rangeView?.gfx.destroy();
+  entity.cargoSprite?.destroy();
 }

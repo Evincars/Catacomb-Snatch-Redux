@@ -186,7 +186,7 @@ export class InGameScene implements Scene {
 
     const held = carriedByPlayer(this.player);
     if (held) {
-      this.hud.setPrompt(`Carrying ${held.building!.type} - [${keyLabel('use')}] to place`);
+      this.hud.setPrompt(`Carrying ${held.building?.type ?? held.tooltip?.title.toLowerCase() ?? 'it'} - [${keyLabel('use')}] to place`);
       return;
     }
     if (!target) {

@@ -130,6 +130,12 @@ export function createBuilding(
     entity.rangeTicks = 0;
     entity.healthBarOffset = 14;
   }
+  // The treasure pile is scenery that cannot be shot away.
+  if (type === 'treasure') {
+    entity.health!.immortal = true;
+    // The first pharaoh rises a few seconds into the level.
+    entity.treasure = { timer: 60 * 4 };
+  }
   // Bombs ignore damage entirely; a bullet lights the fuse instead.
   if (type === 'bomb') {
     entity.bomb = { blastRadius: 50, blastDamage: 5, lit: false, fuse: 40 };

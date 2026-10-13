@@ -18,11 +18,11 @@ export function reachPoint(player: Entity, distance = INTERACT_REACH): { x: numb
   return { x: pos.x + (aim.x / len) * distance, y: pos.y + (aim.y / len) * distance };
 }
 
-/** Whether a player may interact with this entity: stalls belong to a team, buildings are free for all. */
+/** Whether a player may interact with this entity: stalls belong to a team, buildings and nests are free for all. */
 function usableBy(player: Entity, candidate: Entity): boolean {
   if (candidate.carriedBy !== undefined) return false;
   if (candidate.shopItem) return candidate.team === player.team;
-  return candidate.building !== undefined;
+  return candidate.building !== undefined || candidate.spawner !== undefined;
 }
 
 /** Visual centre of an entity, which is where the eye expects a marker or hover to be. */

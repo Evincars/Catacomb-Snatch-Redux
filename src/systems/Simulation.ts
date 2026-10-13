@@ -7,18 +7,19 @@ import { updateAI } from './AISystem';
 import { updateMobWeapons } from './MobWeaponSystem';
 import { updateWeapons } from './WeaponSystem';
 import { updateTurrets, updateHarvesters, updateBombs } from './BuildingSystem';
-import { updateMovement } from './MovementSystem';
+import { updateMovement, updateSlides } from './MovementSystem';
 import { updateBullets } from './BulletSystem';
 import { updateCombatTimers, updateBulletCollision, updateContactDamage } from './CombatSystem';
 import { updateBuffs } from './BuffSystem';
 import { updateLoot } from './LootSystem';
 import { updateSpawners } from './SpawnerSystem';
 import { updateRandomSpawner } from './RandomSpawnerSystem';
+import { updateTreasure } from './TreasureSystem';
 import { updateDeath } from './DeathSystem';
 import { updateHoles } from './HoleSystem';
 import { updateSprites } from './SpriteSystem';
 import { updateFx, updateExplosions } from './FxSystem';
-import { updateRailDroids } from './RailDroidSystem';
+import { updateRailDroids, updateRailDroidCargo } from './RailDroidSystem';
 import { updateAnimation } from './AnimationSystem';
 import { updateRender } from './RenderSystem';
 import { updateBars } from './BarSystem';
@@ -50,6 +51,7 @@ export const SIMULATION: readonly System[] = [
   ({ level }) => updateMobWeapons(level),
   ({ level, dt }) => updateTurrets(level, dt),
   ({ level, dt }) => updateMovement(level, dt),
+  ({ level }) => updateSlides(level),
   ({ level }) => updateRailDroids(level),
   () => updateDust(),
   () => updateFootsteps(),
@@ -63,6 +65,7 @@ export const SIMULATION: readonly System[] = [
   ({ dt }) => updateHarvesters(dt),
   ({ level, dt }) => updateSpawners(level, dt),
   ({ level }) => updateRandomSpawner(level),
+  ({ level }) => updateTreasure(level),
   // Bombs must detonate before DeathSystem clears the destroyed entity.
   ({ level, dt }) => updateBombs(level, dt),
   () => updateExplosions(),
@@ -80,6 +83,7 @@ export const PRESENTATION: readonly System[] = [
   () => updateFx(),
   ({ dt }) => updateAnimation(dt),
   ({ dt }) => updateRender(dt),
+  ({ gameLayer }) => updateRailDroidCargo(gameLayer),
   ({ gameLayer }) => updateBars(gameLayer),
   ({ gameLayer }) => updateRanges(gameLayer),
   ({ gameLayer }) => updateMarkers(gameLayer),

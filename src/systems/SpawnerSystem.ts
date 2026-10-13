@@ -68,6 +68,8 @@ export function updateSpawners(level: Level, _dt: number): void {
   for (const nest of world.with('position', 'spawner')) {
     const s = nest.spawner!;
     if (s.spawnCount >= s.maxSpawns) continue;
+    // A nest being carried around stays shut.
+    if (nest.carriedBy !== undefined) continue;
     if ((nest.freezeTime ?? 0) > 0) continue;
 
     if (--s.timer > 0) continue;

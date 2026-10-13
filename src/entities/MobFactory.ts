@@ -55,7 +55,8 @@ const MOB_CONFIGS: Record<MobType, MobConfig> = {
     yOffset: 10,
   },
   pharao: {
-    health: 40, speed: 1.0, strength: 3, deathPoints: 30, limp: 3,
+    // Tougher than Java's 40: pharaohs guard the treasure and should take a fight.
+    health: 70, speed: 1.0, strength: 3, deathPoints: 30, limp: 3,
     radius: { x: 10, y: 10 },
     sheet: 'enemy_pharao_anim_48',
     frameCount: 4,

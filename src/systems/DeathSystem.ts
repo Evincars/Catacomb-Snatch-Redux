@@ -1,11 +1,14 @@
 import { world } from '../world';
 import type { Level } from '../level/Level';
-import { dropLoot, spillMoney } from '../entities/LootFactory';
+import { createLoot, dropLoot, spillMoney } from '../entities/LootFactory';
 import { spawnDeathFx, spawnFx } from '../entities/FxFactory';
 import { sound } from '../audio/SoundPlayer';
 import type { SfxName } from '../audio/SoundPlayer';
 import { xpForLevel } from '../ui/HudPanel';
 import { destroyAttachments } from './BarSystem';
+
+/** Worth of the emerald every pharaoh drops. */
+const PHARAOH_GEM = 100;
 
 /** Death cries as in each Java mob's getDeathSound(). */
 const DEATH_SOUNDS: Record<string, SfxName> = {
@@ -45,7 +48,7 @@ export function updateDeath(_level: Level, _dt: number): void {
 
     if (entity.playerInput) {
       sound.playSound('death');
-    } else if (entity.turret || entity.harvester) {
+    } else if (entity.turret || entity.harvester || entity.railDroid) {
       sound.playSound('explosion', pos.x, pos.y);
       spawnFx(pos.x, pos.y, 'fx_bombsplosion_small_32', 10, 24, { yOffset: 8 });
       // A wrecked harvester spills everything it had stored, as in the original.
@@ -66,6 +69,11 @@ export function updateDeath(_level: Level, _dt: number): void {
 
     if (deathPts > 0) {
       dropLoot(pos.x, pos.y, deathPts);
+    }
+    // A pharaoh guards the treasure and always leaves at least one emerald behind.
+    if (entity.mobType === 'pharao') {
+      const angle = Math.random() * Math.PI * 2;
+      createLoot(pos.x, pos.y, Math.cos(angle) * 0.6, Math.sin(angle) * 0.6, PHARAOH_GEM, true);
     }
 
     world.addComponent(entity, 'removed', true);

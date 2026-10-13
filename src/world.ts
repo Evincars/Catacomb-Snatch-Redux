@@ -60,6 +60,7 @@ export type Entity = {
   stepTime?: number;
   limp?: number;
   bump?: { x: number; y: number };
+  /** A building that was just put down, sliding to rest the way it was tossed (Java's xSlide/ySlide). */
   slide?: { x: number; y: number };
   chasing?: boolean;
 
@@ -183,6 +184,8 @@ export type Entity = {
     freezeTime: number;
     range: number;
     traveledRange: number;
+    /** Wall bounces left before the shot dies (plasma balls). */
+    bounces?: number;
     /** Damage lost per tick down to a floor of 0.5 (shotgun pellets). */
     damageFalloff?: number;
     /** Picks one of this many sheet frames at random each tick (plasma balls). */
@@ -216,10 +219,17 @@ export type Entity = {
   ephemeral?: { age: number; life: number; drop: number };
   /** A player dropping down a hole: ticks elapsed of the fall before they respawn. */
   falling?: { age: number; duration: number };
+  /** Ticks until the player's next footstep sound. */
+  stepTimer?: number;
   /** Ticks before a player may lay or lift another rail. */
   railCooldown?: number;
-  /** A rail carriage: heading (0 N, 1 E, 2 S, 3 W, -1 stopped) and the last heading it showed. */
-  railDroid?: { dir: number; lastDir: number };
+  /** The treasure pile; `timer` counts down to the next pharaoh rising beside it. */
+  treasure?: { timer: number };
+
+  /** A rail carriage: heading (0 N, 1 E, 2 S, 3 W, -1 stopped), last heading for its sprite, and its load of treasure. */
+  railDroid?: { dir: number; lastDir: number; full: boolean; swapTime: number };
+  /** The pot a carriage holds over its head, drawn separately from its body sprite. */
+  cargoSprite?: Sprite;
   /** A blast in progress that keeps throwing out fireballs until `life` runs out. */
   explosion?: { life: number; duration: number };
   /** Ticks until the next footstep puff of dust. */

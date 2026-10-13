@@ -72,6 +72,47 @@ export function move(
   return moved;
 }
 
+/** Solid things a player walks around: buildings, nests and carriages, unless they are being carried. */
+function structureBBs(x: number, y: number, rx: number, ry: number, except?: object): BB[] {
+  const area = BB.fromCenter(x, y, rx, ry).grow(32);
+  const out: BB[] = [];
+  for (const e of world.with('position', 'radius', 'blocking')) {
+    if (!e.building && !e.spawner && !e.railDroid) continue;
+    if (e.carriedBy !== undefined || e.removed || e === except) continue;
+    const bb = BB.fromCenter(e.position!.x, e.position!.y, e.radius!.x, e.radius!.y);
+    if (bb.intersects(area)) out.push(bb);
+  }
+  return out;
+}
+
+/** Speed lost per tick by a sliding building, and the speed below which it settles. */
+const SLIDE_DRAG = 0.8;
+const SLIDE_REST = 0.05;
+
+/**
+ * A building just put down glides to a stop. It stops short of walls, other
+ * structures and anything it may not stand on, such as track or holes.
+ */
+export function updateSlides(level: Level): void {
+  for (const entity of world.with('position', 'radius', 'slide')) {
+    const slide = entity.slide!;
+    const pos = entity.position!;
+    const r = entity.radius!;
+    const from = { x: pos.x, y: pos.y };
+    const bbs = level.getClipBBs(pos.x, pos.y, r.x, r.y);
+    bbs.push(...structureBBs(pos.x, pos.y, r.x, r.y, entity));
+    move(pos, r, slide.x, slide.y, bbs, true);
+    if (!level.getTileAt(pos.x, pos.y)?.buildable) {
+      pos.x = from.x;
+      pos.y = from.y;
+      slide.x = slide.y = 0;
+    }
+    slide.x *= SLIDE_DRAG;
+    slide.y *= SLIDE_DRAG;
+    if (Math.abs(slide.x) < SLIDE_REST && Math.abs(slide.y) < SLIDE_REST) world.removeComponent(entity, 'slide');
+  }
+}
+
 export function updateMovement(level: Level, _dt: number): void {
   // Bullets are excluded — BulletSystem moves them at constant speed.
   const allPhysical = world.with('position', 'velocity', 'radius').without('bullet');
@@ -93,6 +134,7 @@ export function updateMovement(level: Level, _dt: number): void {
     }
 
     const bbs = level.getClipBBs(position.x, position.y, radius.x, radius.y);
+    if (entity.playerInput) bbs.push(...structureBBs(position.x, position.y, radius.x, radius.y));
     move(position, radius, xa, ya, bbs, entity.physicsSlide !== undefined);
 
     const friction = entity.friction ?? 0.4;

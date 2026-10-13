@@ -16,7 +16,7 @@ const BARREL_REACH = 8;
 /** Distance between the two barrels of an upgraded turret. */
 const TWIN_SPACING = 5;
 
-/** Turrets shoot the nearest mob in range that they have line of sight to. */
+/** Turrets shoot the nearest mob or nest in range that they have line of sight to. */
 export function updateTurrets(level: Level, _dt: number): void {
   for (const turretEntity of world.with('position', 'turret')) {
     const t = turretEntity.turret!;
@@ -32,8 +32,10 @@ export function updateTurrets(level: Level, _dt: number): void {
     let closest: Entity | null = null;
     let closestDist = Infinity;
 
-    for (const mob of world.with('position', 'health', 'ai')) {
-      if (mob.health!.current <= 0) continue;
+    // Mobs and the nests they crawl out of are both fair game.
+    for (const mob of world.with('position', 'health', 'radius')) {
+      if (!mob.ai && !mob.spawner) continue;
+      if (mob.health!.current <= 0 || mob.removed || mob.carriedBy !== undefined) continue;
       const d = (mob.position!.x - pos.x) ** 2 + (mob.position!.y - pos.y) ** 2;
       if (d >= t.radius ** 2 || d >= closestDist) continue;
       if (!level.checkLineOfSight(pos.x, pos.y, mob.position!.x, mob.position!.y)) continue;

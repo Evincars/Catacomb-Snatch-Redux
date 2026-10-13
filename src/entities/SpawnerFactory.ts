@@ -34,6 +34,7 @@ export function createSpawner(x: number, y: number, mobType: string): Entity {
       spawnCount: 0,
       maxSpawns: Number.MAX_SAFE_INTEGER,
     },
+    tooltip: { title: 'Spawner', lines: [`Spawns ${mobType}s.`, 'Can be picked up and moved.'] },
     minimapColor: 0xff4400,
   });
 }
