@@ -47,6 +47,7 @@ const MUSIC = {
 const EARSHOT = 320;
 
 class SoundPlayer {
+  onEffect: ((name: SfxName, x?: number, y?: number) => void) | null = null;
   private ctx: AudioContext | null = null;
   private sfxGain!: GainNode;
   private musicGain!: GainNode;
@@ -107,6 +108,7 @@ class SoundPlayer {
 
   /** Plays a sound effect, optionally attenuated and panned by world position. */
   playSound(name: SfxName, x?: number, y?: number): void {
+    this.onEffect?.(name, x, y);
     if (!this.unlocked) return;
     const buffer = this.buffers.get(SFX[name]);
     if (!buffer) return;

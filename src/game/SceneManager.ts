@@ -9,7 +9,8 @@ export type SceneName =
   | 'game_over'
   | 'options'
   | 'key_bindings'
-  | 'how_to_play';
+  | 'how_to_play'
+  | 'coop_host' | 'coop_join' | 'saves' | 'save_game';
 
 export type SceneFactory = (manager: SceneManager) => Scene;
 

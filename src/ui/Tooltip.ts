@@ -6,6 +6,7 @@ import { camera, GAME_WIDTH, VIEW_HEIGHT } from '../render/Camera';
 import { upgradeCostOf } from '../entities/BuildingFactory';
 import { keyLabel } from '../game/Settings';
 import { PixelLabel } from './PixelText';
+import { targetOf } from '../systems/TargetingSystem';
 
 const TITLE_COLOR = 0xffd860;
 const LINE_COLOR = 0xffffff;
@@ -57,8 +58,9 @@ export class TooltipView {
     this.container.visible = false;
   }
 
-  update(): void {
-    const entity = world.with('position', 'hovered').first ?? world.with('position', 'targeted').first ?? null;
+  update(player?: Entity): void {
+    const entity = world.with('position', 'hovered').first
+      ?? (player ? targetOf(player) : world.with('position', 'targeted').first) ?? null;
     const content = entity ? describe(entity) : null;
     if (!entity || !content) {
       this.container.visible = false;

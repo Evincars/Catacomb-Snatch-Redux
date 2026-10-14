@@ -112,6 +112,7 @@ export function updateTargeting(): void {
     }
 
     const pi = player.playerInput!;
+    if (player.remoteInput) continue;
     const hovered = closest(player, screenToWorld(pi.mouseX, pi.mouseY), HOVER_RADIUS);
     if (hovered) world.addComponent(hovered, 'hovered', true);
   }

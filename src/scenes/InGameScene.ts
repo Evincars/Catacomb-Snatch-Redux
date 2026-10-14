@@ -14,11 +14,11 @@ import type { FrameContext } from '../systems/Simulation';
 import { clearSprites, updateSprites } from '../systems/SpriteSystem';
 import { spawnInitialSpawners } from '../systems/RandomSpawnerSystem';
 import { carriedByPlayer } from '../systems/InteractionSystem';
-import { targetOf } from '../systems/TargetingSystem';
+import { targetOf, updateTargeting } from '../systems/TargetingSystem';
 import { syncWalls, resetWalls } from '../systems/WallSystem';
 import { upgradeCostOf } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
-import { takeNotices, clearNotices } from '../game/Notices';
+import { takeNotices, clearNotices, updateNotices, noticeEvents } from '../game/Notices';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
 import { gameState, DEBUG_COINS } from '../game/GameState';
@@ -31,6 +31,14 @@ import { WeaponBar } from '../ui/WeaponBar';
 import { DarknessRenderer } from '../level/DarknessRenderer';
 import { Crosshair } from '../ui/Crosshair';
 import { keyLabel } from '../game/Settings';
+import { coop } from '../network/CoopSession';
+import { captureWorld, WorldReplica, restoreSettings } from '../game/WorldState';
+import { savedRun, saveMenu } from '../game/SaveStore';
+import { Level as RestorableLevel } from '../level/Level';
+import { updateInput } from '../systems/InputSystem';
+import { screenToWorld } from '../render/Camera';
+import { flushRemoved } from '../systems/DeathSystem';
+import { Mth } from '../math/Mth';
 
 /** Tiles of sight around the player, as in Java's Player.tick(). */
 const REVEAL_RADIUS = 5;
@@ -53,6 +61,13 @@ export class InGameScene implements Scene {
   private weaponBar = new WeaponBar();
 
   private paused = false;
+  private hostPaused = false;
+  private wasConnected = false;
+  private replica = new WorldReplica();
+  private networkTick = 0;
+  private inputSequence = 0;
+  private lastTerrain = '';
+  private disposed = false;
   private finished = false;
   private manager: SceneManager;
   private app: Application;
@@ -80,6 +95,7 @@ export class InGameScene implements Scene {
 
     this.load()
       .then(() => {
+        if (this.disposed) return;
         this.container.removeChild(loading);
         loading.destroy();
         this.ticker.add((t) => this.tick(t.deltaTime));
@@ -87,6 +103,7 @@ export class InGameScene implements Scene {
         sound.startBackgroundMusic();
       })
       .catch((err: unknown) => {
+        if (this.disposed) return;
         // A failed load used to leave a silent black screen; show it instead.
         console.error('Failed to start level', err);
         loading.destroy();
@@ -102,10 +119,23 @@ export class InGameScene implements Scene {
     clearNotices();
     for (const entity of world.entities.slice()) world.remove(entity);
 
-    const { path } = gameState.selectedLevel;
-    if (!path) throw new Error('This level has no map file.');
-    this.level = await loadTmxLevel(path, gameState.difficulty.shopCostMod);
-    this.level.targetScore = gameState.targetScore;
+    const pending = savedRun.pending;
+    const snapshot = coop.role === 'guest' ? coop.latest?.state : pending?.state;
+    if (snapshot) {
+      restoreSettings(snapshot);
+      this.hostPaused = coop.role === 'guest' && !!coop.latest?.paused;
+      this.lastTerrain = JSON.stringify(snapshot.level.tiles);
+      this.level = RestorableLevel.restore(snapshot.level);
+      this.replica.apply(snapshot);
+      savedRun.pending = null;
+    } else {
+      if (coop.role === 'guest') throw new Error('Waiting for the host world');
+      const { path } = gameState.selectedLevel;
+      if (!path) throw new Error('This level has no map file.');
+      this.level = await loadTmxLevel(path, gameState.difficulty.shopCostMod);
+      if (this.disposed) return;
+      this.level.targetScore = gameState.targetScore;
+    }
     if (import.meta.env.DEV) (window as unknown as { __level: Level }).__level = this.level;
 
     this.gameLayer.sortableChildren = true;
@@ -124,10 +154,58 @@ export class InGameScene implements Scene {
     const spawn =
       this.level.getRandomSpawnPoint(Team.One) ??
       { x: 2 * TILE_WIDTH, y: 2 * TILE_HEIGHT };
-    this.player = createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
-    if (gameState.debug) this.player.playerStats!.score = DEBUG_COINS;
+    const slot = coop.role === 'guest' ? 'guest' : 'host';
+    const existing = [...world.with('playerSlot')].find(e => e.playerSlot === slot);
+    this.player = existing ?? createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
+    world.addComponent(this.player, 'playerSlot', slot);
+    world.removeComponent(this.player, 'remoteInput');
+    if (!snapshot && gameState.debug) this.player.playerStats!.score = DEBUG_COINS;
+    if (coop.role === 'host') {
+      const guest = [...world.with('playerSlot')].find(e => e.playerSlot === 'guest')
+        ?? createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
+      world.addComponent(guest, 'playerSlot', 'guest');
+      world.addComponent(guest, 'remoteInput', true);
+      guest.minimapColor = 0x80dfff;
+      if (!snapshot && gameState.debug) guest.playerStats!.score = DEBUG_COINS;
+    } else if (!coop.role) {
+      // A restored single-player run only has a local host character.
+      for (const entity of world.with('playerSlot')) {
+        if (entity !== this.player && entity.playerInput) world.addComponent(entity, 'remoteInput', true);
+      }
+    }
     // Placed after the player so no nest lands within sight of the start.
-    spawnInitialSpawners(this.level);
+    if (!snapshot) spawnInitialSpawners(this.level);
+
+    coop.onState = () => {
+      if (coop.role !== 'guest' || !coop.latest || this.disposed) return;
+      try {
+        const { state, paused } = coop.latest;
+        restoreSettings(state);
+        const terrain = JSON.stringify(state.level.tiles);
+        const dirty = terrain !== this.lastTerrain;
+        this.lastTerrain = terrain;
+        this.level = RestorableLevel.restore(state.level);
+        this.hostPaused = paused;
+        this.replica.apply(state);
+        const guest = [...world.with('playerSlot')].find(e => e.playerSlot === 'guest');
+        if (!guest) throw new Error('Host state has no guest character');
+        this.player = guest;
+        world.removeComponent(guest, 'remoteInput');
+        for (const host of world.with('playerSlot')) {
+          if (host !== guest) world.addComponent(host, 'remoteInput', true);
+        }
+        if (dirty) this.rebuildTerrain();
+      } catch (error) {
+        console.error('Applying co-op state:', error);
+        this.finished = true;
+        this.showLoadError(error);
+      }
+    };
+    coop.onEnd = winner => this.end(winner);
+    if (coop.role === 'host') {
+      sound.onEffect = (name, x, y) => coop.sendSound(name, x, y);
+      noticeEvents.onNotice = text => coop.sendNotice(text);
+    }
 
     syncWalls(this.level);
     updateSprites(this.gameLayer);
@@ -136,6 +214,7 @@ export class InGameScene implements Scene {
     this.container.addChild(this.crosshair.graphics);
     (this.app.canvas as HTMLCanvasElement).style.cursor = 'none';
     this.centerCameraOn(spawn.x, spawn.y);
+    if (coop.role === 'host') coop.sendState(captureWorld(this.level), false);
   }
 
   /** Redraws the floor texture and wall entities after bombs change the terrain. */
@@ -229,12 +308,23 @@ export class InGameScene implements Scene {
     title.width = GAME_WIDTH;
     title.height = GAME_HEIGHT;
     this.overlay.addChild(title);
+    if (coop.role && !coop.connected) {
+      const status = makeText(coop.status.slice(0, 58), 0xff8888, 8, 'center');
+      status.x = GAME_WIDTH / 2; status.y = 40;
+      this.overlay.addChild(status);
+    }
 
     const entries: Array<{ label: string; action: () => void }> = [
       { label: 'Resume', action: () => this.togglePause() },
       { label: 'Help', action: () => this.manager.pushOverlay('how_to_play') },
       { label: 'Options', action: () => this.manager.pushOverlay('options') },
-      { label: 'Debug', action: () => this.enableDebug() },
+      ... (coop.role !== 'guest' ? [{
+        label: 'Save game', action: () => {
+          saveMenu.state = captureWorld(this.level);
+          this.manager.pushOverlay('save_game');
+        },
+      }] : []),
+      ...(coop.role !== 'guest' ? [{ label: 'Debug', action: () => this.enableDebug() }] : []),
       { label: 'Main', action: () => this.manager.goto('title') },
       { label: 'Exit Game', action: () => this.exitGame() },
     ];
@@ -244,7 +334,7 @@ export class InGameScene implements Scene {
     entries.forEach(({ label, action }, i) => {
       const button = new PixelButton(label, BTN_W, BTN_H);
       button.x = (GAME_WIDTH - BTN_W) / 2;
-      button.y = 100 + i * (BTN_H + 4);
+      button.y = 80 + i * (BTN_H + 4);
       button.onPress = action;
       this.overlay.addChild(button);
     });
@@ -274,7 +364,17 @@ export class InGameScene implements Scene {
   }
 
   private tick(dt: number): void {
-    if (this.paused || this.finished) return;
+    if (this.finished) return;
+    if (coop.role === 'host' && this.wasConnected && !coop.connected && !this.paused) this.togglePause();
+    this.wasConnected = coop.connected;
+    if (coop.role === 'host' && ++this.networkTick % 6 === 0 && coop.connected) {
+      coop.sendState(captureWorld(this.level), this.paused);
+    }
+    if (this.paused) {
+      if (coop.role === 'guest') this.sendGuestInput(true);
+      if (coop.role === 'host') coop.input = null;
+      return;
+    }
 
     const ctx: FrameContext = {
       level: this.level,
@@ -282,8 +382,16 @@ export class InGameScene implements Scene {
       gameLayer: this.gameLayer,
       rebuildTerrain: this.rebuildTerrain,
     };
-    runSystems(SIMULATION, ctx);
+    if (coop.role === 'guest') {
+      this.sendGuestInput(this.hostPaused || !coop.connected);
+      updateTargeting();
+      updateNotices();
+    } else {
+      this.applyGuestInput();
+      runSystems(SIMULATION, ctx);
+    }
     runSystems(PRESENTATION, ctx);
+    if (coop.role === 'guest') flushRemoved();
 
     const pos = this.player.position;
     const stats = this.player.playerStats;
@@ -298,24 +406,71 @@ export class InGameScene implements Scene {
         REVEAL_RADIUS,
       );
     }
+    if (coop.role === 'host') {
+      for (const teammate of world.with('playerSlot', 'position')) {
+        this.level.reveal(Math.floor(teammate.position!.x / TILE_WIDTH),
+          Math.floor(teammate.position!.y / TILE_HEIGHT), REVEAL_RADIUS);
+      }
+    }
     this.darkness.update(this.level);
 
     this.hud.update(this.player, this.level);
     this.weaponBar.update(this.player);
-    this.tooltip.update();
+    this.tooltip.update(this.player);
     this.crosshair.update();
     this.updatePrompt();
+    if (coop.role && (!coop.connected || this.hostPaused)) {
+      this.hud.setPrompt(this.hostPaused ? 'Host paused the game' : coop.status);
+    }
 
     // The player entity is removed by DeathSystem once health hits zero.
-    if (!health || health.current <= 0 || this.player.removed) {
+    if (coop.role === 'guest') return;
+    if (coop.role === 'host' && ([...world.with('playerSlot')].some(e => (e.health?.current ?? 0) <= 0 || e.removed)
+      || [...world.with('playerSlot')].length < 2)) {
       this.end(0);
-    } else if (!gameState.debug && stats && stats.score >= this.level.targetScore) {
+    } else if (!health || health.current <= 0 || this.player.removed) {
+      this.end(0);
+    } else if (!gameState.debug && stats
+      && [...world.with('playerSlot', 'playerStats')].reduce((sum, p) => sum + p.playerStats!.score, 0) >= this.level.targetScore) {
       this.end(Team.One);
     }
   }
 
+  private sendGuestInput(idle: boolean): void {
+    updateInput(1);
+    const input = structuredClone(this.player.playerInput!);
+    if (idle) {
+      input.up = input.down = input.left = input.right = input.shoot = input.use = input.sprint = false;
+      input.keyAim = null;
+      input.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
+    }
+    const aim = screenToWorld(input.mouseX, input.mouseY);
+    const pos = this.player.position!;
+    const dx = aim.x - pos.x, dy = aim.y - pos.y;
+    const length = Math.hypot(dx, dy) || 1;
+    this.player.aimVector = input.keyAim ?? { x: dx / length, y: dy / length };
+    this.player.facing = Mth.aimToFacing8(this.player.aimVector.x, this.player.aimVector.y);
+    coop.sendInput({ input, aim, sequence: this.inputSequence++ });
+  }
+
+  private applyGuestInput(): void {
+    const guest = [...world.with('playerSlot')].find(e => e.playerSlot === 'guest');
+    if (!guest?.playerInput) return;
+    const frame = coop.input;
+    if (!coop.connected || performance.now() - coop.lastInputAt > 500 || !frame) {
+      guest.playerInput.up = guest.playerInput.down = guest.playerInput.left = guest.playerInput.right = false;
+      guest.playerInput.shoot = guest.playerInput.use = guest.playerInput.sprint = false;
+      guest.playerInput.keyAim = null;
+      guest.playerInput.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
+      return;
+    }
+    guest.playerInput = structuredClone(frame.input);
+    guest.aimWorld = frame.aim;
+    frame.input.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
+  }
 
   private end(winner: number): void {
+    if (coop.role === 'host') coop.end(winner);
     this.finished = true;
     gameState.winningTeam = winner;
     sound.stopBackgroundMusic();
@@ -323,6 +478,9 @@ export class InGameScene implements Scene {
   }
 
   destroy(): void {
+    this.disposed = true;
+    coop.onState = null; coop.onEnd = null;
+    sound.onEffect = null; noticeEvents.onNotice = null;
     window.removeEventListener('keydown', this.onKeyDown);
     this.ticker.stop();
     this.ticker.destroy();

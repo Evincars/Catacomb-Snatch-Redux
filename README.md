@@ -51,6 +51,37 @@ The dev server runs at `http://localhost:5173`. The production build outputs to 
   100-tick rest; the original staggered variants start 30 or 60 ticks later. They hurt grounded
   entities, not flying bats, and prevent building on their tiles.
 
+## Co-op multiplayer and saves
+
+- Choose **Host co-op** from the main menu, copy the invite link, and send it to one teammate.
+  Once connected, the host chooses the map, difficulty and character, then starts the game.
+- The teammate can open the link directly or paste it into **Join co-op**.
+  Both players fight the existing AI on Team One, start at the same spawn, and use the host's
+  character. The guest has a cyan tint so the two players remain distinguishable.
+- The host runs the authoritative simulation. The guest sends controls, not positions or money;
+  compressed world snapshots synchronize players, enemies, buildings, loot, terrain and progression.
+  Positional sound effects and game notices are forwarded to the guest as well.
+  Each player has their own controls, camera, inventory and purse. Combined carried coins count
+  toward victory. A player killed in co-op respawns at the base with full health and brief protection;
+  the teammate's game continues. Single-player death behavior is unchanged.
+- The host's pause menu pauses the world; the guest's pause menu only stops their own controls.
+  A lost connection pauses the host's run, where it can still be saved. Return to the main menu
+  and reload that save to reconnect with a new invite.
+- Use **Save game** from the single-player or host pause menu to create a named save or replace
+  an existing one. **Saved games** in the main menu supports loading and deleting saves.
+  Replacement and deletion ask for confirmation. Saves include the complete world and both
+  players' progression, but not the old network connection. Loading a co-op save creates a fresh
+  host lobby and invite. The guest reconnects into their saved state.
+- Saves use this browser's local storage for this site/origin. Clearing site data removes them,
+  and a different browser or device will not have them. Storage and connection errors are shown
+  explicitly rather than treated as successful saves or joins.
+
+PeerJS uses WebRTC data channels and its public PeerServer for signaling. An internet connection
+is needed to establish the session; no application game server is required. Deploy on HTTPS
+(localhost also works). Some restrictive networks/NAT combinations may require a separately
+configured TURN relay; this version does not bundle or operate one. Keep the host tab open.
+Invite links grant access to the session, so share them only with your teammate.
+
 ## Original Game
 
 Catacomb Snatch was originally created by Mojang for the 2012 Humble Bundle charity event and later released open-source.

@@ -71,6 +71,7 @@ export function updateRender(_dt: number): void {
   for (const entity of world.with('position', 'sprite')) {
     const pos = entity.position!;
     const sprite = entity.sprite!;
+    sprite.tint = entity.playerSlot === 'guest' ? 0x80dfff : 0xffffff;
     const yOff = entity.yOffset ?? 0;
 
     sprite.x = Math.round(pos.x);

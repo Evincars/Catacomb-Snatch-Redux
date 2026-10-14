@@ -113,6 +113,7 @@ export function updateInput(_dt: number): void {
   const aimLen = Math.hypot(aimX, aimY) || 1;
 
   for (const entity of q.players) {
+    if (entity.remoteInput) continue;
     const pi = entity.playerInput!;
     pi.up    = isActionDown('up');
     pi.down  = isActionDown('down');

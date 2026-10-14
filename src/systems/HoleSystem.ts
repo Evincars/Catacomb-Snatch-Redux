@@ -41,15 +41,15 @@ function startFall(player: Entity): void {
   });
 }
 
-export function respawnPlayer(player: Entity, level: Level): void {
+export function respawnPlayer(player: Entity, level: Level, reason: 'fall' | 'death' = 'fall'): void {
   const pos = player.position!;
   const health = player.health!;
 
-  sound.playSound('fall', pos.x, pos.y);
+  if (reason === 'fall') sound.playSound('fall', pos.x, pos.y);
 
   // Whatever the player was carrying falls in with them.
   const carriedId = player.carryingId;
-  if (carriedId !== undefined) {
+  if (reason === 'fall' && carriedId !== undefined) {
     const carried = world.entity(carriedId);
     if (carried) world.addComponent(carried, 'removed', true);
     world.removeComponent(player, 'carryingId');
@@ -57,7 +57,7 @@ export function respawnPlayer(player: Entity, level: Level): void {
 
   // Half the purse scatters where they fell, as in Java's dropAllMoney().
   const stats = player.playerStats;
-  if (stats && stats.score > 0) {
+  if (reason === 'fall' && stats && stats.score > 0) {
     let remaining = Math.floor(stats.score / 2);
     stats.score -= remaining;
     for (let i = 0; remaining > 0 && i < 8; i++) {
@@ -75,11 +75,11 @@ export function respawnPlayer(player: Entity, level: Level): void {
   }
 
   // Falling costs a point of health rather than being a free teleport.
-  health.max = Math.max(1, health.max - 1);
+  if (reason === 'fall') health.max = Math.max(1, health.max - 1);
   health.current = health.max;
 
   player.velocity && (player.velocity.x = player.velocity.y = 0);
   if (player.bump) player.bump.x = player.bump.y = 0;
-  player.hurtTime = 0;
+  player.hurtTime = reason === 'death' ? 60 : 0;
   player.freezeTime = 0;
 }

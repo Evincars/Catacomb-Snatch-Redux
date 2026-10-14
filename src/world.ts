@@ -29,6 +29,9 @@ export type PlayerIntents = {
 export type ShopKind = 'turret' | 'harvester' | 'bomb' | 'rifle' | 'shotgun' | 'raygun';
 
 export type Entity = {
+  playerSlot?: 'host' | 'guest';
+  remoteInput?: true;
+  aimWorld?: { x: number; y: number };
   // --- spatial ---
   position?: { x: number; y: number };
   velocity?: { x: number; y: number };

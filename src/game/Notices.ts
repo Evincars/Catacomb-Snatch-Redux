@@ -4,8 +4,10 @@ export type Notice = { text: string; ticks: number };
 const NOTICE_TICKS = 120;
 const MAX_NOTICES = 3;
 const notices: Notice[] = [];
+export const noticeEvents: { onNotice: ((text: string) => void) | null } = { onNotice: null };
 
 export function notify(text: string): void {
+  noticeEvents.onNotice?.(text);
   notices.push({ text, ticks: NOTICE_TICKS });
   if (notices.length > MAX_NOTICES) notices.shift();
 }

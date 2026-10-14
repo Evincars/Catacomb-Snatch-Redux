@@ -7,6 +7,8 @@ import { makeText } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
 import { gameState } from '../game/GameState';
 import { sound } from '../audio/SoundPlayer';
+import { coop } from '../network/CoopSession';
+import { savedRun } from '../game/SaveStore';
 
 const GW = GAME_WIDTH;
 const GH = GAME_HEIGHT;
@@ -16,6 +18,13 @@ export class TitleScene implements Scene {
   private buttons: PixelButton[] = [];
 
   constructor(manager: SceneManager) {
+    coop.close();
+    savedRun.pending = null;
+    const url = new URL(location.href);
+    if (url.searchParams.has('join')) {
+      url.searchParams.delete('join');
+      history.replaceState(null, '', url.href);
+    }
     this.container = new Container();
 
     // Title screen background
@@ -28,26 +37,29 @@ export class TitleScene implements Scene {
 
     const menuItems: { label: string; action: () => void }[] = [
       { label: 'Start',       action: () => manager.goto('level_select') },
+      { label: 'Host co-op', action: () => manager.goto('coop_host') },
+      { label: 'Join co-op', action: () => manager.goto('coop_join') },
+      { label: 'Saved games', action: () => manager.goto('saves') },
       { label: 'How To Play', action: () => manager.goto('how_to_play') },
       { label: 'Options',     action: () => manager.goto('options') },
     ];
 
     const BTN_W = 248;
     const debugLabel = () => `Debug: ${gameState.debug ? 'On' : 'Off'}`;
-    const startY = 196;
+    const startY = 174;
     menuItems.forEach(({ label, action }, i) => {
-      const btn = new PixelButton(label, BTN_W, 30);
+      const btn = new PixelButton(label, BTN_W, 24);
       btn.x = (GW - BTN_W) / 2;
-      btn.y = startY + i * 40;
+      btn.y = startY + i * 27;
       btn.onPress = action;
       this.buttons.push(btn);
       this.container.addChild(btn);
     });
 
     // Testing aid: start every game with a pile of coins.
-    const debug = new PixelButton(debugLabel(), BTN_W, 30);
+    const debug = new PixelButton(debugLabel(), BTN_W, 24);
     debug.x = (GW - BTN_W) / 2;
-    debug.y = startY + menuItems.length * 40;
+    debug.y = startY + menuItems.length * 27;
     debug.onPress = () => {
       gameState.debug = !gameState.debug;
       debug.setText(debugLabel());

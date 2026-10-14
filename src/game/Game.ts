@@ -11,6 +11,9 @@ import { KeyBindingsScene } from '../scenes/KeyBindingsScene';
 import { HowToPlayScene } from '../scenes/HowToPlayScene';
 import { GAME_WIDTH, GAME_HEIGHT, SCALE } from '../render/Camera';
 import { sound } from '../audio/SoundPlayer';
+import { CoopScene } from '../scenes/CoopScene';
+import { SavesScene } from '../scenes/SavesScene';
+import { saveMenu } from './SaveStore';
 
 export class Game {
   private app: Application;
@@ -48,7 +51,12 @@ export class Game {
       .register('options',           (m) => new OptionsScene(m))
       .register('key_bindings',      (m) => new KeyBindingsScene(m))
       .register('how_to_play',       (m) => new HowToPlayScene(m));
+    this.manager
+      .register('coop_host', m => new CoopScene(m, 'host'))
+      .register('coop_join', m => new CoopScene(m, 'guest', new URL(location.href).searchParams.get('join') ?? undefined))
+      .register('saves', m => new SavesScene(m))
+      .register('save_game', m => new SavesScene(m, saveMenu.state ?? undefined));
 
-    this.manager.goto('title');
+    this.manager.goto(new URL(location.href).searchParams.has('join') ? 'coop_join' : 'title');
   }
 }

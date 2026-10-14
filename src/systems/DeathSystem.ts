@@ -6,6 +6,8 @@ import { sound } from '../audio/SoundPlayer';
 import type { SfxName } from '../audio/SoundPlayer';
 import { xpForLevel } from '../ui/HudPanel';
 import { destroyAttachments } from './BarSystem';
+import { coop } from '../network/CoopSession';
+import { respawnPlayer } from './HoleSystem';
 
 /** Worth of the emerald every pharaoh drops. */
 const PHARAOH_GEM = 100;
@@ -37,7 +39,7 @@ function awardExperience(points: number): void {
   }
 }
 
-export function updateDeath(_level: Level, _dt: number): void {
+export function updateDeath(level: Level, _dt: number): void {
   for (const entity of world.with('health', 'position')) {
     const h = entity.health!;
     if (h.current > 0) continue;
@@ -48,6 +50,11 @@ export function updateDeath(_level: Level, _dt: number): void {
 
     if (entity.playerInput) {
       sound.playSound('death');
+      if (coop.role === 'host' && entity.playerSlot) {
+        world.removeComponent(entity, 'falling');
+        respawnPlayer(entity, level, 'death');
+        continue;
+      }
     } else if (entity.chest) {
       sound.playSound('explosion', pos.x, pos.y);
       spawnDeathFx(entity);
@@ -82,7 +89,10 @@ export function updateDeath(_level: Level, _dt: number): void {
     world.addComponent(entity, 'removed', true);
   }
 
-  // Flush removed entities
+  flushRemoved();
+}
+
+export function flushRemoved(): void {
   for (const entity of world.with('removed')) {
     destroyAttachments(entity);
     if (entity.sprite) entity.sprite.destroy({ children: true });

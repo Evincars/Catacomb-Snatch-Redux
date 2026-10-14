@@ -191,7 +191,7 @@ export function updateMovement(level: Level, _dt: number): void {
       entity.aimVector.y = pi.keyAim.y;
     } else if (pi.mouseAiming && entity.aimVector) {
       // Aim at the cursor, converting from screen space to world space.
-      const target = screenToWorld(pi.mouseX, pi.mouseY);
+      const target = entity.aimWorld ?? screenToWorld(pi.mouseX, pi.mouseY);
       const dx = target.x - pos.x;
       const dy = target.y - pos.y;
       const len = Math.hypot(dx, dy);

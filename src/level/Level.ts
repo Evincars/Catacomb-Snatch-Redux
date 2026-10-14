@@ -4,6 +4,18 @@ import { BB } from '../math/BB';
 import { Team } from '../world';
 
 export type SpawnPoint = { x: number; y: number };
+export type LevelState = {
+  width: number;
+  height: number;
+  tiles: TileData[][];
+  seen: boolean[];
+  baseTiles: BaseTile[];
+  spawnTiles: SpawnTile[];
+  baseAreas: Level['baseAreas'];
+  spawns: [SpawnPoint[], SpawnPoint[]];
+  targetScore: number;
+  scores: [number, number];
+};
 
 /** How far a wall's collision box rises above its tile (Java WallTile.addClipBBs). */
 const WALL_CLIP_RISE = 6;
@@ -221,6 +233,28 @@ export class Level {
 
   canPlayersSpawn(): boolean {
     return this.spawnPointsP1.length > 0 && this.spawnPointsP2.length > 0;
+  }
+
+  snapshot(): LevelState {
+    return {
+      width: this.width, height: this.height, tiles: this.tileStacks, seen: this.seen,
+      baseTiles: this.baseTiles, spawnTiles: this.spawnTiles, baseAreas: this.baseAreas,
+      spawns: [this.spawnPointsP1, this.spawnPointsP2],
+      targetScore: this.targetScore, scores: [this.player1Score, this.player2Score],
+    };
+  }
+
+  static restore(state: LevelState): Level {
+    const level = new Level(state.width, state.height);
+    level.tileStacks = state.tiles;
+    level.seen.splice(0, level.seen.length, ...state.seen);
+    level.baseTiles.push(...state.baseTiles);
+    level.spawnTiles.push(...state.spawnTiles);
+    level.baseAreas.push(...state.baseAreas);
+    [level.spawnPointsP1, level.spawnPointsP2] = state.spawns;
+    level.targetScore = state.targetScore;
+    [level.player1Score, level.player2Score] = state.scores;
+    return level;
   }
 
   checkLineOfSight(
