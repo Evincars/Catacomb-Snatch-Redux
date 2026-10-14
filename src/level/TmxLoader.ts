@@ -8,6 +8,8 @@ import { createSpawner } from '../entities/SpawnerFactory';
 import { createBuilding } from '../entities/BuildingFactory';
 import { createShopItem } from '../entities/ShopItemFactory';
 import { createSpikeTrap } from '../entities/SpikeTrapFactory';
+import { LEVELS } from '../game/GameState';
+import { loadLevelBitmap, restoreCrackedFloors } from './LevelBitmap';
 
 // TMX tileset firstgid offsets (from LevelUtils.java)
 const FLOOR_BASE   = 1;
@@ -280,6 +282,8 @@ export async function loadTmxLevel(path: string, costMod = 1): Promise<Level> {
     else createBuilding((tx + 0.5) * TILE_WIDTH, (ty + 0.5) * TILE_HEIGHT, 'turret', team);
   }
   layoutSpawnAreas(level, shops, costMod);
+  const bitmapPath = LEVELS.find(map => map.path === path)?.preview;
+  if (bitmapPath) restoreCrackedFloors(level, await loadLevelBitmap(bitmapPath));
   return level;
 }
 

@@ -1,5 +1,6 @@
 import { world } from '../world';
-import { frameTexture, sheetCols } from '../render/Sheets';
+import { sheetCols } from '../render/Sheets';
+import { setVisualFrame } from '../render/AnimatedVisual';
 
 /**
  * Picks each entity's sheet cell: the column is the animation step, the row the
@@ -36,6 +37,6 @@ export function updateAnimation(_dt: number): void {
       row = entity.mobType === 'bat' ? 0 : ((entity.facing ?? 2) + 1) & 3;
     }
 
-    entity.sprite!.texture = frameTexture(anim.sheet, anim.frameX % cols, row);
+    setVisualFrame(entity.sprite!, anim.sheet, anim.frameX % cols, row);
   }
 }

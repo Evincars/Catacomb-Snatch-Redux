@@ -1,6 +1,6 @@
 import { world } from '../world';
 import { spawnFx } from '../entities/FxFactory';
-import { frameTexture } from '../render/Sheets';
+import { setVisualFrame } from '../render/AnimatedVisual';
 
 /** Steps effect sprites through their strips and retires them when finished. */
 export function updateFx(): void {
@@ -15,7 +15,7 @@ export function updateFx(): void {
 
     if (visual.col !== frame) {
       visual.col = frame;
-      if (entity.sprite) entity.sprite.texture = frameTexture(visual.sheet, frame, 0);
+      if (entity.sprite) setVisualFrame(entity.sprite, visual.sheet, frame);
     }
     if (entity.sprite && fx.scale && entity.sprite.scale.x !== fx.scale) {
       entity.sprite.scale.set(fx.scale);

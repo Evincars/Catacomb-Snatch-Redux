@@ -8,6 +8,7 @@ export type SheetInfo = {
 };
 
 const SHEETS: Record<string, SheetInfo> = {
+  floortiles: { frameWidth: 32, frameHeight: 32 },
   lord_lard_sheet:        { frameWidth: 32, frameHeight: 32 },
   countess_cruller_sheet: { frameWidth: 32, frameHeight: 32 },
   herr_von_speck_sheet:   { frameWidth: 32, frameHeight: 32 },
@@ -48,6 +49,7 @@ const SHEETS: Record<string, SheetInfo> = {
   treasure:    { frameWidth: 32, frameHeight: 56 },
   chest_small: { frameWidth: 32, frameHeight: 53 },
   spiketrap:   { frameWidth: 32, frameHeight: 32 },
+  droptrap:    { frameWidth: 32, frameHeight: 32 },
   spawner:     { frameWidth: 32, frameHeight: 40 },
   bomb:        { frameWidth: 32, frameHeight: 32 },
   muzzle:      { frameWidth: 16, frameHeight: 16 },

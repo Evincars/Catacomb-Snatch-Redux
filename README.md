@@ -47,16 +47,26 @@ The dev server runs at `http://localhost:5173`. The production build outputs to 
   The open chest disappears after 100 ticks with the bat's effect and sound.
 - Collecting treasure creates pickup sparkles and a faint, one-tick flash, with a gap between flashes
   even during continuous collection. Firing makes approaching coins coast to a stop rather than
-  freeze abruptly; releasing fire resumes collection.
-- Harvesters use the original 60-pixel starting range and original upgrade ranges.
+  freeze abruptly; releasing fire resumes collection. Grounded coins within 16 pixels are picked
+  up immediately, even while firing; airborne drops finish scattering before they can be collected.
+- Harvesters start with a 60-pixel range. Each upgrade adds one 32-pixel tile: 92 pixels at level two
+  and 124 pixels at level three.
   Focus brackets sit around the body rather than the tall antenna.
 - Cracked-floor traps deepen on each separate visit and collapse on the third, animating into holes.
   Falling players rotate and descend behind the foreground floor without shrinking, accompanied by
   an exclamation mark. Trap progression and airborne loot are included in saves and co-op snapshots.
+  TMX remains the map source; matching bitmap pixels with colour `#0000cc` restore cracked floors
+  in the centred map interior (an eight-tile border for the shipped 48×48 bitmaps and 64×64 maps).
 - DevMap uses the original bitmap's 48×48 layout, including chests, placed turrets, and spike traps,
   with the standard bases around it. Traps use four animation frames, 10-tick active steps and a
   100-tick rest; the original staggered variants start 30 or 60 ticks later. They hurt grounded
   entities, not flying bats, and prevent building on their tiles.
+
+Terrain uses `@pixi/tilemap` batches instead of a full-map render texture. Animated actors, pickups,
+effects, harvesters, spikes and cracked floors use PixiJS `AnimatedSprite`. Their frames are driven
+by the game loop with automatic ticker updates disabled, preserving pause, save and co-op timing.
+The renderer uses a 512×384 logical viewport at 2× resolution, with an unscaled stage so tilemaps,
+actors, pointer coordinates and collision tiles all share the same world coordinates.
 
 ## Co-op multiplayer and saves
 

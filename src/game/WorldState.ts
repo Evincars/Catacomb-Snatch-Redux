@@ -7,7 +7,7 @@ import type { CharacterType } from '../entities/PlayerFactory';
 import type { Difficulty, LevelInfo } from './GameState';
 import { DIFFICULTIES, LEVELS } from './GameState';
 import { destroyAttachments } from '../systems/BarSystem';
-import { frameTexture } from '../render/Sheets';
+import { setVisualFrame } from '../render/AnimatedVisual';
 
 const RUNTIME = new Set<keyof Entity>([
   'sprite', 'container', 'coinBar', 'healthBar', 'sprintBar', 'hurtOverlay', 'fallMask',
@@ -202,7 +202,7 @@ export class WorldReplica {
         else if (key in entity) world.removeComponent(entity, key);
       }
       if (entity.sprite && entity.visual && !entity.animation) {
-        entity.sprite.texture = frameTexture(entity.visual.sheet, entity.frame ?? entity.visual.col ?? 0, entity.visual.row ?? 0);
+        setVisualFrame(entity.sprite, entity.visual.sheet, entity.frame ?? entity.visual.col ?? 0, entity.visual.row ?? 0);
       }
       if (entity.playerSlot) {
         if (entity.playerSlot === 'guest') world.addComponent(entity, 'remoteInput', true);

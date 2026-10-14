@@ -25,15 +25,16 @@ export class Game {
 
   async init(): Promise<void> {
     await this.app.init({
-      width: GAME_WIDTH * SCALE,
-      height: GAME_HEIGHT * SCALE,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      // Keep world transforms in logical pixels; tilemap must not scale the stage again.
+      resolution: SCALE,
       backgroundColor: 0x000000,
       antialias: false,
       roundPixels: true,
     });
 
     document.body.appendChild(this.app.canvas);
-    this.app.stage.scale.set(SCALE);
 
     // Browsers only allow audio to start from a user gesture.
     const unlock = () => sound.unlock();

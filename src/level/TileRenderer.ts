@@ -1,11 +1,13 @@
-import { Container, RenderTexture, Sprite, Texture, Rectangle } from 'pixi.js';
-import type { Application } from 'pixi.js';
+import { Container, Graphics } from 'pixi.js';
+import { CompositeTilemap } from '@pixi/tilemap';
 import type { Level } from './Level';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from './TileType';
 import { RAIL_HORIZONTAL, RAIL_VERTICAL, isRailTile, railJoins, railFrameAt } from './RailLayout';
 import { getTexture } from '../assets/AssetLoader';
 import { Team } from '../world';
 import { gameState } from '../game/GameState';
+import { frameTexture } from '../render/Sheets';
+import { createAnimatedVisual } from '../render/AnimatedVisual';
 
 const FLOOR_COLS = 8;
 
@@ -69,13 +71,6 @@ function spawnSheet(team: Team): string {
   return character ? (SPAWN_SHEET_KEYS[character] ?? 'start_no_opponent') : 'start_no_opponent';
 }
 
-function frameOf(tex: Texture, col: number, row: number, w: number, h: number): Texture {
-  return new Texture({
-    source: tex.source,
-    frame: new Rectangle(col * w, row * h, w, h),
-  });
-}
-
 const SANDY = new Set([
   TileType.Sand,
   TileType.UnpassableSand,
@@ -118,13 +113,15 @@ function railFrame(level: Level, tx: number, ty: number): number {
   return railFrameAt(level, tx, ty);
 }
 
-/** Renders the static floor into a single texture; walls are separate depth-sorted entities. */
-export function buildLevelSprite(app: Application, level: Level): Sprite {
-  const floorTex = getTexture('floortiles');
-  const railTex = getTexture('rails');
-  const dropTex = getTexture('droptrap');
-
+/** Batches terrain with tilemap; moving actors and walls keep their own depth sorting. */
+export function buildLevelView(level: Level): Container {
   const container = new Container();
+  const holes = new Graphics();
+  const floors = new CompositeTilemap([getTexture('floortiles').source]);
+  const traps = new Container();
+  const rails = new CompositeTilemap([getTexture('rails').source]);
+  const bases = new CompositeTilemap();
+  container.addChild(holes, floors, traps, rails, bases);
 
   // Floors first so wall overhang draws on top of them.
   for (let ty = 0; ty < level.height; ty++) {
@@ -134,10 +131,10 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
 
       if (tile.type === TileType.DropTrap) {
         const row = level.getTile(tx, ty - 1)?.type === TileType.Hole ? 0 : 1;
-        const s = new Sprite(frameOf(dropTex, tile.crumble ?? 0, row, TILE_WIDTH, TILE_HEIGHT));
+        const s = createAnimatedVisual('droptrap', tile.crumble ?? 0, row);
         s.x = tx * TILE_WIDTH;
         s.y = ty * TILE_HEIGHT;
-        container.addChild(s);
+        traps.addChild(s);
         continue;
       }
       const above = level.getTile(tx, ty - 1);
@@ -146,16 +143,16 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
         : tile.type === TileType.Hole && above?.type === TileType.Sand ? 7
         : floorImageIndex(tile.type, tile.imageVariant);
       const interiorHole = tile.type === TileType.Hole && above?.type === TileType.Hole;
-      const s = new Sprite(interiorHole ? Texture.WHITE
-        : frameOf(floorTex, img % FLOOR_COLS, Math.floor(img / FLOOR_COLS), TILE_WIDTH, TILE_HEIGHT));
       if (interiorHole) {
-        s.tint = 0x000000;
-        s.width = TILE_WIDTH;
-        s.height = TILE_HEIGHT;
+        holes.rect(tx * TILE_WIDTH, ty * TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT).fill(0x000000);
+      } else {
+        floors.tile(getTexture('floortiles'), tx * TILE_WIDTH, ty * TILE_HEIGHT, {
+          u: (img % FLOOR_COLS) * TILE_WIDTH,
+          v: Math.floor(img / FLOOR_COLS) * TILE_HEIGHT,
+          tileWidth: TILE_WIDTH,
+          tileHeight: TILE_HEIGHT,
+        });
       }
-      s.x = tx * TILE_WIDTH;
-      s.y = ty * TILE_HEIGHT;
-      container.addChild(s);
     }
   }
 
@@ -165,10 +162,8 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
       const tile = level.getTile(tx, ty);
       if (!tile || !isRailTile(level, tx, ty)) continue;
 
-      const s = new Sprite(frameOf(railTex, railFrame(level, tx, ty), 0, TILE_WIDTH, RAIL_HEIGHT));
-      s.x = tx * TILE_WIDTH;
-      s.y = ty * TILE_HEIGHT - RAIL_RISE;
-      container.addChild(s);
+      rails.tile(frameTexture('rails', railFrame(level, tx, ty), 0),
+        tx * TILE_WIDTH, ty * TILE_HEIGHT - RAIL_RISE);
     }
   }
 
@@ -177,27 +172,16 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
     const sheet = spawnSheet(sp.team);
     const col = sp.img % 4;
     const row = Math.floor(sp.img / 4);
-    const s = new Sprite(frameOf(getTexture(sheet), col, row, TILE_WIDTH, TILE_HEIGHT));
-    s.x = sp.tileX * TILE_WIDTH + sp.offsetX;
-    s.y = sp.tileY * TILE_HEIGHT;
-    container.addChild(s);
+    bases.tile(frameTexture(sheet, col, row),
+      sp.tileX * TILE_WIDTH + sp.offsetX, sp.tileY * TILE_HEIGHT);
   }
 
   // Player base platforms sit above the floor but below walls.
   for (const base of level.baseTiles) {
     const sheet = baseSheet(base.team, base.side);
-    const s = new Sprite(frameOf(getTexture(sheet), base.img % 2, Math.floor(base.img / 2), TILE_WIDTH, TILE_HEIGHT));
-    s.x = base.tileX * TILE_WIDTH;
-    s.y = base.tileY * TILE_HEIGHT;
-    container.addChild(s);
+    bases.tile(frameTexture(sheet, base.img % 2, Math.floor(base.img / 2)),
+      base.tileX * TILE_WIDTH, base.tileY * TILE_HEIGHT);
   }
 
-  const rt = RenderTexture.create({
-    width: level.width * TILE_WIDTH,
-    height: level.height * TILE_HEIGHT,
-  });
-  app.renderer.render({ container, target: rt });
-  container.destroy({ children: true });
-
-  return new Sprite(rt);
+  return container;
 }

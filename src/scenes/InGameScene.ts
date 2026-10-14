@@ -6,7 +6,7 @@ import type { Entity } from '../world';
 import type { Level } from '../level/Level';
 import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { loadTmxLevel } from '../level/TmxLoader';
-import { buildLevelSprite } from '../level/TileRenderer';
+import { buildLevelView } from '../level/TileRenderer';
 import { createPlayer } from '../entities/PlayerFactory';
 import { initInput, resetInput } from '../systems/InputSystem';
 import { runSystems, SIMULATION, PRESENTATION } from '../systems/Simulation';
@@ -53,7 +53,7 @@ export class InGameScene implements Scene {
   private player!: Entity;
   private ticker = new Ticker();
 
-  private levelSprite?: Sprite;
+  private levelView?: Container;
   private hud!: HudPanel;
   private darkness = new DarknessRenderer();
   private crosshair = new Crosshair();
@@ -146,9 +146,9 @@ export class InGameScene implements Scene {
     this.container.addChild(this.hudLayer);
     this.container.addChild(this.overlay);
 
-    this.levelSprite = buildLevelSprite(this.app, this.level);
-    this.levelSprite.zIndex = -Number.MAX_SAFE_INTEGER;
-    this.gameLayer.addChild(this.levelSprite);
+    this.levelView = buildLevelView(this.level);
+    this.levelView.zIndex = -Number.MAX_SAFE_INTEGER;
+    this.gameLayer.addChild(this.levelView);
 
     // Fog sits above every world sprite but below the HUD.
     this.darkness.container.zIndex = Number.MAX_SAFE_INTEGER;
@@ -223,10 +223,10 @@ export class InGameScene implements Scene {
   /** Redraws the floor texture and wall entities after bombs change the terrain. */
   private rebuildTerrain = (): void => {
     this.level.tilesDirty = false;
-    this.levelSprite?.destroy();
-    this.levelSprite = buildLevelSprite(this.app, this.level);
-    this.levelSprite.zIndex = -Number.MAX_SAFE_INTEGER;
-    this.gameLayer.addChild(this.levelSprite);
+    this.levelView?.destroy({ children: true });
+    this.levelView = buildLevelView(this.level);
+    this.levelView.zIndex = -Number.MAX_SAFE_INTEGER;
+    this.gameLayer.addChild(this.levelView);
     syncWalls(this.level);
   };
 

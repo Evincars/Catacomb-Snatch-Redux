@@ -4,6 +4,7 @@ import { q, world } from '../world';
 import { frameTexture } from '../render/Sheets';
 import { PixelLabel } from '../ui/PixelText';
 import { destroyAttachments } from './BarSystem';
+import { createAnimatedVisual, setVisualFrame } from '../render/AnimatedVisual';
 
 /**
  * Gives every entity that declares a `visual` an actual Pixi sprite in the
@@ -13,7 +14,10 @@ import { destroyAttachments } from './BarSystem';
 export function updateSprites(gameLayer: Container): void {
   for (const entity of q.needsSprite) {
     const v = entity.visual!;
-    const sprite = new Sprite(frameTexture(v.sheet, v.col ?? 0, v.row ?? 0));
+    const animated = entity.animation || entity.fx || entity.harvester || entity.spikeTrap || entity.bullet?.randomFrames;
+    const sprite = animated
+      ? createAnimatedVisual(v.sheet, v.col ?? 0, v.row ?? 0)
+      : new Sprite(frameTexture(v.sheet, v.col ?? 0, v.row ?? 0));
     sprite.anchor.set(0.5, 0.5);
     if (v.scale) sprite.scale.set(v.scale);
     gameLayer.addChild(sprite);
@@ -36,7 +40,7 @@ export function updateSprites(gameLayer: Container): void {
     const v = entity.visual!;
     if (v.col === entity.facing8) continue;
     v.col = entity.facing8;
-    entity.sprite!.texture = frameTexture(v.sheet, v.col, v.row ?? 0);
+    setVisualFrame(entity.sprite!, v.sheet, v.col, v.row ?? 0);
   }
 
   // Frames chosen by a system (the harvester's animation) rather than by facing.
@@ -44,7 +48,7 @@ export function updateSprites(gameLayer: Container): void {
     const v = entity.visual!;
     if (v.col === entity.frame) continue;
     v.col = entity.frame;
-    entity.sprite!.texture = frameTexture(v.sheet, v.col, v.row ?? 0);
+    setVisualFrame(entity.sprite!, v.sheet, v.col, v.row ?? 0);
   }
 
   // Nests crack open through four frames as they lose health.

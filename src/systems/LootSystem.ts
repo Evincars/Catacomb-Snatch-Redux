@@ -8,7 +8,7 @@ import { spawnTakeFx } from '../entities/FxFactory';
 /** Drop-burst velocity retained per tick. */
 const LOOT_FRICTION = 0.85;
 /** A coin this close to a player is picked up. */
-const PICKUP_RADIUS = 10;
+export const PICKUP_RADIUS = 16;
 /** Glide speed, in pixels per tick, when a coin locks onto a player. */
 const GLIDE_START = 0.6;
 /** Speed gained per tick; coins outrun a sprinting player before long. */
@@ -31,9 +31,18 @@ function nearestPlayer(x: number, y: number, range: number): { player: Entity; d
   return best;
 }
 
+function collect(coin: Entity, player: Entity): void {
+  const ld = coin.loot!;
+  player.playerStats!.score += ld.value;
+  spawnTakeFx(player);
+  sound.playSound(pickupSound(ld.kind), coin.position!.x, coin.position!.y);
+  world.removeComponent(coin, 'loot');
+  world.addComponent(coin, 'removed', true);
+}
+
 /**
- * Coins burst outwards when dropped and wait. Firing keeps a player from
- * gathering; once they have stopped for a moment every coin in reach locks on
+ * Coins burst outwards when dropped and wait. Firing stops attraction, but not
+ * contact pickups; once released, every coin in reach locks on
  * and flies in, speeding up until it lands. If they start shooting again the
  * coins in flight coast to a stop, and carry on once they stop.
  * Coins nobody collects blink and vanish after the difficulty's lifespan.
@@ -65,6 +74,10 @@ export function updateLoot(_dt: number): void {
     }
 
     const near = nearestPlayer(lp.x, lp.y, ld.suckRadius);
+    if (!airborne && near && near.dist <= PICKUP_RADIUS) {
+      collect(coin, near.player);
+      continue;
+    }
     const locked = ld.glide > 0;
 
     if (!locked) {
@@ -85,24 +98,16 @@ export function updateLoot(_dt: number): void {
     if (!target) continue;
     if (coin.sprite) coin.sprite.visible = true;
 
-    // Retain a little momentum when firing starts, without collecting during the coast.
+    // Firing stops attraction, not contact pickups; momentum may still carry coins into reach.
     if (target.player.playerStats!.restTicks < REST_TO_HARVEST) {
       ld.glide = Math.max(GLIDE_START, ld.glide * 0.8);
-      if (ld.glide > GLIDE_START && target.dist > PICKUP_RADIUS) {
-        const step = Math.min(ld.glide, target.dist - PICKUP_RADIUS);
+      if (ld.glide > GLIDE_START) {
+        const step = Math.min(ld.glide, target.dist);
         const pp = target.player.position!;
         lp.x += ((pp.x - lp.x) / target.dist) * step;
         lp.y += ((pp.y - lp.y) / target.dist) * step;
+        if (target.dist - step <= PICKUP_RADIUS) collect(coin, target.player);
       }
-      continue;
-    }
-
-    if (target.dist < PICKUP_RADIUS) {
-      target.player.playerStats!.score += ld.value;
-      spawnTakeFx(target.player);
-      sound.playSound(pickupSound(ld.kind), lp.x, lp.y);
-      world.removeComponent(coin, 'loot');
-      world.addComponent(coin, 'removed', true);
       continue;
     }
 
@@ -111,5 +116,6 @@ export function updateLoot(_dt: number): void {
     const pp = target.player.position!;
     lp.x += ((pp.x - lp.x) / target.dist) * step;
     lp.y += ((pp.y - lp.y) / target.dist) * step;
+    if (target.dist - step <= PICKUP_RADIUS) collect(coin, target.player);
   }
 }

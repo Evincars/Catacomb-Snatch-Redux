@@ -2,7 +2,7 @@ import { world, Team } from '../world';
 import type { Entity } from '../world';
 import { TILE_WIDTH } from '../level/TileType';
 import { gameState } from '../game/GameState';
-import { frameTexture } from '../render/Sheets';
+import { setVisualFrame } from '../render/AnimatedVisual';
 
 export type BuildingType = 'harvester' | 'turret' | 'bomb' | 'chest' | 'treasure' | 'shop';
 
@@ -50,8 +50,8 @@ const HARVESTER_UPGRADES: UpgradeTrack<HarvesterTier> = {
   costs: [500, 1000],
   tiers: [
     { radius: 60, capacity: 1500 },
-    { radius: 3 * TILE_WIDTH, capacity: 2500 },
-    { radius: 2.5 * TILE_WIDTH, capacity: 3500 },
+    { radius: 60 + TILE_WIDTH, capacity: 2500 },
+    { radius: 60 + 2 * TILE_WIDTH, capacity: 3500 },
   ],
 };
 
@@ -92,7 +92,7 @@ function setSheet(entity: Entity, sheet: string): void {
   if (!entity.visual) return;
   entity.visual.sheet = sheet;
   if (entity.sprite) {
-    entity.sprite.texture = frameTexture(sheet, entity.visual.col ?? 0, entity.visual.row ?? 0);
+    setVisualFrame(entity.sprite, sheet, entity.visual.col ?? 0, entity.visual.row ?? 0);
   }
 }
 

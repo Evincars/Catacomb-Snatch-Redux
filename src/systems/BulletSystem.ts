@@ -1,6 +1,6 @@
 import { world } from '../world';
 import type { Level } from '../level/Level';
-import { frameTexture } from '../render/Sheets';
+import { setVisualFrame } from '../render/AnimatedVisual';
 
 /** Java BulletRay: +20% speed, +5 ticks of life and +50% damage per bounce. */
 const BOUNCE_SPEEDUP = 1.2;
@@ -61,7 +61,7 @@ export function updateBullets(level: Level, _dt: number): void {
       const col = Math.floor(Math.random() * data.randomFrames);
       if (col !== entity.visual.col) {
         entity.visual.col = col;
-        if (entity.sprite) entity.sprite.texture = frameTexture(entity.visual.sheet, col, 0);
+        if (entity.sprite) setVisualFrame(entity.sprite, entity.visual.sheet, col);
       }
     }
 
