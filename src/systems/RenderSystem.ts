@@ -2,6 +2,7 @@ import { Sprite } from 'pixi.js';
 import { world } from '../world';
 import type { Entity } from '../world';
 import { whiteFrame } from '../render/Sheets';
+import { TILE_HEIGHT } from '../level/TileType';
 
 type Overlay = { color: number; alpha: number };
 
@@ -77,6 +78,7 @@ export function updateRender(_dt: number): void {
 
     // Entities overlap back-to-front by feet position.
     let order = pos.y;
+    if (entity.spikeTrap) order -= TILE_HEIGHT / 2;
     // Something held overhead is drawn with its carrier, in front of them, so a wall
     // the carrier stands below cannot cover it.
     if (entity.carriedBy !== undefined) {

@@ -1,6 +1,8 @@
 import { world } from '../world';
 import type { Entity } from '../world';
 import { screenToWorld } from '../render/Camera';
+import { sheetInfo } from '../render/Sheets';
+import { TILE_HEIGHT } from '../level/TileType';
 
 /** How far ahead of the player their aim line reaches. */
 export const INTERACT_REACH = 36;
@@ -20,15 +22,20 @@ export function reachPoint(player: Entity, distance = INTERACT_REACH): { x: numb
 
 /** Whether a player may interact with this entity: stalls belong to a team, buildings and nests are free for all. */
 function usableBy(player: Entity, candidate: Entity): boolean {
+  if (candidate.removed || candidate.chest?.opened) return false;
   if (candidate.carriedBy !== undefined) return false;
   if (candidate.shopItem) return candidate.team === player.team;
   return candidate.building !== undefined || candidate.spawner !== undefined;
 }
 
 /** Visual centre of an entity, which is where the eye expects a marker or hover to be. */
-function centreOf(entity: Entity): { x: number; y: number } {
+export function centreOf(entity: Entity): { x: number; y: number } {
   const p = entity.position!;
-  return { x: p.x, y: p.y - (entity.yOffset ?? 0) };
+  // The chest strip leaves room above the closed body for its raised lid.
+  const lidSpace = entity.chest && entity.visual
+    ? (sheetInfo(entity.visual.sheet).frameHeight - TILE_HEIGHT) / 2
+    : 0;
+  return { x: p.x, y: p.y - (entity.yOffset ?? 0) + lidSpace };
 }
 
 /** Nearest candidate to a point, used for pointer hover. */

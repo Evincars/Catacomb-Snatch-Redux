@@ -11,9 +11,9 @@ type ShopDef = {
   tooltip: { title: string; lines?: string[]; image?: string };
 };
 
-/** Costs and sprites taken from the Java ShopItem* subclasses. */
+/** Base shop prices; difficulty scaling is applied when stalls are created. */
 export const SHOP_DEFS: Record<ShopKind, ShopDef> = {
-  turret:    { cost: 150, sheet: 'turret',      col: 0, yOffset: 10, label: 'Turret', tooltip: { title: 'Turret', image: 'tooltip_turret' } },
+  turret:    { cost: 75,  sheet: 'turret',      col: 0, yOffset: 10, label: 'Turret', tooltip: { title: 'Turret', image: 'tooltip_turret' } },
   harvester: { cost: 300, sheet: 'harvester',   col: 0, yOffset: 22, label: 'Harvester', tooltip: { title: 'Harvester', image: 'tooltip_harvester' } },
   bomb:      { cost: 500, sheet: 'bomb',        col: 0, yOffset: 7,  label: 'Bomb', tooltip: { title: 'Bomb', image: 'tooltip_bomb' } },
   rifle:     { cost: 0,   sheet: 'weapon_list', col: 0, yOffset: 5,  label: 'Rifle', tooltip: { title: 'Rifle', lines: ['Your starting weapon.', 'Fast and accurate.'] } },

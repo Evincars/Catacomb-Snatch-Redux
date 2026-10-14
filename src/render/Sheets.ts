@@ -47,6 +47,7 @@ const SHEETS: Record<string, SheetInfo> = {
   walltiles:    { frameWidth: 32, frameHeight: 56 },
   treasure:    { frameWidth: 32, frameHeight: 56 },
   chest_small: { frameWidth: 32, frameHeight: 53 },
+  spiketrap:   { frameWidth: 32, frameHeight: 32 },
   spawner:     { frameWidth: 32, frameHeight: 40 },
   bomb:        { frameWidth: 32, frameHeight: 32 },
   muzzle:      { frameWidth: 16, frameHeight: 16 },

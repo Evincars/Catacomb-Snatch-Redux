@@ -7,6 +7,7 @@ import { createMob } from '../entities/MobFactory';
 import { createSpawner } from '../entities/SpawnerFactory';
 import { createBuilding } from '../entities/BuildingFactory';
 import { createShopItem } from '../entities/ShopItemFactory';
+import { createSpikeTrap } from '../entities/SpikeTrapFactory';
 
 // TMX tileset firstgid offsets (from LevelUtils.java)
 const FLOOR_BASE   = 1;
@@ -163,8 +164,9 @@ async function decodeLayerData(dataText: string): Promise<number[]> {
 }
 
 type TmxLayer = { name: string; data: string };
+type TmxEntity = { type: 'spikeTrap' | 'turret'; tx: number; ty: number; offset: number; team: Team };
 
-function parseTmx(xml: string): { width: number; height: number; layers: TmxLayer[] } {
+function parseTmx(xml: string): { width: number; height: number; layers: TmxLayer[]; entities: TmxEntity[] } {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, 'text/xml');
   const mapEl = doc.querySelector('map');
@@ -178,7 +180,25 @@ function parseTmx(xml: string): { width: number; height: number; layers: TmxLaye
     const dataEl = layerEl.querySelector('data');
     if (dataEl) layers.push({ name, data: dataEl.textContent ?? '' });
   }
-  return { width, height, layers };
+  const entities: TmxEntity[] = [];
+  for (const obj of Array.from(doc.querySelectorAll('objectgroup[name="entities"] > object'))) {
+    const property = (name: string) => obj.querySelector(`property[name="${name}"]`)?.getAttribute('value');
+    const type = obj.getAttribute('type') ?? '';
+    const x = obj.getAttribute('x');
+    const y = obj.getAttribute('y');
+    const tx = Number(x) / TILE_WIDTH;
+    const ty = Number(y) / TILE_HEIGHT;
+    const offset = Number(property('offset') ?? 0);
+    const team = Number(property('team') ?? Team.Neutral);
+    if ((type !== 'spikeTrap' && type !== 'turret') || x === null || y === null
+      || !Number.isInteger(tx) || !Number.isInteger(ty)
+      || tx < 0 || ty < 0 || tx >= width || ty >= height || !Number.isInteger(offset) || offset < 0
+      || ![Team.Neutral, Team.One, Team.Two].includes(team)) {
+      throw new Error(`Invalid TMX entity: ${type} at ${tx}, ${ty}`);
+    }
+    entities.push({ type, tx, ty, offset, team });
+  }
+  return { width, height, layers, entities };
 }
 
 /** `costMod` scales shop prices by the selected difficulty. */
@@ -186,7 +206,7 @@ export async function loadTmxLevel(path: string, costMod = 1): Promise<Level> {
   const response = await fetch(assetUrl(path));
   if (!response.ok) throw new Error(`HTTP ${response.status} loading ${path}`);
   const xml = await response.text();
-  const { width, height, layers } = parseTmx(xml);
+  const { width, height, layers, entities } = parseTmx(xml);
 
   const level = new Level(width, height);
   const shops: PendingShop[] = [];
@@ -224,7 +244,7 @@ export async function loadTmxLevel(path: string, costMod = 1): Promise<Level> {
             case 0: createBuilding(wx, wy, 'treasure'); break;
             case 1: level.setTile(tx, ty, createTile(TileType.Rail, 0)); break;
             case 2: level.setTile(tx, ty, createTile(TileType.UnbreakableRail, 0)); break;
-            // 3 = spike trap entity
+            case 3: createSpikeTrap(level, tx, ty); break;
             case 4: createBuilding(wx, wy, 'chest'); break;
             case 8:  createMob(level, 'bat',    wx, wy); break;
             case 9:  createMob(level, 'snake',  wx, wy); break;
@@ -255,6 +275,10 @@ export async function loadTmxLevel(path: string, costMod = 1): Promise<Level> {
     }
   }
 
+  for (const { type, tx, ty, offset, team } of entities) {
+    if (type === 'spikeTrap') createSpikeTrap(level, tx, ty, offset);
+    else createBuilding((tx + 0.5) * TILE_WIDTH, (ty + 0.5) * TILE_HEIGHT, 'turret', team);
+  }
   layoutSpawnAreas(level, shops, costMod);
   return level;
 }

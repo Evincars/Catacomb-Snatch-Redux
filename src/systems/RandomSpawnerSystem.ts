@@ -59,7 +59,7 @@ function surroundingsClear(x: number, y: number): boolean {
 
 function tryPlaceSpawner(level: Level, tx: number, ty: number, mobType: string): void {
   const tile = level.getTile(tx, ty);
-  if (!tile || tile.type !== TileType.Floor) return;
+  if (!tile || tile.type !== TileType.Floor || !tile.buildable) return;
 
   const x = tx * TILE_WIDTH + TILE_WIDTH / 2;
   const y = ty * TILE_HEIGHT + TILE_HEIGHT / 2 - 4;

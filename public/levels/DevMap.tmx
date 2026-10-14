@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.0" orientation="orthogonal" width="64" height="64" tilewidth="32" tileheight="32">
+ <tileset firstgid="1" source="../tiled/tilesets/Tileset-Floor.tsx"/>
+ <tileset firstgid="65" source="../tiled/tilesets/Tileset-Overlay.tsx"/>
+ <tileset firstgid="129" source="../tiled/tilesets/Tileset-Wall.tsx"/>
+ <tileset firstgid="193" source="../tiled/tilesets/Tileset-Player1.tsx"/>
+ <tileset firstgid="257" source="../tiled/tilesets/Tileset-Player2.tsx"/>
+ <layer name="floor" width="64" height="64">
+  <data encoding="base64" compression="gzip">
+   H4sIAAAAAAAAA+3bsQ7DIAwEUEpZ+v8/3ClShEpaKaEB/AZPLDnfnX0oIqeUstIDGuiugeePhQs9oIH1NPDN3yP6/zF5wY9/+ud/88/8t//sf/lH/pN/5f+z959yUKvffzaMLewlAP5PPajPVsdf810C4m954W7c+Of/nvqPPP9b2Efzfk/8s9RM+FvfcPRPAP5Y/JeA/O9rm7GR+d/3IBr+WgMR8edF8f+zp/Djn/753/wz/+0/+1/+kf/k33P5/xU8/8N/P9/4p3/3/+vmX/T3D0oPaOBa/3v/yFM8lYbowRt5BzJDAEAAAA==
+  </data>
+ </layer>
+ <layer name="overlay" width="64" height="64">
+  <data encoding="base64" compression="gzip">
+   H4sIAAAAAAAAA+3ZuVIVURQF0HVAQQZBFJTBBPgSijIkYPhhFVAcQFABxQT4EUMfCaVVwJO+e1WdpKOz764bdDcREbfvYTFULBRVDBSDxYNiuRguHlV3m3hcTBTzxUgxWowV48VSMVk86XD+meJ5MVdMFU+LZ8V0sVi8KGY7nL/Xy/ozrVrt9wIRER2x1u8FIqJvcv8jIiLuzvoNfg/pndYkf1v9rzTefwsZr5P8bUv/bUv/bUv/ERERN2MzBxn/qVd/+ayrWsoaEXdr6x6++6/+w/+0Dd1xXf4WJP/Vc2jNr55pxQ528QOv8QZvsY1zvMN73fUZ+/iJPXzAR3zCBQ7wRXd9xzHOcIgjfMU3XOIEp/1eMiK04jfykfLIAEAAAA==
+  </data>
+ </layer>
+ <layer name="wall" width="64" height="64">
+  <data encoding="base64" compression="gzip">
+   H4sIAAAAAAAAA+2Zyw6DMAwE8+vpl/caohRo68cGz0i+EnbXsZFoDQAAAOBId6iocz6d9Q0Wz8gC/RoeZlEp/+r3f/We6PfxVRHyv+eJha+KkP9x5leb/yvQr+FhFuSv4WEW5K/hYRbkr+FhFuSv4WEW5K/h4dPyfw3Vi+rfAfT7eKjc8yPMfw0Pn5Z/X+wAxZ1Qof+r//8+ez/0+/pbNf953s0V6Rn9/5s3Fv5W7v95x1jvHQsq5N8S9j/523N1n8Yc7ua7U/93h/mG/v8h/xjof937b11R5+zw7QIAAAAtnDf+V3j8AEAAAA==
+  </data>
+ </layer>
+ <objectgroup name="entities">
+  <object id="1" type="turret" x="928" y="256" width="32" height="32">
+   <properties><property name="team" type="int" value="2"/></properties>
+  </object>
+  <object id="2" type="turret" x="1056" y="256" width="32" height="32">
+   <properties><property name="team" type="int" value="2"/></properties>
+  </object>
+  <object id="3" type="turret" x="864" y="736" width="32" height="32">
+   <properties><property name="team" type="int" value="0"/></properties>
+  </object>
+  <object id="4" type="turret" x="1120" y="736" width="32" height="32">
+   <properties><property name="team" type="int" value="0"/></properties>
+  </object>
+  <object id="5" type="spikeTrap" x="544" y="1472" width="32" height="32">
+   <properties><property name="offset" type="int" value="0"/></properties>
+  </object>
+  <object id="6" type="spikeTrap" x="544" y="1536" width="32" height="32">
+   <properties><property name="offset" type="int" value="0"/></properties>
+  </object>
+  <object id="7" type="spikeTrap" x="416" y="1600" width="32" height="32">
+   <properties><property name="offset" type="int" value="60"/></properties>
+  </object>
+  <object id="8" type="spikeTrap" x="448" y="1600" width="32" height="32">
+   <properties><property name="offset" type="int" value="60"/></properties>
+  </object>
+  <object id="9" type="spikeTrap" x="416" y="1632" width="32" height="32">
+   <properties><property name="offset" type="int" value="30"/></properties>
+  </object>
+  <object id="10" type="spikeTrap" x="448" y="1632" width="32" height="32">
+   <properties><property name="offset" type="int" value="30"/></properties>
+  </object>
+  <object id="11" type="spikeTrap" x="416" y="1664" width="32" height="32">
+   <properties><property name="offset" type="int" value="0"/></properties>
+  </object>
+  <object id="12" type="spikeTrap" x="448" y="1664" width="32" height="32">
+   <properties><property name="offset" type="int" value="0"/></properties>
+  </object>
+  <object id="13" type="turret" x="928" y="1760" width="32" height="32">
+   <properties><property name="team" type="int" value="1"/></properties>
+  </object>
+  <object id="14" type="turret" x="1056" y="1760" width="32" height="32">
+   <properties><property name="team" type="int" value="1"/></properties>
+  </object>
+ </objectgroup>
+</map>

@@ -201,6 +201,10 @@ export class InGameScene implements Scene {
       this.hud.setPrompt(`${SHOP_DEFS[kind].label} - ${cost} coins - [${keyLabel('use')}] to buy`);
       return;
     }
+    if (target.chest) {
+      this.hud.setPrompt(`Treasure chest - [${keyLabel('use')}] open`);
+      return;
+    }
 
     const title = target.tooltip?.title ?? 'Building';
     const cost = upgradeCostOf(target);

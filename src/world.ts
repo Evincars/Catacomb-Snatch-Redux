@@ -225,6 +225,8 @@ export type Entity = {
   railCooldown?: number;
   /** The treasure pile; `timer` counts down to the next pharaoh rising beside it. */
   treasure?: { timer: number };
+  chest?: { value: number; opened: boolean; disappearTicks: number };
+  spikeTrap?: { phase: number; ticks: number };
 
   /** A rail carriage: heading (0 N, 1 E, 2 S, 3 W, -1 stopped), last heading for its sprite, and its load of treasure. */
   railDroid?: { dir: number; lastDir: number; full: boolean; swapTime: number };

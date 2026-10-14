@@ -36,6 +36,21 @@ npm run build
 
 The dev server runs at `http://localhost:5173`. The production build outputs to `dist/`.
 
+### Gameplay fidelity
+
+- Base equipment prices are 75 coins for a turret, 300 for a harvester, and 500 for a bomb.
+  Turret and harvester upgrades cost 500 and 1,000 coins. Prices retain the selected difficulty multiplier.
+- Bombs make a quick, 25-pixel directional toss rather than snapping to a tile centre.
+  Walls and structures shorten the toss, keeping the bomb beside the obstacle.
+- Treasure chests cannot be shot apart or carried. Focus a closed chest and press the use key
+  to release mixed treasure. The open chest disappears after 100 ticks with the bat's effect and sound.
+- Collecting treasure briefly flashes the player and creates pickup sparkles. Firing pauses coins
+  already flying toward the player; releasing fire resumes collection.
+- DevMap uses the original bitmap's 48×48 layout, including chests, placed turrets, and spike traps,
+  with the standard bases around it. Traps use four animation frames, 10-tick active steps and a
+  100-tick rest; the original staggered variants start 30 or 60 ticks later. They hurt grounded
+  entities, not flying bats, and prevent building on their tiles.
+
 ## Original Game
 
 Catacomb Snatch was originally created by Mojang for the 2012 Humble Bundle charity event and later released open-source.

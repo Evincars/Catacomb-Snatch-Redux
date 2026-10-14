@@ -30,14 +30,14 @@ type HarvesterTier = { radius: number; capacity: number };
 type UpgradeTrack<T> = {
   /** Sprite sheet for each level, lowest first. */
   sheets: string[];
-  /** Price of moving from level i + 1 to level i + 2 (the original's 1000 and 3000). */
+  /** Price of moving from level i + 1 to level i + 2. */
   costs: number[];
   tiers: T[];
 };
 
 const TURRET_UPGRADES: UpgradeTrack<TurretTier> = {
   sheets: ['turret', 'turret2', 'turret3'],
-  costs: [1000, 3000],
+  costs: [500, 1000],
   tiers: [
     { radius: 3 * TILE_WIDTH, delay: 24, damage: 1 },
     { radius: 5 * TILE_WIDTH, delay: 21, damage: 2 },
@@ -47,7 +47,7 @@ const TURRET_UPGRADES: UpgradeTrack<TurretTier> = {
 
 const HARVESTER_UPGRADES: UpgradeTrack<HarvesterTier> = {
   sheets: ['harvester', 'harvester2', 'harvester3'],
-  costs: [1000, 3000],
+  costs: [500, 1000],
   tiers: [
     { radius: 4 * TILE_WIDTH, capacity: 1500 },
     { radius: 5 * TILE_WIDTH, capacity: 2500 },
@@ -59,6 +59,7 @@ const BUILDING_TITLES: Partial<Record<BuildingType, { title: string; lines: stri
   turret:    { title: 'Turret',    lines: ['Shoots nearby enemies.'] },
   harvester: { title: 'Harvester', lines: ['Collects coins nearby.'] },
   bomb:      { title: 'Bomb',      lines: ['Shoot it to light the fuse.'] },
+  chest:     { title: 'Treasure chest', lines: ['Open it to release its treasure.'] },
 };
 
 /** Price of the next upgrade, scaled by difficulty like shop prices, or null at max level. */
@@ -140,6 +141,11 @@ export function createBuilding(
   if (type === 'bomb') {
     entity.bomb = { blastTiles: 1, blastDamage: 5, lit: false, fuse: 60, fuseMax: 60 };
     entity.health!.immortal = true;
+  }
+  if (type === 'chest') {
+    entity.health!.immortal = true;
+    entity.chest = { value: 800, opened: false, disappearTicks: 0 };
+    entity.frame = 0;
   }
   if (type === 'harvester') {
     entity.harvester = { ...HARVESTER_UPGRADES.tiers[0], collected: 0, time: 0, suckTicks: 0, emptying: false };

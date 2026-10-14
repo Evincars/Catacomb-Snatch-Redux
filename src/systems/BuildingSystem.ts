@@ -71,6 +71,13 @@ const EMPTY_AMOUNT = 50;
 const EMPTY_INTERVAL = 3;
 const WORKING_TICKS = 30;
 
+export function updateChests(): void {
+  for (const entity of world.with('chest', 'health')) {
+    const chest = entity.chest!;
+    if (chest.opened && --chest.disappearTicks <= 0) entity.health!.current = 0;
+  }
+}
+
 /**
  * Harvesters pull loose coins toward themselves and store them, animate while
  * working, puff steam, and hand their stash to a player who empties them.

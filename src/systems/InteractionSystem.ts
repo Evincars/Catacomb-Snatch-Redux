@@ -8,6 +8,7 @@ import { sound } from '../audio/SoundPlayer';
 import { notify, updateNotices } from '../game/Notices';
 import { keyLabel } from '../game/Settings';
 import { spawnSpentCoin } from '../entities/FxFactory';
+import { createLoot } from '../entities/LootFactory';
 import { gameState } from '../game/GameState';
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { targetOf } from './TargetingSystem';
@@ -184,6 +185,21 @@ function takeCoins(player: Entity, harvester: Entity): void {
   h.emptyingPlayerId = world.id(player);
 }
 
+function openChest(chest: Entity): void {
+  const data = chest.chest!;
+  if (data.opened || chest.removed) return;
+  data.opened = true;
+  data.disappearTicks = 100;
+  chest.frame = 1;
+  const pos = chest.position!;
+  while (data.value > 0) {
+    const angle = Math.random() * Math.PI * 2;
+    const loot = createLoot(pos.x, pos.y, Math.cos(angle), Math.sin(angle), data.value / 15);
+    data.value -= loot.loot!.value;
+  }
+  data.value = 0;
+}
+
 function pickUp(player: Entity, building: Entity): void {
   // Lifting a harvester interrupts a transfer in progress.
   if (building.harvester) building.harvester.emptying = false;
@@ -208,7 +224,10 @@ function fitsAt(level: Level, building: Entity, x: number, y: number): boolean {
  */
 function dropSpot(level: Level, player: Entity, building: Entity): { x: number; y: number } | null {
   const p = player.position!;
-  if (fitsAt(level, building, p.x, p.y)) return { x: p.x, y: p.y };
+  const freeAt = (x: number, y: number) => building.bomb
+    ? bombFitsAt(level, building, x, y)
+    : fitsAt(level, building, x, y);
+  if (freeAt(p.x, p.y)) return { x: p.x, y: p.y };
 
   const aim = player.aimVector ?? { x: 0, y: 1 };
   const len = Math.hypot(aim.x, aim.y) || 1;
@@ -224,48 +243,47 @@ function dropSpot(level: Level, player: Entity, building: Entity): { x: number; 
     }
   }
   candidates.sort((a, b) => a.score - b.score);
-  return candidates.find((c) => fitsAt(level, building, c.x, c.y)) ?? null;
+  return candidates.find((c) => freeAt(c.x, c.y)) ?? null;
 }
 
-/** A bomb rests this far below the middle of its tile, so its round body is what sits in the tile's centre. */
-const BOMB_REST_OFFSET = 6;
+const BOMB_DROP_DISTANCE = 25;
 
-/**
- * Where a bomb comes to rest: the middle of the tile the player faces (right,
- * left, up or down). When that tile is blocked, as when the player stands
- * against a wall facing it, the nearest free tile around them instead.
- */
-function bombSpot(level: Level, player: Entity, bomb: Entity): { x: number; y: number } | null {
-  const p = player.position!;
-  const tx = Math.floor(p.x / TILE_WIDTH);
-  const ty = Math.floor(p.y / TILE_HEIGHT);
+function bombFitsAt(level: Level, bomb: Entity, x: number, y: number): boolean {
+  if (!fitsAt(level, bomb, x, y)) return false;
+  const r = bomb.radius!;
+  const bb = BB.fromCenter(x, y, r.x, r.y);
+  for (const other of world.with('position', 'radius', 'blocking')) {
+    if (other === bomb || other.carriedBy !== undefined || other.removed) continue;
+    if (!other.building && !other.spawner && !other.railDroid) continue;
+    if (bb.intersects(BB.fromCenter(other.position!.x, other.position!.y, other.radius!.x, other.radius!.y))) return false;
+  }
+  return true;
+}
+
+/** A short cardinal toss, clamped to the last free point before a wall or structure. */
+function bombSpot(level: Level, player: Entity, bomb: Entity, start: { x: number; y: number }): { x: number; y: number } {
   const aim = player.aimVector ?? { x: 0, y: 1 };
   const facing = Math.abs(aim.x) > Math.abs(aim.y)
     ? { x: Math.sign(aim.x), y: 0 }
     : { x: 0, y: Math.sign(aim.y) || 1 };
-
-  const around = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
-    .filter((d) => d.x !== facing.x || d.y !== facing.y)
-    .sort((a, b) => b.x * aim.x + b.y * aim.y - (a.x * aim.x + a.y * aim.y));
-
-  for (const d of [facing, { x: 0, y: 0 }, ...around]) {
-    const x = tx + d.x;
-    const y = ty + d.y;
-    const spot = { x: x * TILE_WIDTH + TILE_WIDTH / 2, y: y * TILE_HEIGHT + TILE_HEIGHT / 2 + BOMB_REST_OFFSET };
-    if (fitsAt(level, bomb, spot.x, spot.y) && !hasBuildingOn(x, y)) return spot;
+  let landing = start;
+  for (let distance = 1; distance <= BOMB_DROP_DISTANCE; distance++) {
+    const next = { x: start.x + facing.x * distance, y: start.y + facing.y * distance };
+    if (!bombFitsAt(level, bomb, next.x, next.y)) break;
+    landing = next;
   }
-  return null;
+  return landing;
 }
 
 /** Puts a carried building down, shifting it out of any wall; refuses only when there is no room at all. */
 function drop(player: Entity, building: Entity, level: Level): boolean {
-  const landing = building.bomb ? bombSpot(level, player, building) : null;
-  const spot = dropSpot(level, player, building) ?? landing;
-  if (!spot) {
+  const spot = dropSpot(level, player, building);
+  if (!spot || (building.bomb && !bombFitsAt(level, building, spot.x, spot.y))) {
     notify('Cannot build there');
     sound.playSound('fail');
     return false;
   }
+  const landing = building.bomb ? bombSpot(level, player, building, spot) : null;
   const pos = building.position!;
   pos.x = spot.x;
   pos.y = spot.y;
@@ -274,8 +292,7 @@ function drop(player: Entity, building: Entity, level: Level): boolean {
   world.removeComponent(player, 'carryingId');
   world.addComponent(building, 'blocking', true);
   if (landing) {
-    // A bomb is tossed from the player's feet onto the tile they face; the speed is
-    // chosen so the glide, which loses SLIDE_DRAG of its speed per tick, ends on the tile.
+    // Match the short original toss without snapping to a tile centre.
     const push = 1 - SLIDE_DRAG;
     world.addComponent(building, 'slide', { x: (landing.x - pos.x) * push, y: (landing.y - pos.y) * push });
   } else if (!building.bomb) {
@@ -349,6 +366,8 @@ export function updateInteraction(level: Level): void {
     if (target.shopItem) {
       // Stalls only answer to the use key.
       if (intents.use) buy(player, target);
+    } else if (target.chest) {
+      if (intents.use) openChest(target);
     } else if (target.harvester && intents.use && (target.harvester.collected > 0 || target.harvester.emptying)) {
       takeCoins(player, target);
     } else if (target.building || target.spawner) {

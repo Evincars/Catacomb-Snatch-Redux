@@ -38,7 +38,7 @@ export const LEVELS: LevelInfo[] = [
   { name: 'Circular_Shapes', path: null,                       preview: '/levels/Circular Shapes.bmp' },
   { name: 'BlackHole',       path: '/levels/BlackHole.tmx',    preview: '/levels/BlackHole.bmp' },
   { name: 'Railroads',       path: '/levels/RailRoads.tmx',    preview: '/levels/RailRoads.bmp' },
-  { name: 'DevMap',          path: '/levels/DEV.tmx',          preview: '/levels/DevMap.bmp' },
+  { name: 'DevMap',          path: '/levels/DevMap.tmx',       preview: '/levels/DevMap.bmp' },
 ];
 
 export const DEBUG_COINS = 99999;

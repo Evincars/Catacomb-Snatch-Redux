@@ -48,6 +48,9 @@ export function updateDeath(_level: Level, _dt: number): void {
 
     if (entity.playerInput) {
       sound.playSound('death');
+    } else if (entity.chest) {
+      sound.playSound('explosion', pos.x, pos.y);
+      spawnDeathFx(entity);
     } else if (entity.turret || entity.harvester || entity.railDroid) {
       sound.playSound('explosion', pos.x, pos.y);
       spawnFx(pos.x, pos.y, 'fx_bombsplosion_small_32', 10, 24, { yOffset: 8 });

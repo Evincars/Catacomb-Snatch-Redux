@@ -54,7 +54,7 @@ export function spawnDeathFx(entity: Entity): void {
   const pos = entity.position;
   if (!pos) return;
 
-  const key = entity.spawner ? 'spawner' : (entity.mobType ?? 'scarab');
+  const key = entity.chest ? 'bat' : entity.spawner ? 'spawner' : (entity.mobType ?? 'scarab');
   const layers = DEATH_FX[key] ?? DEATH_FX.scarab;
 
   for (const layer of layers) {
@@ -127,9 +127,13 @@ export function spawnSteam(x: number, y: number): void {
 export function spawnTakeFx(player: Entity): void {
   const pos = player.position;
   if (!pos) return;
-  spawnFx(pos.x + (Math.random() * 10 - 5), pos.y, 'effect_shine_small', 5, 10, {
-    yOffset: 12 + Math.random() * 6,
-    orderId: world.id(player),
-    orderBias: 0.5,
-  });
+  player.flashTime = 5;
+  for (const side of [-1, 1]) {
+    spawnFx(pos.x + side * (5 + Math.random() * 5), pos.y, 'effect_shine_small', 5, 10, {
+      yOffset: 12 + Math.random() * 6,
+      orderId: world.id(player),
+      orderBias: 0.5,
+      rise: 0.4,
+    });
+  }
 }

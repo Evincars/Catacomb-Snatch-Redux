@@ -6,7 +6,8 @@ import { updateInteraction, updateCarried } from './InteractionSystem';
 import { updateAI } from './AISystem';
 import { updateMobWeapons } from './MobWeaponSystem';
 import { updateWeapons } from './WeaponSystem';
-import { updateTurrets, updateHarvesters, updateBombs } from './BuildingSystem';
+import { updateTurrets, updateHarvesters, updateBombs, updateChests } from './BuildingSystem';
+import { updateSpikeTraps } from './SpikeTrapSystem';
 import { updateMovement, updateSlides } from './MovementSystem';
 import { updateBullets } from './BulletSystem';
 import { updateCombatTimers, updateBulletCollision, updateContactDamage } from './CombatSystem';
@@ -60,6 +61,8 @@ export const SIMULATION: readonly System[] = [
   ({ dt }) => updateCombatTimers(dt),
   ({ dt }) => updateBulletCollision(dt),
   ({ dt }) => updateContactDamage(dt),
+  () => updateSpikeTraps(),
+  () => updateChests(),
   ({ dt }) => updateBuffs(dt),
   ({ dt }) => updateLoot(dt),
   ({ dt }) => updateHarvesters(dt),

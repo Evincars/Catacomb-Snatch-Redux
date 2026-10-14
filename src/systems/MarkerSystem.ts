@@ -1,5 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
 import { world } from '../world';
+import { centreOf } from './TargetingSystem';
 
 const BASE_HALF = 17;
 /** How far the brackets swing in and out, and how many ticks a full cycle takes. */
@@ -44,8 +45,9 @@ export function updateMarkers(gameLayer: Container): void {
       world.addComponent(entity, 'marker', marker);
     }
     if (drawnHalf.get(marker) !== half) drawMarker(marker, half);
-    marker.x = Math.round(entity.position!.x);
-    marker.y = Math.round(entity.position!.y - (entity.yOffset ?? 0));
+    const centre = centreOf(entity);
+    marker.x = Math.round(centre.x);
+    marker.y = Math.round(centre.y);
     marker.visible = true;
   }
 }

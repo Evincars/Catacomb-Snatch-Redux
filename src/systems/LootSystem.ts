@@ -3,6 +3,7 @@ import type { Entity } from '../world';
 import { sound } from '../audio/SoundPlayer';
 import { gameState } from '../game/GameState';
 import { pickupSound } from '../entities/LootFactory';
+import { spawnTakeFx } from '../entities/FxFactory';
 
 /** Drop-burst velocity retained per tick. */
 const LOOT_FRICTION = 0.85;
@@ -50,8 +51,11 @@ export function updateLoot(_dt: number): void {
     const lp = coin.position!;
     const ld = coin.loot!;
 
-    lp.x += ld.velX;
-    lp.y += ld.velY;
+    // Once homing starts, only the glide moves a coin, so firing can stop it completely.
+    if (ld.glide === 0) {
+      lp.x += ld.velX;
+      lp.y += ld.velY;
+    }
     ld.velX *= LOOT_FRICTION;
     ld.velY *= LOOT_FRICTION;
 
@@ -84,6 +88,7 @@ export function updateLoot(_dt: number): void {
 
     if (target.dist < PICKUP_RADIUS) {
       target.player.playerStats!.score += ld.value;
+      spawnTakeFx(target.player);
       sound.playSound(pickupSound(ld.kind), lp.x, lp.y);
       world.removeComponent(coin, 'loot');
       world.addComponent(coin, 'removed', true);
