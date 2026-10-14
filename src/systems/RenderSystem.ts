@@ -27,6 +27,13 @@ function overlayFor(entity: Entity): Overlay | null {
     return strength > 0 ? { color: 0xff0000, alpha: strength / 256 } : null;
   }
 
+  // A lit bomb blinks red, faster as its fuse runs short.
+  if (entity.bomb?.lit) {
+    const { fuse, fuseMax } = entity.bomb;
+    const interval = fuse > fuseMax / 3 ? 6 : 3;
+    return Math.floor(fuse / interval) % 2 === 0 ? { color: 0xff0000, alpha: 0.7 } : null;
+  }
+
   if ((entity.flashTime ?? 0) > 0) return { color: 0xffff80, alpha: 0.5 };
   return null;
 }

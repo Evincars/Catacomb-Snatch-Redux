@@ -45,11 +45,3 @@ export function railFrameAt(level: Level, tx: number, ty: number): number {
   if (n) return e ? RAIL_CORNER_NORTH_EAST : RAIL_CORNER_NORTH_WEST;
   return e ? RAIL_CORNER_SOUTH_EAST : RAIL_CORNER_SOUTH_WEST;
 }
-
-/** True when a new piece at (tx, ty) would touch an existing track. */
-export function touchesTrack(level: Level, tx: number, ty: number): boolean {
-  return (
-    railJoins(level, tx, ty, 0, -1) || railJoins(level, tx, ty, 0, 1) ||
-    railJoins(level, tx, ty, -1, 0) || railJoins(level, tx, ty, 1, 0)
-  );
-}

@@ -22,17 +22,23 @@ export const DIFFICULTIES: Difficulty[] = [
 
 export type LevelInfo = {
   name: string;
-  path: string;
+  /** Map to play, or null for a level whose map file is not part of the game. */
+  path: string | null;
+  /** Level bitmap the picker draws its preview from. */
+  preview: string;
 };
 
+/** In the order the original's level picker lists them, row by row. */
 export const LEVELS: LevelInfo[] = [
-  { name: 'Mojam',        path: '/levels/level1.tmx' },
-  { name: 'AsymeTrical',  path: '/levels/AsymeTrical.tmx' },
-  { name: 'BlackHole',    path: '/levels/BlackHole.tmx' },
-  { name: 'CataBOMB',     path: '/levels/CataBOMB.tmx' },
-  { name: 'RailRoads',    path: '/levels/RailRoads.tmx' },
-  { name: 'Siege',        path: '/levels/Siege.tmx' },
-  { name: 'TheMaze',      path: '/levels/TheMaze.tmx' },
+  { name: 'Mojam',           path: '/levels/level1.tmx',       preview: '/levels/level1.bmp' },
+  { name: 'AsymeTrical',     path: '/levels/AsymeTrical.tmx',  preview: '/levels/AsymeTrical.bmp' },
+  { name: 'CataBOMB',        path: '/levels/CataBOMB.tmx',     preview: '/levels/CataBOMB.bmp' },
+  { name: 'Siege',           path: '/levels/Siege.tmx',        preview: '/levels/Siege.bmp' },
+  { name: 'TheMaze',         path: '/levels/TheMaze.tmx',      preview: '/levels/TheMaze.bmp' },
+  { name: 'Circular_Shapes', path: null,                       preview: '/levels/Circular Shapes.bmp' },
+  { name: 'BlackHole',       path: '/levels/BlackHole.tmx',    preview: '/levels/BlackHole.bmp' },
+  { name: 'Railroads',       path: '/levels/RailRoads.tmx',    preview: '/levels/RailRoads.bmp' },
+  { name: 'DevMap',          path: '/levels/DEV.tmx',          preview: '/levels/DevMap.bmp' },
 ];
 
 export const DEBUG_COINS = 99999;

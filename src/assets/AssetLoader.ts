@@ -104,6 +104,8 @@ export const ASSETS: AssetManifest = {
     titlescreen:    '/art/screen/TITLESCREEN.png',
     background:     '/art/screen/BACKGROUND.png',
     button:         '/art/screen/button.png',
+    level_panel:    '/art/screen/empty_background.png',
+    level_cell:     '/art/screen/back_level_button.png',
     checkbox:       '/art/screen/checkbox.png',
     game_over:      '/art/screen/game_over.png',
     how_to_play:    '/art/screen/how_to_play.png',

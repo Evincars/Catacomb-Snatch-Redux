@@ -4,7 +4,7 @@ import type { Level } from '../level/Level';
 import { createBullet } from '../entities/BulletFactory';
 import { pickupSound } from '../entities/LootFactory';
 import { spawnSteam, spawnTakeFx } from '../entities/FxFactory';
-import { hurtEntity } from './CombatSystem';
+import { hurtEntity, hurtPlayer } from './CombatSystem';
 import { spawnExplosion } from './FxSystem';
 import { Mth } from '../math/Mth';
 import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
@@ -129,8 +129,9 @@ export function updateHarvesters(_dt: number): void {
 }
 
 /**
- * Detonates bombs that have been destroyed, damaging every mob in the blast.
- * Runs before DeathSystem so the bomb still exists when it goes off.
+ * Detonates bombs that have been lit and burnt down, hurting every mob and
+ * player caught in the blast. Runs before DeathSystem so the bomb still exists
+ * when it goes off.
  */
 export function updateBombs(level: Level, _dt: number): void {
   for (const bombEntity of world.with('position', 'bomb', 'health')) {
@@ -139,36 +140,38 @@ export function updateBombs(level: Level, _dt: number): void {
     const data = bombEntity.bomb!;
     // A lit bomb burns down before going off, so there is time to back away.
     if (!data.lit) continue;
-    if (data.fuse-- > 0) {
-      bombEntity.flashTime = 2;
-      continue;
-    }
+    if (data.fuse-- > 0) continue;
 
-    const { blastRadius, blastDamage } = data;
+    // The blast is centred on the tile the bomb's body sits in and reaches the
+    // tiles around it, so it clears the wall the bomb is set against.
     const pos = bombEntity.position!;
+    const bx = Math.floor(pos.x / TILE_WIDTH);
+    const by = Math.floor((pos.y - (bombEntity.yOffset ?? 0)) / TILE_HEIGHT);
+    const reach = data.blastTiles;
+    const centerX = bx * TILE_WIDTH + TILE_WIDTH / 2;
+    const centerY = by * TILE_HEIGHT + TILE_HEIGHT / 2;
+    const halfW = (reach + 0.5) * TILE_WIDTH;
+    const halfH = (reach + 0.5) * TILE_HEIGHT;
+    const inBlast = (x: number, y: number) => Math.abs(x - centerX) < halfW && Math.abs(y - centerY) < halfH;
 
     for (const mob of world.with('position', 'health', 'ai')) {
-      const d = Math.hypot(mob.position!.x - pos.x, mob.position!.y - pos.y);
-      if (d < blastRadius) hurtEntity(mob, bombEntity, blastDamage);
+      if (inBlast(mob.position!.x, mob.position!.y)) hurtEntity(mob, bombEntity, data.blastDamage);
     }
-
-    // Bombs exist mainly to open up cracked walls.
-    const t0x = Math.floor((pos.x - blastRadius) / TILE_WIDTH);
-    const t1x = Math.floor((pos.x + blastRadius) / TILE_WIDTH);
-    const t0y = Math.floor((pos.y - blastRadius) / TILE_HEIGHT);
-    const t1y = Math.floor((pos.y + blastRadius) / TILE_HEIGHT);
-    for (let ty = t0y; ty <= t1y; ty++) {
-      for (let tx = t0x; tx <= t1x; tx++) {
-        const tile = level.getTile(tx, ty);
-        if (!tile?.destroyable) continue;
-        const cx = tx * TILE_WIDTH + TILE_WIDTH / 2;
-        const cy = ty * TILE_HEIGHT + TILE_HEIGHT / 2;
-        if (Math.hypot(cx - pos.x, cy - pos.y) > blastRadius) continue;
-        level.removeTile(tx, ty);
+    // Nobody is spared: a player standing too close is hurt like anyone else.
+    for (const player of world.with('position', 'health', 'playerInput')) {
+      if (inBlast(player.position!.x, player.position!.y) && (player.hurtTime ?? 0) <= 0) {
+        hurtPlayer(player, bombEntity, data.blastDamage);
       }
     }
 
-    spawnExplosion(pos.x, pos.y);
+    // Bombs exist mainly to open up cracked walls.
+    for (let ty = by - reach; ty <= by + reach; ty++) {
+      for (let tx = bx - reach; tx <= bx + reach; tx++) {
+        if (level.getTile(tx, ty)?.destroyable) level.removeTile(tx, ty);
+      }
+    }
+
+    spawnExplosion(centerX, centerY, Math.max(halfW, halfH));
     sound.playSound('explosion2', pos.x, pos.y);
     world.addComponent(bombEntity, 'removed', true);
   }

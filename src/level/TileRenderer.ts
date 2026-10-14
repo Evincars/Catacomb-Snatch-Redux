@@ -160,7 +160,7 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
     const col = sp.img % 4;
     const row = Math.floor(sp.img / 4);
     const s = new Sprite(frameOf(getTexture(sheet), col, row, TILE_WIDTH, TILE_HEIGHT));
-    s.x = sp.tileX * TILE_WIDTH;
+    s.x = sp.tileX * TILE_WIDTH + sp.offsetX;
     s.y = sp.tileY * TILE_HEIGHT;
     container.addChild(s);
   }

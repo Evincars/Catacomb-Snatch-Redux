@@ -102,7 +102,9 @@ export class InGameScene implements Scene {
     clearNotices();
     for (const entity of world.entities.slice()) world.remove(entity);
 
-    this.level = await loadTmxLevel(gameState.selectedLevel.path, gameState.difficulty.shopCostMod);
+    const { path } = gameState.selectedLevel;
+    if (!path) throw new Error('This level has no map file.');
+    this.level = await loadTmxLevel(path, gameState.difficulty.shopCostMod);
     this.level.targetScore = gameState.targetScore;
     if (import.meta.env.DEV) (window as unknown as { __level: Level }).__level = this.level;
 

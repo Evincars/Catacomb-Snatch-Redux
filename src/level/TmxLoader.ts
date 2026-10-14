@@ -47,6 +47,22 @@ const GEAR_STALLS: ShopKind[] = ['turret', 'harvester', 'bomb'];
 /** Pixels between neighbouring gear stalls. */
 const GEAR_SPACING = 44;
 
+/** How far the base's rail loop is centred from its flag, in pixels; zero when the base has no loop. */
+function entryShift(level: Level, team: Team, flagMinX: number, flagMaxX: number): number {
+  let minRailX = Infinity;
+  let maxRailX = -Infinity;
+  for (let ty = 0; ty < level.height; ty++) {
+    for (let tx = 0; tx < level.width; tx++) {
+      const tile = level.getTile(tx, ty);
+      if (tile?.type !== TileType.PlayerRail || tile.team !== team) continue;
+      minRailX = Math.min(minRailX, tx);
+      maxRailX = Math.max(maxRailX, tx);
+    }
+  }
+  if (maxRailX < minRailX) return 0;
+  return ((minRailX + maxRailX + 1) * TILE_WIDTH) / 2 - ((flagMinX + flagMaxX + 1) * TILE_WIDTH) / 2;
+}
+
 /**
  * Arranges each base around its spawn flag: weapons stand in a column on the
  * flag's left, turret/harvester/bomb in a row beneath it, and the stumps that
@@ -74,8 +90,11 @@ function layoutSpawnAreas(level: Level, shops: PendingShop[], costMod: number): 
     WEAPON_STALLS.filter((k) => teamShops.some((s) => s.kind === k)).forEach((kind, i) =>
       place(minX - 1, minY + 1 + i, kind, team),
     );
+    // The flag is four tiles wide but the rail loop at the base's entry only three, so the loop's
+    // centre sits half a tile off the flag's. The flag, its shops and the spawn move onto the loop's axis.
+    const flagCentreX = ((minX + maxFlagX + 1) * TILE_WIDTH) / 2 + entryShift(level, team, minX, maxFlagX);
+    for (const t of flag) t.offsetX = flagCentreX - ((minX + maxFlagX + 1) * TILE_WIDTH) / 2;
     // The gear row is centred under the flag, as in the original, rather than starting at its edge.
-    const flagCentreX = ((minX + maxFlagX + 1) * TILE_WIDTH) / 2;
     const gear = GEAR_STALLS.filter((k) => teamShops.some((s) => s.kind === k));
     gear.forEach((kind, i) =>
       createShopItem(

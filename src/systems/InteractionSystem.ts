@@ -11,7 +11,6 @@ import { spawnSpentCoin } from '../entities/FxFactory';
 import { gameState } from '../game/GameState';
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { targetOf } from './TargetingSystem';
-import { touchesTrack } from '../level/RailLayout';
 import { createRailDroid } from './RailDroidSystem';
 import { BB } from '../math/BB';
 import type { Level } from '../level/Level';
@@ -114,7 +113,8 @@ function hasBuildingOn(tx: number, ty: number): boolean {
 
 /**
  * The build key works the tile the player stands on: it lays a piece of track
- * that continues an existing line, or, on a removable piece, takes it up again.
+ * anywhere (its sprite follows whatever it later gets joined to), or, on a
+ * removable piece, takes it up again.
  */
 function toggleRail(player: Entity, level: Level): void {
   if ((player.railCooldown ?? 0) > 0) return;
@@ -153,11 +153,6 @@ function toggleRail(player: Entity, level: Level): void {
 
   if (!tile.buildable || hasBuildingOn(tx, ty) || level.inBaseArea(tx, ty)) {
     notify('Cannot build a rail here');
-    sound.playSound('fail');
-    return;
-  }
-  if (!touchesTrack(level, tx, ty)) {
-    notify('Rails must connect to an existing track');
     sound.playSound('fail');
     return;
   }
@@ -248,16 +243,19 @@ function drop(player: Entity, building: Entity, level: Level): boolean {
   world.addComponent(building, 'blocking', true);
   // It is tossed down and slides a short way in the direction the player faces,
   // or back the other way when they face a wall, so it never ends up under their feet.
-  const aim = player.aimVector ?? { x: 0, y: 1 };
-  const len = Math.hypot(aim.x, aim.y) || 1;
-  let dx = aim.x / len;
-  let dy = aim.y / len;
-  const reach = Math.max(building.radius?.x ?? 8, building.radius?.y ?? 8) + 4;
-  if (!fitsAt(level, building, pos.x + dx * reach, pos.y + dy * reach)) {
-    dx = -dx;
-    dy = -dy;
+  // A bomb stays exactly where it was dropped, so it can be set right against a wall.
+  if (!building.bomb) {
+    const aim = player.aimVector ?? { x: 0, y: 1 };
+    const len = Math.hypot(aim.x, aim.y) || 1;
+    let dx = aim.x / len;
+    let dy = aim.y / len;
+    const reach = Math.max(building.radius?.x ?? 8, building.radius?.y ?? 8) + 4;
+    if (!fitsAt(level, building, pos.x + dx * reach, pos.y + dy * reach)) {
+      dx = -dx;
+      dy = -dy;
+    }
+    world.addComponent(building, 'slide', { x: dx * DROP_SLIDE, y: dy * DROP_SLIDE });
   }
-  world.addComponent(building, 'slide', { x: dx * DROP_SLIDE, y: dy * DROP_SLIDE });
   if (building.building) building.building.justDroppedTicks = 80;
   sound.playSound('trackPlace', pos.x, pos.y);
   return true;
@@ -271,18 +269,25 @@ function carriedBy(player: Entity): Entity | null {
   return null;
 }
 
+/**
+ * Carried buildings ride above their carrier's head. Run after everything that
+ * moves the player, so the load is never a tick behind and does not wobble.
+ */
+export function updateCarried(): void {
+  for (const held of world.with('position', 'carriedBy')) {
+    const carrier = world.entity(held.carriedBy!)?.position;
+    if (!carrier) continue;
+    held.position!.x = carrier.x;
+    held.position!.y = carrier.y - CARRY_OFFSET_Y;
+  }
+}
+
 /** Handles the use, build and upgrade intents: buy, pick up, place and upgrade. */
 export function updateInteraction(level: Level): void {
   updateNotices();
 
   for (const player of world.with('position', 'playerInput', 'playerStats', 'weaponInventory')) {
     const held = carriedBy(player);
-
-    // Carried buildings follow the player above their head.
-    if (held) {
-      held.position!.x = player.position!.x;
-      held.position!.y = player.position!.y - CARRY_OFFSET_Y;
-    }
 
     if ((player.railCooldown ?? 0) > 0) player.railCooldown!--;
     const intents = player.playerInput!.intents;

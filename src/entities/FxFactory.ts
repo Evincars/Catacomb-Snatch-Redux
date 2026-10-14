@@ -108,9 +108,10 @@ export function spawnSpentCoin(owner: Entity): void {
   });
 }
 
-/** A puff of sand-coloured dust at the feet of a runner, drawn just behind them. */
+/** A puff of sand-coloured dust at the feet of a runner, drawn just behind them; each differs in size and life. */
 export function spawnDust(owner: Entity, x: number, y: number): void {
-  spawnFx(x, y, 'fx_dust2_12', 10, 22, {
+  spawnFx(x, y, 'fx_dust2_12', 10, 14 + Math.floor(Math.random() * 14), {
+    scale: 0.7 + Math.random() * 0.9,
     yOffset: 2,
     orderId: world.id(owner),
     orderBias: -0.5,

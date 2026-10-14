@@ -231,7 +231,8 @@ export type Entity = {
   /** The pot a carriage holds over its head, drawn separately from its body sprite. */
   cargoSprite?: Sprite;
   /** A blast in progress that keeps throwing out fireballs until `life` runs out. */
-  explosion?: { life: number; duration: number };
+  /** A blast scattering fireballs over a square reaching `radius` pixels from its centre. */
+  explosion?: { life: number; duration: number; radius: number };
   /** Ticks until the next footstep puff of dust. */
   dustTimer?: number;
   /** A wall tile drawn as a depth-sorted sprite so actors can walk behind it. */
@@ -248,7 +249,8 @@ export type Entity = {
   /** Auto-targeting gun turret. */
   turret?: { radius: number; delay: number; cooldown: number; damage: number };
   /** Explodes when destroyed, damaging nearby mobs. `lit` counts down the fuse. */
-  bomb?: { blastRadius: number; blastDamage: number; lit: boolean; fuse: number };
+  /** `blastTiles` is how many tiles the blast reaches beyond the bomb's own, in every direction. */
+  bomb?: { blastTiles: number; blastDamage: number; lit: boolean; fuse: number; fuseMax: number };
   /** Vacuums up nearby loot. */
   harvester?: {
     radius: number;

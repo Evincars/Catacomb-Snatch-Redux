@@ -26,10 +26,17 @@ export function updateFx(): void {
   }
 }
 
+/** Fireballs are drawn larger than their 32px art, so a blast reads as big as the area it clears. */
+const BIG_FIREBALL_SCALE = 1.75;
+const SMALL_FIREBALL_SCALE = 1.25;
+/** Fireballs thrown per tick. */
+const FIREBALLS_PER_TICK = 2;
+
 /**
- * Java's LargeBombExplodeAnimation: for its whole life a blast throws a
- * fireball each tick at a random spot in a ring that widens as it burns out,
- * big ones early and more small ones towards the end.
+ * Adapted from Java's LargeBombExplodeAnimation: for its whole life a blast
+ * throws fireballs at random spots, big ones early and more small ones towards
+ * the end. They spread over the whole square the blast clears, from the middle
+ * outward, so every tile it reaches is filled with fire.
  */
 export function updateExplosions(): void {
   for (const entity of world.with('explosion', 'position')) {
@@ -40,21 +47,24 @@ export function updateExplosions(): void {
       continue;
     }
     const pos = entity.position!;
-    const maxRadius = 32 - (ex.life * 32) / ex.duration + 16;
-    const dir = Math.random() * Math.PI * 2;
-    const dist = Math.random() * maxRadius;
-    const big = Math.floor(Math.random() * ex.duration) <= ex.life;
-    spawnFx(
-      pos.x + Math.cos(dir) * dist,
-      pos.y + Math.sin(dir) * dist,
-      big ? 'fx_bombsplosion_big_32' : 'fx_bombsplosion_small_32',
-      10,
-      20 + Math.floor(Math.random() * 10),
-    );
+    const age = 1 - ex.life / ex.duration;
+    // Fireballs are centred up to this far in, so their edges just reach the blast's rim.
+    const spread = (ex.radius - 12) * Math.min(1, 0.6 + age);
+    for (let i = 0; i < FIREBALLS_PER_TICK; i++) {
+      const big = Math.floor(Math.random() * ex.duration) <= ex.life;
+      spawnFx(
+        pos.x + (Math.random() * 2 - 1) * spread,
+        pos.y + (Math.random() * 2 - 1) * spread,
+        big ? 'fx_bombsplosion_big_32' : 'fx_bombsplosion_small_32',
+        10,
+        20 + Math.floor(Math.random() * 10),
+        { scale: big ? BIG_FIREBALL_SCALE : SMALL_FIREBALL_SCALE },
+      );
+    }
   }
 }
 
-export function spawnExplosion(x: number, y: number): void {
+export function spawnExplosion(x: number, y: number, radius: number): void {
   const duration = 30 + Math.floor(Math.random() * 10);
-  world.add({ position: { x, y }, explosion: { life: duration, duration } });
+  world.add({ position: { x, y }, explosion: { life: duration, duration, radius } });
 }

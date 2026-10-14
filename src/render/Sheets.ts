@@ -42,6 +42,8 @@ const SHEETS: Record<string, SheetInfo> = {
   pickup_coin_bronze_small_8: { frameWidth: 8, frameHeight: 8 },
   font_default: { frameWidth: 8, frameHeight: 8 },
   button:       { frameWidth: 128, frameHeight: 24 },
+  // Level picker cell: normal, hovered, selected.
+  level_cell:   { frameWidth: 140, frameHeight: 84 },
   walltiles:    { frameWidth: 32, frameHeight: 56 },
   treasure:    { frameWidth: 32, frameHeight: 56 },
   chest_small: { frameWidth: 32, frameHeight: 53 },

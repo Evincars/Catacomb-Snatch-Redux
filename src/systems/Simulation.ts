@@ -2,7 +2,7 @@ import type { Container } from 'pixi.js';
 import type { Level } from '../level/Level';
 import { updateInput } from './InputSystem';
 import { updateTargeting } from './TargetingSystem';
-import { updateInteraction } from './InteractionSystem';
+import { updateInteraction, updateCarried } from './InteractionSystem';
 import { updateAI } from './AISystem';
 import { updateMobWeapons } from './MobWeaponSystem';
 import { updateWeapons } from './WeaponSystem';
@@ -72,6 +72,7 @@ export const SIMULATION: readonly System[] = [
   ({ level, dt }) => updateDeath(level, dt),
   ({ level }) => updateHoles(level),
   ({ level }) => updateFalling(level),
+  () => updateCarried(),
   (ctx) => {
     if (ctx.level.tilesDirty) ctx.rebuildTerrain();
   },

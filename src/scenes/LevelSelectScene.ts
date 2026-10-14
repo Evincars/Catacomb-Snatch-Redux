@@ -1,129 +1,184 @@
-import { Container, Sprite, Graphics } from 'pixi.js';
+import { Container, Sprite, Texture } from 'pixi.js';
 import { GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
 import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
-import { makeText, makeTitle } from '../ui/PixelText';
+import { makeText } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
+import { frameTexture } from '../render/Sheets';
+import { assetUrl } from '../assets/assetUrl';
 import { LEVELS, gameState } from '../game/GameState';
+import type { LevelInfo } from '../game/GameState';
 
 const GW = GAME_WIDTH;
 const GH = GAME_HEIGHT;
-const BTN_W = 140;
-const BTN_H = 28;
-const COLS = 3;
-const ROWS = 3;
-const LEVELS_PER_PAGE = COLS * ROWS;
 
+const COLS = 3;
+const CELL_W = 140;
+const CELL_H = 84;
+const CELL_GAP_X = 8;
+const CELL_GAP_Y = 8;
+const GRID_X = 39;
+const GRID_Y = 50;
+
+/** Level bitmaps are 48x48; the picker draws each inside a sand frame. */
+const MAP_SIZE = 48;
+const FRAME_PAD = 8;
+const PREVIEW_SIZE = MAP_SIZE + FRAME_PAD * 2;
+
+const FRAME_COLOR = '#e0a54f';
+const FRAME_TAB_COLOR = '#f1c070';
+const FRAME_TAB_EDGE = '#8a6330';
+
+type Rgb = [number, number, number];
+
+const FLOOR_COLOR: Rgb = [0x6e, 0x5c, 0x50];
+const WALL_COLOR: Rgb = [0xb5, 0x85, 0x45];
+const SAND_COLOR: Rgb = [0x8d, 0x6c, 0x4f];
+const HOLE_COLOR: Rgb = [0x1b, 0x15, 0x11];
+
+/** Cell frames in back_level_button.png. */
+const CELL_NORMAL = 0;
+const CELL_HOVER = 1;
+const CELL_SELECTED = 2;
+
+/** Colours of the level bitmaps: white floor, red walls, black holes, pink in-between. */
+function previewColor(r: number, g: number, b: number): Rgb {
+  if (r > 200 && g > 200 && b > 200) return FLOOR_COLOR;
+  if (r < 60 && g < 60 && b < 60) return HOLE_COLOR;
+  if (r > 200 && g < 90 && b < 90) return WALL_COLOR;
+  if (r > 200 && g > 90 && b > 90) return SAND_COLOR;
+  return [(r + FLOOR_COLOR[0]) >> 1, (g + FLOOR_COLOR[1]) >> 1, (b + FLOOR_COLOR[2]) >> 1];
+}
+
+/** Redraws a level bitmap as the picker's miniature: recoloured, in a sand frame with the two base marks. */
+async function loadPreview(level: LevelInfo): Promise<Texture> {
+  const image = new Image();
+  image.src = encodeURI(assetUrl(level.preview));
+  await image.decode();
+
+  const source = document.createElement('canvas');
+  source.width = MAP_SIZE;
+  source.height = MAP_SIZE;
+  const sctx = source.getContext('2d')!;
+  sctx.drawImage(image, 0, 0, MAP_SIZE, MAP_SIZE);
+  const pixels = sctx.getImageData(0, 0, MAP_SIZE, MAP_SIZE);
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    const [r, g, b] = previewColor(pixels.data[i], pixels.data[i + 1], pixels.data[i + 2]);
+    pixels.data[i] = r;
+    pixels.data[i + 1] = g;
+    pixels.data[i + 2] = b;
+    pixels.data[i + 3] = 255;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = PREVIEW_SIZE;
+  canvas.height = PREVIEW_SIZE;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = FRAME_COLOR;
+  ctx.fillRect(0, 0, PREVIEW_SIZE, PREVIEW_SIZE);
+  ctx.putImageData(pixels, FRAME_PAD, FRAME_PAD);
+
+  // The two small tabs are the teams' bases, north and south.
+  const tabX = PREVIEW_SIZE / 2 - 4;
+  for (const tabY of [0, PREVIEW_SIZE - 6]) {
+    ctx.fillStyle = FRAME_TAB_EDGE;
+    ctx.fillRect(tabX, tabY, 8, 6);
+    ctx.fillStyle = FRAME_TAB_COLOR;
+    ctx.fillRect(tabX + 1, tabY + 1, 6, 4);
+  }
+  return Texture.from(canvas);
+}
+
+/** The level picker: a grid of map miniatures with the chosen one highlighted. */
 export class LevelSelectScene implements Scene {
   container: Container;
-  private page = 0;
-  private selected = 0;
-  private levelButtons: PixelButton[] = [];
-  private prevBtn!: PixelButton;
-  private nextBtn!: PixelButton;
-  private listContainer!: Container;
+  private selected: number;
+  private frames: Sprite[] = [];
+  private startBtn: PixelButton;
+  private destroyed = false;
 
-  constructor(private manager: SceneManager) {
+  constructor(manager: SceneManager) {
     this.container = new Container();
 
-    // Background
-    const bg = new Sprite(getTexture('background'));
-    bg.width = GW;
-    bg.height = GH;
-    this.container.addChild(bg);
+    const panel = new Sprite(getTexture('level_panel'));
+    panel.width = GW;
+    panel.height = GH;
+    this.container.addChild(panel);
 
-    // Title
-    const title = makeTitle('Select Level');
-    title.x = GW / 2;
-    title.y = 34;
+    const title = makeText('CHOOSE A LEVEL', 0xfff0d0);
+    title.x = 20;
+    title.y = 20;
     this.container.addChild(title);
 
-    // Level button list area
-    this.listContainer = new Container();
-    this.listContainer.x = 0;
-    this.listContainer.y = 84;
-    this.container.addChild(this.listContainer);
+    this.selected = Math.max(0, LEVELS.indexOf(gameState.selectedLevel));
 
-    // Bottom nav
-    this.prevBtn = new PixelButton('<', 40, 26);
-    this.prevBtn.x = 20;
-    this.prevBtn.y = GH - 56;
-    this.prevBtn.onPress = () => { this.page--; this.rebuild(); };
-    this.container.addChild(this.prevBtn);
+    LEVELS.forEach((level, i) => {
+      const holder = new Container();
+      holder.x = GRID_X + (i % COLS) * (CELL_W + CELL_GAP_X);
+      holder.y = GRID_Y + Math.floor(i / COLS) * (CELL_H + CELL_GAP_Y);
+      holder.eventMode = 'static';
+      holder.cursor = 'pointer';
 
-    this.nextBtn = new PixelButton('>', 40, 26);
-    this.nextBtn.x = 68;
-    this.nextBtn.y = GH - 56;
-    this.nextBtn.onPress = () => { this.page++; this.rebuild(); };
-    this.container.addChild(this.nextBtn);
+      const frame = new Sprite(frameTexture('level_cell', 0, CELL_NORMAL));
+      holder.addChild(frame);
+      this.frames.push(frame);
 
-    const startBtn = new PixelButton('Next >', 140, 28);
-    startBtn.x = GW - 160;
-    startBtn.y = GH - 56;
-    startBtn.onPress = () => {
+      const label = makeText(level.name, 0xfff0d0, 10, 'center');
+      label.x = CELL_W / 2;
+      label.y = 71;
+      holder.addChild(label);
+
+      holder.on('pointerover', () => this.showFrame(i, true));
+      holder.on('pointerout', () => this.showFrame(i, false));
+      holder.on('pointertap', () => {
+        this.selected = i;
+        this.refresh();
+      });
+      this.container.addChild(holder);
+
+      loadPreview(level)
+        .then((texture) => {
+          if (this.destroyed) return;
+          const thumb = new Sprite(texture);
+          thumb.x = (CELL_W - PREVIEW_SIZE) / 2;
+          thumb.y = 4;
+          // A level without a map file can be looked at but not played.
+          if (!level.path) thumb.alpha = 0.45;
+          holder.addChildAt(thumb, 1);
+        })
+        .catch((err: unknown) => console.error(`No preview for ${level.name}`, err));
+    });
+
+    this.startBtn = new PixelButton('Start', 126, 22);
+    this.startBtn.x = 228;
+    this.startBtn.y = 336;
+    this.startBtn.onPress = () => {
       gameState.selectedLevel = LEVELS[this.selected];
       manager.goto('difficulty_select');
     };
-    this.container.addChild(startBtn);
+    this.container.addChild(this.startBtn);
 
-    const backBtn = new PixelButton('< Back', 120, 28);
-    backBtn.x = GW - 160 - 130;
-    backBtn.y = GH - 56;
-    backBtn.onPress = () => manager.goto('title');
-    this.container.addChild(backBtn);
+    const cancelBtn = new PixelButton('Cancel', 127, 22);
+    cancelBtn.x = 365;
+    cancelBtn.y = 336;
+    cancelBtn.onPress = () => manager.goto('title');
+    this.container.addChild(cancelBtn);
 
-    this.selected = LEVELS.indexOf(gameState.selectedLevel);
-    if (this.selected < 0) this.selected = 0;
-    this.page = Math.floor(this.selected / LEVELS_PER_PAGE);
-
-    this.rebuild();
+    this.refresh();
   }
 
-  private rebuild(): void {
-    this.listContainer.removeChildren();
-    this.levelButtons = [];
+  private showFrame(index: number, hovered: boolean): void {
+    const state = index === this.selected ? CELL_SELECTED : hovered ? CELL_HOVER : CELL_NORMAL;
+    this.frames[index].texture = frameTexture('level_cell', 0, state);
+  }
 
-    const startIdx = this.page * LEVELS_PER_PAGE;
-    const endIdx = Math.min(startIdx + LEVELS_PER_PAGE, LEVELS.length);
-
-    const xPad = (GW - COLS * (BTN_W + 10)) / 2 + 5;
-
-    for (let i = startIdx; i < endIdx; i++) {
-      const levelInfo = LEVELS[i];
-      const slot = i - startIdx;
-      const col = slot % COLS;
-      const row = Math.floor(slot / COLS);
-
-      const btn = new PixelButton(levelInfo.name, BTN_W, BTN_H);
-      btn.x = xPad + col * (BTN_W + 10);
-      btn.y = row * (BTN_H + 10);
-
-      if (i === this.selected) btn.alpha = 1;
-
-      const capturedI = i;
-      btn.onPress = () => {
-        this.selected = capturedI;
-        this.rebuild();
-      };
-
-      // Highlight selected
-      if (i === this.selected) {
-        const sel = new Graphics();
-        sel.rect(-2, -2, BTN_W + 4, BTN_H + 4).stroke({ color: 0xffcc44, width: 1 });
-        sel.x = btn.x;
-        sel.y = btn.y;
-        this.listContainer.addChild(sel);
-      }
-
-      this.levelButtons.push(btn);
-      this.listContainer.addChild(btn);
-    }
-
-    this.prevBtn.setEnabled(this.page > 0);
-    this.nextBtn.setEnabled((this.page + 1) * LEVELS_PER_PAGE < LEVELS.length);
+  private refresh(): void {
+    this.frames.forEach((_, i) => this.showFrame(i, false));
+    this.startBtn.setEnabled(LEVELS[this.selected].path !== null);
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.container.destroy({ children: true });
   }
 }

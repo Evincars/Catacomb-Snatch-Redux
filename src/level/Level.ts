@@ -32,6 +32,8 @@ export type SpawnTile = {
   team: Team;
   /** 0-11, mapped to col = img%4, row = img/4 in the spawn sheet. */
   img: number;
+  /** Pixels the art is drawn away from its tile, to line the flag up with the rail loop. */
+  offsetX: number;
 };
 
 export class Level {
@@ -196,7 +198,7 @@ export class Level {
   }
 
   addSpawnTile(tileX: number, tileY: number, team: Team, img: number): void {
-    this.spawnTiles.push({ tileX, tileY, team, img });
+    this.spawnTiles.push({ tileX, tileY, team, img, offsetX: 0 });
   }
 
   addSpawnPoint(x: number, y: number, team: Team): void {
