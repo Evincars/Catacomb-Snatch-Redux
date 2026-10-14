@@ -24,7 +24,7 @@ const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
 };
 
 type TurretTier = { radius: number; delay: number; damage: number };
-/** `radius` is how far the harvester reaches: the original's suck radius plus the 40px every pickup is always drawn from. */
+/** `radius` is how far the harvester reaches, in pixels. */
 type HarvesterTier = { radius: number; capacity: number };
 
 type UpgradeTrack<T> = {
@@ -49,9 +49,9 @@ const HARVESTER_UPGRADES: UpgradeTrack<HarvesterTier> = {
   sheets: ['harvester', 'harvester2', 'harvester3'],
   costs: [1000, 3000],
   tiers: [
-    { radius: 1.5 * TILE_WIDTH + 40, capacity: 1500 },
-    { radius: 2 * TILE_WIDTH + 40, capacity: 2500 },
-    { radius: 2.5 * TILE_WIDTH + 40, capacity: 3500 },
+    { radius: 4 * TILE_WIDTH, capacity: 1500 },
+    { radius: 5 * TILE_WIDTH, capacity: 2500 },
+    { radius: 6 * TILE_WIDTH, capacity: 3500 },
   ],
 };
 

@@ -86,7 +86,7 @@ function structureBBs(x: number, y: number, rx: number, ry: number, except?: obj
 }
 
 /** Speed lost per tick by a sliding building, and the speed below which it settles. */
-const SLIDE_DRAG = 0.8;
+export const SLIDE_DRAG = 0.8;
 const SLIDE_REST = 0.05;
 
 /**

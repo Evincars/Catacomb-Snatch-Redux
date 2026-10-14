@@ -33,7 +33,8 @@ function nearestPlayer(x: number, y: number, range: number): { player: Entity; d
 /**
  * Coins burst outwards when dropped and wait. Firing keeps a player from
  * gathering; once they have stopped for a moment every coin in reach locks on
- * and flies in, speeding up until it lands, even if they start shooting again.
+ * and flies in, speeding up until it lands. If they start shooting again the
+ * coins in flight hang where they are, and carry on once they stop.
  * Coins nobody collects blink and vanish after the difficulty's lifespan.
  */
 export function updateLoot(_dt: number): void {
@@ -74,6 +75,12 @@ export function updateLoot(_dt: number): void {
     const target = near ?? nearestPlayer(lp.x, lp.y, Infinity);
     if (!target) continue;
     if (coin.sprite) coin.sprite.visible = true;
+
+    // Firing holds a locked coin still; it starts over from a slow glide when the player stops.
+    if (target.player.playerStats!.restTicks < REST_TO_HARVEST) {
+      ld.glide = GLIDE_START;
+      continue;
+    }
 
     if (target.dist < PICKUP_RADIUS) {
       target.player.playerStats!.score += ld.value;

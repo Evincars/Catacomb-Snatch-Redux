@@ -11,6 +11,7 @@ import { spawnSpentCoin } from '../entities/FxFactory';
 import { gameState } from '../game/GameState';
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { targetOf } from './TargetingSystem';
+import { SLIDE_DRAG } from './MovementSystem';
 import { createRailDroid } from './RailDroidSystem';
 import { BB } from '../math/BB';
 import type { Level } from '../level/Level';
@@ -226,9 +227,40 @@ function dropSpot(level: Level, player: Entity, building: Entity): { x: number; 
   return candidates.find((c) => fitsAt(level, building, c.x, c.y)) ?? null;
 }
 
+/** A bomb rests this far below the middle of its tile, so its round body is what sits in the tile's centre. */
+const BOMB_REST_OFFSET = 6;
+
+/**
+ * Where a bomb comes to rest: the middle of the tile the player faces (right,
+ * left, up or down). When that tile is blocked, as when the player stands
+ * against a wall facing it, the nearest free tile around them instead.
+ */
+function bombSpot(level: Level, player: Entity, bomb: Entity): { x: number; y: number } | null {
+  const p = player.position!;
+  const tx = Math.floor(p.x / TILE_WIDTH);
+  const ty = Math.floor(p.y / TILE_HEIGHT);
+  const aim = player.aimVector ?? { x: 0, y: 1 };
+  const facing = Math.abs(aim.x) > Math.abs(aim.y)
+    ? { x: Math.sign(aim.x), y: 0 }
+    : { x: 0, y: Math.sign(aim.y) || 1 };
+
+  const around = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
+    .filter((d) => d.x !== facing.x || d.y !== facing.y)
+    .sort((a, b) => b.x * aim.x + b.y * aim.y - (a.x * aim.x + a.y * aim.y));
+
+  for (const d of [facing, { x: 0, y: 0 }, ...around]) {
+    const x = tx + d.x;
+    const y = ty + d.y;
+    const spot = { x: x * TILE_WIDTH + TILE_WIDTH / 2, y: y * TILE_HEIGHT + TILE_HEIGHT / 2 + BOMB_REST_OFFSET };
+    if (fitsAt(level, bomb, spot.x, spot.y) && !hasBuildingOn(x, y)) return spot;
+  }
+  return null;
+}
+
 /** Puts a carried building down, shifting it out of any wall; refuses only when there is no room at all. */
 function drop(player: Entity, building: Entity, level: Level): boolean {
-  const spot = dropSpot(level, player, building);
+  const landing = building.bomb ? bombSpot(level, player, building) : null;
+  const spot = dropSpot(level, player, building) ?? landing;
   if (!spot) {
     notify('Cannot build there');
     sound.playSound('fail');
@@ -241,10 +273,14 @@ function drop(player: Entity, building: Entity, level: Level): boolean {
   world.removeComponent(building, 'carriedBy');
   world.removeComponent(player, 'carryingId');
   world.addComponent(building, 'blocking', true);
-  // It is tossed down and slides a short way in the direction the player faces,
-  // or back the other way when they face a wall, so it never ends up under their feet.
-  // A bomb stays exactly where it was dropped, so it can be set right against a wall.
-  if (!building.bomb) {
+  if (landing) {
+    // A bomb is tossed from the player's feet onto the tile they face; the speed is
+    // chosen so the glide, which loses SLIDE_DRAG of its speed per tick, ends on the tile.
+    const push = 1 - SLIDE_DRAG;
+    world.addComponent(building, 'slide', { x: (landing.x - pos.x) * push, y: (landing.y - pos.y) * push });
+  } else if (!building.bomb) {
+    // It is tossed down and slides a short way in the direction the player faces,
+    // or back the other way when they face a wall, so it never ends up under their feet.
     const aim = player.aimVector ?? { x: 0, y: 1 };
     const len = Math.hypot(aim.x, aim.y) || 1;
     let dx = aim.x / len;
