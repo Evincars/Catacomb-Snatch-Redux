@@ -16,7 +16,7 @@ import { spawnInitialSpawners } from '../systems/RandomSpawnerSystem';
 import { carriedByPlayer } from '../systems/InteractionSystem';
 import { targetOf, updateTargeting } from '../systems/TargetingSystem';
 import { syncWalls, resetWalls } from '../systems/WallSystem';
-import { upgradeCostOf } from '../entities/BuildingFactory';
+import { applyUpgradeLevel, upgradeCostOf } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { takeNotices, clearNotices, updateNotices, noticeEvents } from '../game/Notices';
 import { makeText, makeTitle } from '../ui/PixelText';
@@ -127,6 +127,9 @@ export class InGameScene implements Scene {
       this.lastTerrain = JSON.stringify(snapshot.level.tiles);
       this.level = RestorableLevel.restore(snapshot.level);
       this.replica.apply(snapshot);
+      if (coop.role !== 'guest') {
+        for (const harvester of world.with('harvester', 'upgradable')) applyUpgradeLevel(harvester);
+      }
       savedRun.pending = null;
     } else {
       if (coop.role === 'guest') throw new Error('Waiting for the host world');

@@ -7,6 +7,7 @@ export const LOOT_PULL_RADIUS = 64;
 /** Ticks a coin lies around (before the difficulty's scaling): 600-699, as in the original. */
 const LIFE_MIN = 600;
 const LIFE_SPREAD = 100;
+export const LOOT_BURST_TICKS = 24;
 
 type LootKind = { sheet: string; frames: number; value: number };
 
@@ -66,6 +67,7 @@ export function createLoot(
 
   return world.add({
     position: { x, y },
+    yOffset: 2,
     loot: {
       value: exact ? value : spec.value,
       kind,
@@ -75,6 +77,7 @@ export function createLoot(
       glide: 0,
       age: 0,
       life: LIFE_MIN + Math.floor(Math.random() * LIFE_SPREAD),
+      burstTicks: LOOT_BURST_TICKS,
     },
     radius: { x: 4, y: 4 },
     visual: { sheet: spec.sheet },

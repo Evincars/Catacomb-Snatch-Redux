@@ -110,6 +110,7 @@ export function destroyAttachments(entity: Entity): void {
   entity.coinBar?.container.destroy({ children: true });
   entity.sprintBar?.destroy();
   entity.hurtOverlay?.destroy();
+  entity.fallMask?.destroy();
   entity.priceLabel?.destroy();
   entity.marker?.destroy();
   entity.rangeView?.gfx.destroy();

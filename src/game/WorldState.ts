@@ -10,11 +10,11 @@ import { destroyAttachments } from '../systems/BarSystem';
 import { frameTexture } from '../render/Sheets';
 
 const RUNTIME = new Set<keyof Entity>([
-  'sprite', 'container', 'coinBar', 'healthBar', 'sprintBar', 'hurtOverlay',
+  'sprite', 'container', 'coinBar', 'healthBar', 'sprintBar', 'hurtOverlay', 'fallMask',
   'priceLabel', 'marker', 'rangeView', 'cargoSprite', 'targeted', 'hovered',
 ]);
 type RuntimeKey = 'sprite' | 'container' | 'coinBar' | 'healthBar' | 'sprintBar'
-  | 'hurtOverlay' | 'priceLabel' | 'marker' | 'rangeView' | 'cargoSprite' | 'targeted' | 'hovered';
+  | 'hurtOverlay' | 'fallMask' | 'priceLabel' | 'marker' | 'rangeView' | 'cargoSprite' | 'targeted' | 'hovered';
 export type EntityState = Omit<Entity, RuntimeKey>;
 export type WorldState = {
   version: 1;
@@ -73,7 +73,10 @@ export function validateWorld(value: unknown): asserts value is WorldState {
   }
   for (const stack of s.level.tiles) {
     if (!Array.isArray(stack) || !stack.length || stack.some(t => !t || !Number.isInteger(t.type)
-      || t.type < 0 || t.type > 10 || typeof t.passable !== 'boolean')) throw new Error('Invalid terrain state');
+      || t.type < 0 || t.type > 10 || typeof t.passable !== 'boolean'
+      || t.crumble !== undefined && (!Number.isInteger(t.crumble) || t.crumble < 0 || t.crumble > 7)
+      || t.steppedOn !== undefined && typeof t.steppedOn !== 'boolean'
+      || t.collapseTicks !== undefined && (!Number.isInteger(t.collapseTicks) || t.collapseTicks < 0 || t.collapseTicks > 5))) throw new Error('Invalid terrain state');
   }
   if (!slots.has('host')) throw new Error('Save has no host player');
   for (const points of s.level.spawns) {
@@ -146,6 +149,10 @@ function checkEntity(data: EntityState): void {
   if (data.weaponInventory && (!Array.isArray(data.weaponInventory.weapons)
     || !data.weaponInventory.weapons.every(w => ['rifle', 'shotgun', 'raygun'].includes(w)))) throw new Error('Invalid saved weapons');
   if (data.upgradable && (!Array.isArray(data.upgradable.costs) || !data.upgradable.costs.every(Number.isFinite))) throw new Error('Invalid upgrade costs');
+  if (data.loot?.burstTicks !== undefined && (!Number.isInteger(data.loot.burstTicks)
+    || data.loot.burstTicks < 0 || data.loot.burstTicks > 24)) throw new Error('Invalid loot burst timer');
+  if (data.playerStats?.pickupFlashCooldown !== undefined && (!Number.isInteger(data.playerStats.pickupFlashCooldown)
+    || data.playerStats.pickupFlashCooldown < 0 || data.playerStats.pickupFlashCooldown > 8)) throw new Error('Invalid pickup flash timer');
 }
 
 /** Keeps display objects alive on the guest while remapping host entity references to local ECS ids. */

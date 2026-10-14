@@ -127,7 +127,10 @@ export function spawnSteam(x: number, y: number): void {
 export function spawnTakeFx(player: Entity): void {
   const pos = player.position;
   if (!pos) return;
-  player.flashTime = 5;
+  if (player.playerStats && (player.playerStats.pickupFlashCooldown ?? 0) <= 0) {
+    player.flashTime = 1;
+    player.playerStats.pickupFlashCooldown = 8;
+  }
   for (const side of [-1, 1]) {
     spawnFx(pos.x + side * (5 + Math.random() * 5), pos.y, 'effect_shine_small', 5, 10, {
       yOffset: 12 + Math.random() * 6,

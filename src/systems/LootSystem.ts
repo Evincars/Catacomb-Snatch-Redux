@@ -2,7 +2,7 @@ import { world } from '../world';
 import type { Entity } from '../world';
 import { sound } from '../audio/SoundPlayer';
 import { gameState } from '../game/GameState';
-import { pickupSound } from '../entities/LootFactory';
+import { pickupSound, LOOT_BURST_TICKS } from '../entities/LootFactory';
 import { spawnTakeFx } from '../entities/FxFactory';
 
 /** Drop-burst velocity retained per tick. */
@@ -24,7 +24,7 @@ const BLINK_PERIOD = 4;
 function nearestPlayer(x: number, y: number, range: number): { player: Entity; dist: number } | null {
   let best: { player: Entity; dist: number } | null = null;
   for (const player of world.with('position', 'playerStats', 'health')) {
-    if (player.health!.current <= 0) continue;
+    if (player.health!.current <= 0 || player.removed || player.falling) continue;
     const dist = Math.hypot(player.position!.x - x, player.position!.y - y);
     if (dist < range && (!best || dist < best.dist)) best = { player, dist };
   }
@@ -35,13 +35,14 @@ function nearestPlayer(x: number, y: number, range: number): { player: Entity; d
  * Coins burst outwards when dropped and wait. Firing keeps a player from
  * gathering; once they have stopped for a moment every coin in reach locks on
  * and flies in, speeding up until it lands. If they start shooting again the
- * coins in flight hang where they are, and carry on once they stop.
+ * coins in flight coast to a stop, and carry on once they stop.
  * Coins nobody collects blink and vanish after the difficulty's lifespan.
  */
 export function updateLoot(_dt: number): void {
   for (const player of world.with('playerStats', 'playerInput')) {
     const stats = player.playerStats!;
     stats.restTicks = player.playerInput!.shoot ? 0 : stats.restTicks + 1;
+    stats.pickupFlashCooldown = Math.max(0, (stats.pickupFlashCooldown ?? 0) - 1);
   }
 
   const lifeScale = gameState.difficulty.coinLifespan / NORMAL_LIFESPAN;
@@ -51,13 +52,17 @@ export function updateLoot(_dt: number): void {
     const lp = coin.position!;
     const ld = coin.loot!;
 
-    // Once homing starts, only the glide moves a coin, so firing can stop it completely.
+    const airborne = (ld.burstTicks ?? 0) > 0;
     if (ld.glide === 0) {
       lp.x += ld.velX;
       lp.y += ld.velY;
     }
-    ld.velX *= LOOT_FRICTION;
-    ld.velY *= LOOT_FRICTION;
+    ld.velX *= airborne ? 0.98 : LOOT_FRICTION;
+    ld.velY *= airborne ? 0.98 : LOOT_FRICTION;
+    if (airborne) {
+      ld.burstTicks!--;
+      coin.yOffset = 2 + 12 * Math.sin(Math.PI * ld.burstTicks! / LOOT_BURST_TICKS);
+    }
 
     const near = nearestPlayer(lp.x, lp.y, ld.suckRadius);
     const locked = ld.glide > 0;
@@ -71,7 +76,7 @@ export function updateLoot(_dt: number): void {
         world.addComponent(coin, 'removed', true);
         continue;
       }
-      if (near && near.player.playerStats!.restTicks >= REST_TO_HARVEST) ld.glide = GLIDE_START;
+      if (!airborne && near && near.player.playerStats!.restTicks >= REST_TO_HARVEST) ld.glide = GLIDE_START;
       else continue;
     }
 
@@ -80,9 +85,15 @@ export function updateLoot(_dt: number): void {
     if (!target) continue;
     if (coin.sprite) coin.sprite.visible = true;
 
-    // Firing holds a locked coin still; it starts over from a slow glide when the player stops.
+    // Retain a little momentum when firing starts, without collecting during the coast.
     if (target.player.playerStats!.restTicks < REST_TO_HARVEST) {
-      ld.glide = GLIDE_START;
+      ld.glide = Math.max(GLIDE_START, ld.glide * 0.8);
+      if (ld.glide > GLIDE_START && target.dist > PICKUP_RADIUS) {
+        const step = Math.min(ld.glide, target.dist - PICKUP_RADIUS);
+        const pp = target.player.position!;
+        lp.x += ((pp.x - lp.x) / target.dist) * step;
+        lp.y += ((pp.y - lp.y) / target.dist) * step;
+      }
       continue;
     }
 

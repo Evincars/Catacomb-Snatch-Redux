@@ -89,6 +89,7 @@ export type Entity = {
   sprintBar?: Sprite;
   /** Solid-colour copy of `sprite` laid over it for hit flashes. */
   hurtOverlay?: Sprite;
+  fallMask?: Graphics;
   /** Cost text under a shop stall. */
   priceLabel?: PixelLabel;
   /** Short-lived animated sprite (muzzle flash, death blast) that removes itself when done. */
@@ -145,6 +146,7 @@ export type Entity = {
     sprintLocked: boolean;
     /** Ticks since the player last fired; a pause long enough triggers coin harvesting. */
     restTicks: number;
+    pickupFlashCooldown?: number;
     /** True on ticks where the player is actually sprinting (aim error doubles). */
     sprinting: boolean;
   };
@@ -178,6 +180,8 @@ export type Entity = {
     age: number;
     /** Ticks it may lie around before vanishing. */
     life: number;
+    /** Time left in the outward drop arc, before collectors may attract it. */
+    burstTicks?: number;
   };
 
   // --- bullet ---

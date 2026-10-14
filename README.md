@@ -43,9 +43,16 @@ The dev server runs at `http://localhost:5173`. The production build outputs to 
 - Bombs make a quick, 25-pixel directional toss rather than snapping to a tile centre.
   Walls and structures shorten the toss, keeping the bomb beside the obstacle.
 - Treasure chests cannot be shot apart or carried. Focus a closed chest and press the use key
-  to release mixed treasure. The open chest disappears after 100 ticks with the bat's effect and sound.
-- Collecting treasure briefly flashes the player and creates pickup sparkles. Firing pauses coins
-  already flying toward the player; releasing fire resumes collection.
+  to release mixed treasure. Coins and gems scatter in a short airborne arc before collection begins.
+  The open chest disappears after 100 ticks with the bat's effect and sound.
+- Collecting treasure creates pickup sparkles and a faint, one-tick flash, with a gap between flashes
+  even during continuous collection. Firing makes approaching coins coast to a stop rather than
+  freeze abruptly; releasing fire resumes collection.
+- Harvesters use the original 60-pixel starting range and original upgrade ranges.
+  Focus brackets sit around the body rather than the tall antenna.
+- Cracked-floor traps deepen on each separate visit and collapse on the third, animating into holes.
+  Falling players rotate and descend behind the foreground floor without shrinking, accompanied by
+  an exclamation mark. Trap progression and airborne loot are included in saves and co-op snapshots.
 - DevMap uses the original bitmap's 48×48 layout, including chests, placed turrets, and spike traps,
   with the standard bases around it. Traps use four animation frames, 10-tick active steps and a
   100-tick rest; the original staggered variants start 30 or 60 ticks later. They hurt grounded

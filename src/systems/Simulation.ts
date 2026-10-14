@@ -18,6 +18,7 @@ import { updateRandomSpawner } from './RandomSpawnerSystem';
 import { updateTreasure } from './TreasureSystem';
 import { updateDeath } from './DeathSystem';
 import { updateHoles } from './HoleSystem';
+import { updateDropTraps } from './DropTrapSystem';
 import { updateSprites } from './SpriteSystem';
 import { updateFx, updateExplosions } from './FxSystem';
 import { updateRailDroids, updateRailDroidCargo } from './RailDroidSystem';
@@ -73,6 +74,7 @@ export const SIMULATION: readonly System[] = [
   ({ level, dt }) => updateBombs(level, dt),
   () => updateExplosions(),
   ({ level, dt }) => updateDeath(level, dt),
+  ({ level }) => updateDropTraps(level),
   ({ level }) => updateHoles(level),
   ({ level }) => updateFalling(level),
   () => updateCarried(),
@@ -86,7 +88,7 @@ export const PRESENTATION: readonly System[] = [
   ({ gameLayer }) => updateSprites(gameLayer),
   () => updateFx(),
   ({ dt }) => updateAnimation(dt),
-  ({ dt }) => updateRender(dt),
+  ({ dt, level }) => updateRender(dt, level),
   ({ gameLayer }) => updateRailDroidCargo(gameLayer),
   ({ gameLayer }) => updateBars(gameLayer),
   ({ gameLayer }) => updateRanges(gameLayer),

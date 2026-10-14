@@ -2,6 +2,7 @@ import { Graphics } from 'pixi.js';
 import type { Container } from 'pixi.js';
 import { world } from '../world';
 import type { Entity } from '../world';
+import { TILE_HEIGHT } from '../level/TileType';
 
 /** Ticks a range circle stays after focus is lost, the last FADE of which fade it out. */
 const LINGER = 180;
@@ -22,7 +23,7 @@ function draw(gfx: Graphics, radius: number): void {
 
 /**
  * Shows the reach of turrets and harvesters while one is carried or focused, and
- * for a few seconds afterwards. The circle follows the radius, so upgrades grow it.
+ * for a few seconds afterwards. The circle follows the current upgrade's radius.
  */
 export function updateRanges(gameLayer: Container): void {
   for (const entity of world.with('position', 'rangeTicks')) {
@@ -54,7 +55,7 @@ export function updateRanges(gameLayer: Container): void {
     }
 
     gfx.x = Math.round(entity.position!.x);
-    gfx.y = Math.round(entity.position!.y);
+    gfx.y = Math.round(entity.position!.y - (entity.harvester ? (entity.yOffset ?? 0) - TILE_HEIGHT / 2 : 0));
     gfx.alpha = Math.min(1, ticks / FADE) * (carried ? CARRIED_ALPHA : 1);
     gfx.visible = true;
   }

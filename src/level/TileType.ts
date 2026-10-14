@@ -33,6 +33,9 @@ export type TileData = {
   shadowedWest: boolean;
   shadowedNorthEast: boolean;
   shadowedNorthWest: boolean;
+  crumble?: number;
+  steppedOn?: boolean;
+  collapseTicks?: number;
 };
 
 export function createTile(type: TileType, imageVariant = 0): TileData {

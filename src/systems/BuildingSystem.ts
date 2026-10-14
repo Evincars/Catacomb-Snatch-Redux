@@ -106,9 +106,9 @@ export function updateHarvesters(_dt: number): void {
     }
 
     if (h.collected < h.capacity) {
-      const suckPow = (h.radius - 40) / 60;
+      const suckPow = h.radius / 60;
       for (const coin of world.with('position', 'loot')) {
-        if (coin.removed || coin.loot!.glide > 0) continue;
+        if (coin.removed || coin.loot!.glide > 0 || (coin.loot!.burstTicks ?? 0) > 0) continue;
         const lp = coin.position!;
         const dx = pos.x - lp.x;
         const dy = pos.y - lp.y;

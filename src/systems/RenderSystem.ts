@@ -1,8 +1,9 @@
-import { Sprite } from 'pixi.js';
+import { Graphics, Sprite } from 'pixi.js';
 import { world } from '../world';
 import type { Entity } from '../world';
 import { whiteFrame } from '../render/Sheets';
-import { TILE_HEIGHT } from '../level/TileType';
+import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
+import type { Level } from '../level/Level';
 
 type Overlay = { color: number; alpha: number };
 
@@ -35,7 +36,7 @@ function overlayFor(entity: Entity): Overlay | null {
     return Math.floor(fuse / interval) % 2 === 0 ? { color: 0xff0000, alpha: 0.7 } : null;
   }
 
-  if ((entity.flashTime ?? 0) > 0) return { color: 0xffff80, alpha: 0.5 };
+  if ((entity.flashTime ?? 0) > 0) return { color: 0xffff80, alpha: entity.playerInput ? 0.18 : 0.5 };
   return null;
 }
 
@@ -64,10 +65,11 @@ function syncOverlay(entity: Entity, sprite: Sprite): void {
   layer.tint = overlay.color;
   layer.alpha = overlay.alpha;
   layer.visible = true;
+  layer.mask = entity.fallMask ?? null;
 }
 
 /** Sync Pixi sprite transforms and hit flashes from ECS state. */
-export function updateRender(_dt: number): void {
+export function updateRender(_dt: number, level: Level): void {
   for (const entity of world.with('position', 'sprite')) {
     const pos = entity.position!;
     const sprite = entity.sprite!;
@@ -92,15 +94,34 @@ export function updateRender(_dt: number): void {
     }
     sprite.zIndex = order;
 
-    // A falling player shrinks and sinks away into the hole.
-    if (entity.falling) {
-      const t = Math.min(1, entity.falling.age / entity.falling.duration);
-      sprite.scale.set(1 - 0.7 * t);
-      sprite.alpha = 1 - 0.6 * t;
-      sprite.y += Math.round(10 * t);
-    } else if (sprite.scale.x !== (entity.visual?.scale ?? 1) && entity.playerInput) {
-      sprite.scale.set(1);
-      sprite.alpha = 1;
+    const owner = fx?.orderId !== undefined ? world.entity(fx.orderId) : undefined;
+    const falling = entity.falling ? entity : owner?.falling && entity.visual?.sheet === 'exclamation_mark' ? owner : undefined;
+    let clipBottom: number | undefined;
+    if (falling?.falling) {
+      const t = Math.min(1, falling.falling.age / falling.falling.duration);
+      sprite.y += Math.round(48 * t);
+      const fp = falling.position!;
+      const tx = Math.floor(fp.x / TILE_WIDTH);
+      const ty = Math.floor(fp.y / TILE_HEIGHT);
+      // The foreground floor occludes the fall; adjacent holes do not.
+      if (level.getTile(tx, ty + 1)?.type !== TileType.Hole) {
+        clipBottom = (ty + 1) * TILE_HEIGHT;
+      }
+    }
+    if (clipBottom !== undefined) {
+      let mask = entity.fallMask;
+      if (!mask) {
+        mask = new Graphics();
+        sprite.parent!.addChild(mask);
+        world.addComponent(entity, 'fallMask', mask);
+      }
+      mask.clear().rect(0, 0, level.width * TILE_WIDTH, clipBottom).fill(0xffffff);
+      sprite.mask = mask;
+    } else if (entity.fallMask) {
+      sprite.mask = null;
+      if (entity.hurtOverlay) entity.hurtOverlay.mask = null;
+      entity.fallMask.destroy();
+      world.removeComponent(entity, 'fallMask');
     }
 
     syncOverlay(entity, sprite);

@@ -35,7 +35,8 @@ export function centreOf(entity: Entity): { x: number; y: number } {
   const lidSpace = entity.chest && entity.visual
     ? (sheetInfo(entity.visual.sheet).frameHeight - TILE_HEIGHT) / 2
     : 0;
-  return { x: p.x, y: p.y - (entity.yOffset ?? 0) + lidSpace };
+  const bodyOffset = entity.harvester ? TILE_HEIGHT / 2 : lidSpace;
+  return { x: p.x, y: p.y - (entity.yOffset ?? 0) + bodyOffset };
 }
 
 /** Nearest candidate to a point, used for pointer hover. */

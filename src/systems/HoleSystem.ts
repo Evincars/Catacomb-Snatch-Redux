@@ -7,7 +7,7 @@ import { sound } from '../audio/SoundPlayer';
 import { spawnFx } from '../entities/FxFactory';
 
 /** Ticks from stepping off the edge to landing at the spawn; matches the falling cry's length. */
-export const FALL_TICKS = 45;
+export const FALL_TICKS = 60;
 const FEMALE_CHARACTERS = ['countess_cruller', 'duchess_donut'];
 
 /**
@@ -16,7 +16,7 @@ const FEMALE_CHARACTERS = ['countess_cruller', 'duchess_donut'];
  */
 export function updateHoles(level: Level): void {
   for (const entity of world.with('position', 'health')) {
-    if (entity.removed) continue;
+    if (entity.removed || entity.mobType === 'bat') continue;
 
     const tile = level.getTileAt(entity.position!.x, entity.position!.y);
     if (tile?.type !== TileType.Hole) continue;

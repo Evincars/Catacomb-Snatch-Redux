@@ -122,6 +122,7 @@ function railFrame(level: Level, tx: number, ty: number): number {
 export function buildLevelSprite(app: Application, level: Level): Sprite {
   const floorTex = getTexture('floortiles');
   const railTex = getTexture('rails');
+  const dropTex = getTexture('droptrap');
 
   const container = new Container();
 
@@ -131,10 +132,27 @@ export function buildLevelSprite(app: Application, level: Level): Sprite {
       const tile = level.getTile(tx, ty);
       if (!tile || tile.type === TileType.Wall) continue;
 
+      if (tile.type === TileType.DropTrap) {
+        const row = level.getTile(tx, ty - 1)?.type === TileType.Hole ? 0 : 1;
+        const s = new Sprite(frameOf(dropTex, tile.crumble ?? 0, row, TILE_WIDTH, TILE_HEIGHT));
+        s.x = tx * TILE_WIDTH;
+        s.y = ty * TILE_HEIGHT;
+        container.addChild(s);
+        continue;
+      }
+      const above = level.getTile(tx, ty - 1);
       const img = tile.type === TileType.Floor
         ? sandEdgeImage(level, tx, ty) ?? floorImageIndex(tile.type, tile.imageVariant)
+        : tile.type === TileType.Hole && above?.type === TileType.Sand ? 7
         : floorImageIndex(tile.type, tile.imageVariant);
-      const s = new Sprite(frameOf(floorTex, img % FLOOR_COLS, Math.floor(img / FLOOR_COLS), TILE_WIDTH, TILE_HEIGHT));
+      const interiorHole = tile.type === TileType.Hole && above?.type === TileType.Hole;
+      const s = new Sprite(interiorHole ? Texture.WHITE
+        : frameOf(floorTex, img % FLOOR_COLS, Math.floor(img / FLOOR_COLS), TILE_WIDTH, TILE_HEIGHT));
+      if (interiorHole) {
+        s.tint = 0x000000;
+        s.width = TILE_WIDTH;
+        s.height = TILE_HEIGHT;
+      }
       s.x = tx * TILE_WIDTH;
       s.y = ty * TILE_HEIGHT;
       container.addChild(s);

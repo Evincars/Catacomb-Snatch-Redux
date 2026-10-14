@@ -49,9 +49,9 @@ const HARVESTER_UPGRADES: UpgradeTrack<HarvesterTier> = {
   sheets: ['harvester', 'harvester2', 'harvester3'],
   costs: [500, 1000],
   tiers: [
-    { radius: 4 * TILE_WIDTH, capacity: 1500 },
-    { radius: 5 * TILE_WIDTH, capacity: 2500 },
-    { radius: 6 * TILE_WIDTH, capacity: 3500 },
+    { radius: 60, capacity: 1500 },
+    { radius: 3 * TILE_WIDTH, capacity: 2500 },
+    { radius: 2.5 * TILE_WIDTH, capacity: 3500 },
   ],
 };
 
