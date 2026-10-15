@@ -57,7 +57,7 @@ function closest(player: Entity, from: { x: number; y: number }, maxDist: number
 }
 
 /** The first candidate the player's aim line runs into within reach, or null. */
-function hitByAimLine(player: Entity): Entity | null {
+export function hitByAimLine(player: Entity): Entity | null {
   const from = player.position!;
   const aim = player.aimVector;
   const len = aim ? Math.hypot(aim.x, aim.y) : 0;
@@ -111,7 +111,8 @@ export function updateTargeting(): void {
     const target = hitByAimLine(player);
     if (target) {
       player.targetId = world.id(target)!;
-      world.addComponent(target, 'targeted', true);
+      // The computer's reach is not marked on screen.
+      if (!player.aiPlayer) world.addComponent(target, 'targeted', true);
     } else {
       delete player.targetId;
     }

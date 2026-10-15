@@ -5,11 +5,11 @@ import type { BuildingType } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { WEAPON_STATS } from '../entities/WeaponStats';
 import { sound } from '../audio/SoundPlayer';
-import { notify, updateNotices } from '../game/Notices';
+import { notify, updateNotices, quietly } from '../game/Notices';
 import { keyLabel } from '../game/Settings';
 import { spawnSpentCoin } from '../entities/FxFactory';
 import { createLoot } from '../entities/LootFactory';
-import { gameState } from '../game/GameState';
+import { gameState, isVersus } from '../game/GameState';
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { targetOf } from './TargetingSystem';
 import { SLIDE_DRAG } from './MovementSystem';
@@ -29,7 +29,20 @@ const DROID_COST = 50;
 /** Ticks before the next piece can be laid or lifted. */
 const RAIL_DELAY_TICKS = 15;
 
-const WEAPON_KINDS: ShopKind[] = ['rifle', 'shotgun', 'raygun'];
+/** What laying one piece of track costs at the current difficulty. */
+export function railCost(): number {
+  return Math.max(1, Math.round(RAIL_COST * gameState.difficulty.shopCostMod));
+}
+
+/** What a rail carriage costs at the current difficulty. */
+export function carriageCost(): number {
+  return Math.max(1, Math.round(DROID_COST * gameState.difficulty.shopCostMod));
+}
+
+/** Anything with weapon stats is equipped rather than carried. */
+function isWeapon(kind: ShopKind): boolean {
+  return Object.prototype.hasOwnProperty.call(WEAPON_STATS, kind);
+}
 
 export function carriedByPlayer(player: Entity): Entity | null {
   return carriedBy(player);
@@ -45,7 +58,7 @@ function buy(player: Entity, item: Entity): void {
     return;
   }
 
-  if (WEAPON_KINDS.includes(kind)) {
+  if (isWeapon(kind)) {
     const inv = player.weaponInventory!;
     if (inv.weapons.includes(kind)) {
       notify(`${SHOP_DEFS[kind].label} already owned`);
@@ -127,11 +140,10 @@ function toggleRail(player: Entity, level: Level): void {
   const tile = level.getTile(tx, ty);
   if (!tile) return;
   const stats = player.playerStats!;
-  const mod = gameState.difficulty.shopCostMod;
 
   // Taking track up is free.
   if (tile.type === TileType.Rail) {
-    if (gameState.multiplayerMode === 'enemy' && tile.team !== undefined && tile.team !== player.team) {
+    if (isVersus() && tile.team !== undefined && tile.team !== player.team) {
       notify('Enemy rails can only be destroyed by bombs');
       sound.playSound('fail');
       return;
@@ -144,12 +156,12 @@ function toggleRail(player: Entity, level: Level): void {
 
   // The base's fixed track is where carriages are bought (Java Player.handleRailBuilding).
   if (tile.type === TileType.UnbreakableRail || tile.type === TileType.PlayerRail) {
-    if (gameState.multiplayerMode === 'enemy' && tile.team !== undefined && tile.team !== player.team) {
+    if (isVersus() && tile.team !== undefined && tile.team !== player.team) {
       notify('Buy carriages on your own base track');
       sound.playSound('fail');
       return;
     }
-    const cost = Math.max(1, Math.round(DROID_COST * mod));
+    const cost = carriageCost();
     if (stats.score < cost) {
       notify(`Need ${cost} coins for a carriage`);
       sound.playSound('fail');
@@ -169,7 +181,7 @@ function toggleRail(player: Entity, level: Level): void {
     return;
   }
 
-  const cost = Math.max(1, Math.round(RAIL_COST * mod));
+  const cost = railCost();
   if (stats.score < cost) {
     notify(`Need ${cost} coins for a rail`);
     sound.playSound('fail');
@@ -351,47 +363,52 @@ export function updateInteraction(level: Level): void {
 
   for (const player of world.with('position', 'playerInput', 'playerStats', 'weaponInventory')) {
     if (player.respawnTicks !== undefined || (player.health?.current ?? 1) <= 0) continue;
-    const held = carriedBy(player);
+    // The computer's purchases and mistakes are not announced to the people playing.
+    quietly(player.aiPlayer !== undefined, () => interact(player, level));
+  }
+}
 
-    if ((player.railCooldown ?? 0) > 0) player.railCooldown!--;
-    const intents = player.playerInput!.intents;
-    const target = targetOf(player);
-    if (gameState.multiplayerMode === 'enemy' && target?.team
-      && target.team !== player.team && target.building && !target.bomb) {
-      if (player.playerInput!.intents.use || player.playerInput!.intents.build || player.playerInput!.intents.upgrade) {
-        notify('Enemy buildings cannot be used or upgraded');
-        sound.playSound('fail');
-      }
-      continue;
-    }
+function interact(player: Entity, level: Level): void {
+  const held = carriedBy(player);
 
-    if (intents.upgrade) {
-      if (held) notify('Place it before upgrading');
-      else upgrade(player, target);
-      continue;
+  if ((player.railCooldown ?? 0) > 0) player.railCooldown!--;
+  const intents = player.playerInput!.intents;
+  const target = targetOf(player);
+  if (isVersus() && target?.team
+    && target.team !== player.team && target.building && !target.bomb) {
+    if (player.playerInput!.intents.use || player.playerInput!.intents.build || player.playerInput!.intents.upgrade) {
+      notify('Enemy buildings cannot be used or upgraded');
+      sound.playSound('fail');
     }
+    return;
+  }
 
-    if (!intents.use && !intents.build) continue;
+  if (intents.upgrade) {
+    if (held) notify('Place it before upgrading');
+    else upgrade(player, target);
+    return;
+  }
 
-    if (held) {
-      drop(player, held, level);
-      continue;
-    }
+  if (!intents.use && !intents.build) return;
 
-    if (!target) {
-      if (intents.build) toggleRail(player, level);
-      continue;
-    }
-    if (target.shopItem) {
-      // Stalls only answer to the use key.
-      if (intents.use) buy(player, target);
-    } else if (target.chest) {
-      if (intents.use) openChest(target);
-    } else if (target.harvester && intents.use && (target.harvester.collected > 0 || target.harvester.emptying)) {
-      takeCoins(player, target);
-    } else if (target.building || target.spawner) {
-      // The build key lifts any building or nest; use does so too, except on a harvester, which it empties.
-      pickUp(player, target);
-    }
+  if (held) {
+    drop(player, held, level);
+    return;
+  }
+
+  if (!target) {
+    if (intents.build) toggleRail(player, level);
+    return;
+  }
+  if (target.shopItem) {
+    // Stalls only answer to the use key.
+    if (intents.use) buy(player, target);
+  } else if (target.chest) {
+    if (intents.use) openChest(target);
+  } else if (target.harvester && intents.use && (target.harvester.collected > 0 || target.harvester.emptying)) {
+    takeCoins(player, target);
+  } else if (target.building || target.spawner) {
+    // The build key lifts any building or nest; use does so too, except on a harvester, which it empties.
+    pickUp(player, target);
   }
 }

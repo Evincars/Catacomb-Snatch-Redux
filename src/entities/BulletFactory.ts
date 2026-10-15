@@ -23,7 +23,7 @@ type BulletConfig = {
 };
 
 /** Rifle, shotgun and ray follow the Java Bullet, BulletBuckshot and BulletRay (speed x duration = range). */
-const BULLET_CONFIGS: Record<BulletType, BulletConfig> = {
+export const BULLET_CONFIGS: Record<BulletType, BulletConfig> = {
   rifle:   { damage: 0.5, speed: 6,  range: 240, freezeTime: 5,  radius: { x: 4, y: 4 }, sheet: 'bullet', directional: true, yOffset: 2 },
   shotgun: { damage: 4.5, speed: 18, range: 360, freezeTime: 5,  radius: { x: 2, y: 2 }, sheet: 'bullet_buckshot', directional: false, yOffset: 0, damageFalloff: 0.5 },
   ray:     { damage: 1.5, speed: 5,  range: 250, freezeTime: 5,  radius: { x: 4, y: 4 }, sheet: 'plasmaball', directional: false, randomFrames: 8, yOffset: 2, bounces: 5 },

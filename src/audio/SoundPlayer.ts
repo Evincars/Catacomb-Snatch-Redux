@@ -48,6 +48,8 @@ const EARSHOT = 320;
 
 class SoundPlayer {
   onEffect: ((name: SfxName, x?: number, y?: number) => void) | null = null;
+  /** Set while the computer opponent acts, so its unpositioned UI sounds stay silent. */
+  muteInterface = false;
   private ctx: AudioContext | null = null;
   private sfxGain!: GainNode;
   private musicGain!: GainNode;
@@ -108,6 +110,8 @@ class SoundPlayer {
 
   /** Plays a sound effect, optionally attenuated and panned by world position. */
   playSound(name: SfxName, x?: number, y?: number): void {
+    // Interface sounds (no position) of the computer opponent are not heard.
+    if (this.muteInterface && (x === undefined || y === undefined)) return;
     this.onEffect?.(name, x, y);
     if (!this.unlocked) return;
     const buffer = this.buffers.get(SFX[name]);

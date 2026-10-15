@@ -29,7 +29,8 @@ export function updateRanges(gameLayer: Container): void {
   for (const entity of world.with('position', 'rangeTicks')) {
     if (entity.removed) continue;
 
-    const carried = entity.carriedBy !== undefined;
+    const carrier = entity.carriedBy !== undefined ? world.entity(entity.carriedBy) : undefined;
+    const carried = carrier !== undefined && !carrier.aiPlayer;
     if (carried || entity.targeted) entity.rangeTicks = LINGER;
     else if (entity.rangeTicks! > 0) entity.rangeTicks!--;
 

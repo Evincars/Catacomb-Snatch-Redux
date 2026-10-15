@@ -114,6 +114,22 @@ is needed to establish the session; no application game server is required. Depl
 configured TURN relay; this version does not bundle or operate one. Keep the host tab open.
 Invite links grant access to the session, so share them only with the intended player.
 
+## Computer opponent
+
+- On the difficulty screen, toggle **Opponent: AI** and cycle **AI: Easy / Normal / Hard / Insane**.
+  This works in single-player and with a companion guest (not with an enemy guest). The AI takes the
+  second base and races the player (or both companions, who share one score line) to 100% delivered
+  treasure, using the enemy-mode rules above. It picks a random character different from the host's.
+- The bottom HUD shows each side's name and delivered percentage in the original style.
+- The AI is an ordinary player entity driven by synthetic controls, so it follows every game rule.
+  It fights mobs and opposing players, collects coins, builds turrets and puts harvesters near them,
+  empties harvesters, buys better guns, plans and lays track to the treasure, blows open cracked
+  walls in the way with bombs, buys carriages and upgrades its equipment.
+- Its choices are read from the shop stalls, weapon stats and building definitions (cost, role,
+  range, damage), so new guns, turrets or harvesters are used without changes to the AI.
+- Difficulty changes reaction time, aim error, fire rate, engagement range, how many turrets and
+  carriages it runs, upgrade level, how early it starts laying track, sprinting and when it retreats.
+
 ## Original Game
 
 Catacomb Snatch was originally created by Mojang for the 2012 Humble Bundle charity event and later released open-source.

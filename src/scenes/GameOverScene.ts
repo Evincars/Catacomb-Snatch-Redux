@@ -4,7 +4,7 @@ import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
-import { gameState } from '../game/GameState';
+import { characterName, gameState } from '../game/GameState';
 import { coop } from '../network/CoopSession';
 import { sound } from '../audio/SoundPlayer';
 
@@ -33,10 +33,11 @@ export class GameOverScene implements Scene {
     title.y = 100;
     this.container.addChild(title);
 
+    const ai = gameState.opponent === 'ai';
     const winnerLabel = gameState.winningTeam === 1
-      ? 'Player 1 Wins!'
+      ? ai ? 'You Win!' : 'Player 1 Wins!'
       : gameState.winningTeam === 2
-        ? 'Player 2 Wins!'
+        ? ai ? `${characterName(gameState.aiCharacter)} Wins!` : 'Player 2 Wins!'
         : 'No Winner';
 
     const winner = makeText(winnerLabel, 0xffdd44, 12, 'center');

@@ -43,10 +43,55 @@ export const LEVELS: LevelInfo[] = [
 
 export const DEBUG_COINS = 99999;
 export type MultiplayerMode = 'companion' | 'enemy';
+export type OpponentMode = 'none' | 'ai';
+
+/** How a computer opponent plays; every number is a tuning knob, not a rule. */
+export type AIDifficulty = {
+  name: string;
+  /** Ticks between re-planning what to do next. */
+  thinkTicks: number;
+  /** Ticks before it notices and turns on a new target. */
+  reactionTicks: number;
+  /** Largest random aim error, in radians. */
+  aimError: number;
+  /** Farthest distance, in pixels, it will open fire from. */
+  engageRange: number;
+  /** Chance per ready shot that it actually pulls the trigger. */
+  fireRate: number;
+  /** Coins a harvester must hold before it walks over to empty it. */
+  drainThreshold: number;
+  maxCarriages: number;
+  maxTurrets: number;
+  /** Highest level it will upgrade its buildings to. */
+  maxUpgrade: number;
+  /** Ticks into the match before it starts laying track. */
+  railDelay: number;
+  sprint: boolean;
+  /** Fraction of health below which it falls back to its base. */
+  retreatHealth: number;
+  /** Coins kept back when buying anything that is not track. */
+  reserve: number;
+};
+
+export const AI_DIFFICULTIES: AIDifficulty[] = [
+  { name: 'Easy',   thinkTicks: 45, reactionTicks: 40, aimError: 0.35, engageRange: 150, fireRate: 0.45, drainThreshold: 400,
+    maxCarriages: 1, maxTurrets: 1, maxUpgrade: 1, railDelay: 60 * 90, sprint: false, retreatHealth: 0,    reserve: 100 },
+  { name: 'Normal', thinkTicks: 25, reactionTicks: 22, aimError: 0.18, engageRange: 200, fireRate: 0.8,  drainThreshold: 250,
+    maxCarriages: 2, maxTurrets: 2, maxUpgrade: 2, railDelay: 60 * 40, sprint: true,  retreatHealth: 0.3,  reserve: 50 },
+  { name: 'Hard',   thinkTicks: 12, reactionTicks: 10, aimError: 0.09, engageRange: 240, fireRate: 1,    drainThreshold: 150,
+    maxCarriages: 3, maxTurrets: 3, maxUpgrade: 3, railDelay: 60 * 15, sprint: true,  retreatHealth: 0.35, reserve: 25 },
+  { name: 'Insane', thinkTicks: 6,  reactionTicks: 4,  aimError: 0.04, engageRange: 280, fireRate: 1,    drainThreshold: 100,
+    maxCarriages: 4, maxTurrets: 4, maxUpgrade: 3, railDelay: 0,       sprint: true,  retreatHealth: 0.4,  reserve: 0 },
+];
 
 // Mutable singleton, carries choices across scenes
 export const gameState = {
   multiplayerMode: 'companion' as MultiplayerMode,
+  /** A computer-controlled opponent on Team Two; not combined with an enemy guest. */
+  opponent: 'none' as OpponentMode,
+  aiDifficulty: AI_DIFFICULTIES[1],
+  /** Character the computer plays, picked when a match starts; never the player's. */
+  aiCharacter: 'herr_von_speck' as CharacterType,
   selectedCharacter: 'lord_lard' as CharacterType,
   difficulty: DIFFICULTIES[1],
   selectedLevel: LEVELS[0],
@@ -57,3 +102,12 @@ export const gameState = {
   // the original versus treasury target of 100, with two points per delivery.
   targetScore: 5000,
 };
+
+/** Two sides compete for the treasury: an enemy guest, or the computer opponent. */
+export function isVersus(): boolean {
+  return gameState.multiplayerMode === 'enemy' || gameState.opponent === 'ai';
+}
+
+export function characterName(character: CharacterType): string {
+  return character.replace(/_/g, ' ').toUpperCase();
+}

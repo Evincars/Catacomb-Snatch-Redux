@@ -3,7 +3,7 @@ import { createBullet } from '../entities/BulletFactory';
 import { WEAPON_STATS } from '../entities/WeaponStats';
 import { spawnMuzzleFlash } from '../entities/FxFactory';
 import { sound } from '../audio/SoundPlayer';
-import { notify } from '../game/Notices';
+import { notify, quietly } from '../game/Notices';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import type { Entity, ShopKind } from '../world';
 
@@ -44,7 +44,7 @@ export function updateWeapons(_dt: number): void {
     const pi = entity.playerInput!;
     const aim = entity.aimVector!;
 
-    updateWeaponSelection(entity);
+    quietly(entity.aiPlayer !== undefined, () => updateWeaponSelection(entity));
     const weapon = entity.weapon!;
 
     if (weapon.currentCooldown > 0) weapon.currentCooldown--;

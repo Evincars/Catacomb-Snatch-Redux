@@ -4,7 +4,7 @@ import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
-import { DIFFICULTIES, gameState } from '../game/GameState';
+import { AI_DIFFICULTIES, DIFFICULTIES, gameState } from '../game/GameState';
 
 const GW = GAME_WIDTH;
 const GH = GAME_HEIGHT;
@@ -67,6 +67,7 @@ export class DifficultySelectScene implements Scene {
     });
 
     this.updateSelection();
+    this.addOpponentChoice(startX, startY + 2 * (BTN_H + 48));
 
     const startBtn = new PixelButton('Next >', 140, 28);
     startBtn.x = GW - 160;
@@ -82,6 +83,44 @@ export class DifficultySelectScene implements Scene {
     backBtn.y = GH - 56;
     backBtn.onPress = () => manager.goto('level_select');
     this.container.addChild(backBtn);
+  }
+
+  /** Whether a computer opponent takes the second base, and how well it plays. */
+  private addOpponentChoice(x: number, y: number): void {
+    // An enemy guest already holds the second base.
+    const allowed = gameState.multiplayerMode !== 'enemy';
+    if (!allowed) gameState.opponent = 'none';
+
+    const opponent = new PixelButton('', BTN_W, BTN_H);
+    opponent.x = x;
+    opponent.y = y;
+    const level = new PixelButton('', BTN_W, BTN_H);
+    level.x = x + BTN_W + 20;
+    level.y = y;
+    const desc = makeText('', 0xaaaaaa, 8, 'center');
+    desc.x = GW / 2;
+    desc.y = y + BTN_H + 6;
+
+    const refresh = () => {
+      const ai = gameState.opponent === 'ai';
+      opponent.setText(`Opponent: ${ai ? 'AI' : 'None'}`);
+      level.setText(`AI: ${gameState.aiDifficulty.name}`);
+      level.setEnabled(ai);
+      desc.text = !allowed ? 'The enemy guest is your opponent'
+        : ai ? 'The computer races you to fill its treasury first' : 'Collect coins with no rival base';
+    };
+    opponent.onPress = () => {
+      gameState.opponent = gameState.opponent === 'ai' ? 'none' : 'ai';
+      refresh();
+    };
+    level.onPress = () => {
+      const i = AI_DIFFICULTIES.indexOf(gameState.aiDifficulty);
+      gameState.aiDifficulty = AI_DIFFICULTIES[(i + 1) % AI_DIFFICULTIES.length];
+      refresh();
+    };
+    opponent.setEnabled(allowed);
+    refresh();
+    this.container.addChild(opponent, level, desc);
   }
 
   private updateSelection(): void {

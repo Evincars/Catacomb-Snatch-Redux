@@ -4,10 +4,13 @@ import { Level } from '../level/Level';
 import type { LevelState } from '../level/Level';
 import { gameState } from './GameState';
 import type { CharacterType } from '../entities/PlayerFactory';
-import type { Difficulty, LevelInfo, MultiplayerMode } from './GameState';
-import { DIFFICULTIES, LEVELS } from './GameState';
+import type { Difficulty, LevelInfo, MultiplayerMode, OpponentMode } from './GameState';
+import { AI_DIFFICULTIES, DIFFICULTIES, LEVELS } from './GameState';
+import { WEAPON_STATS } from '../entities/WeaponStats';
 import { destroyAttachments } from '../systems/BarSystem';
 import { setVisualFrame } from '../render/AnimatedVisual';
+
+const CHARACTERS: CharacterType[] = ['lord_lard', 'countess_cruller', 'herr_von_speck', 'duchess_donut'];
 
 const RUNTIME = new Set<keyof Entity>([
   'sprite', 'container', 'coinBar', 'healthBar', 'sprintBar', 'hurtOverlay', 'fallMask',
@@ -18,7 +21,11 @@ type RuntimeKey = 'sprite' | 'container' | 'coinBar' | 'healthBar' | 'sprintBar'
 export type EntityState = Omit<Entity, RuntimeKey>;
 export type WorldState = {
   version: 1;
-  settings: { character: CharacterType; difficulty: Difficulty; map: LevelInfo; debug: boolean; multiplayerMode?: MultiplayerMode };
+  settings: {
+    character: CharacterType; difficulty: Difficulty; map: LevelInfo; debug: boolean; multiplayerMode?: MultiplayerMode;
+    /** Computer opponent, its difficulty name and the character it plays. */
+    opponent?: OpponentMode; aiDifficulty?: string; aiCharacter?: CharacterType;
+  };
   level: LevelState;
   entities: Array<{ id: number; data: EntityState }>;
 };
@@ -34,7 +41,8 @@ export function captureWorld(level: Level): WorldState {
   return structuredClone({
     version: 1, level: level.snapshot(), entities,
     settings: { character: gameState.selectedCharacter, difficulty: gameState.difficulty,
-      map: gameState.selectedLevel, debug: gameState.debug, multiplayerMode: gameState.multiplayerMode },
+      map: gameState.selectedLevel, debug: gameState.debug, multiplayerMode: gameState.multiplayerMode,
+      opponent: gameState.opponent, aiDifficulty: gameState.aiDifficulty.name, aiCharacter: gameState.aiCharacter },
   });
 }
 
@@ -49,7 +57,11 @@ export function validateWorld(value: unknown): asserts value is WorldState {
     || !Array.isArray(s.level.spawns) || s.level.spawns.length !== 2
     || !Array.isArray(s.level.baseTiles) || !Array.isArray(s.level.spawnTiles) || !Array.isArray(s.level.baseAreas)
     || s.entities.length > 20000) throw new Error('Unsupported or malformed game state');
-  if (!['lord_lard', 'countess_cruller', 'herr_von_speck', 'duchess_donut'].includes(s.settings.character)
+  if (!CHARACTERS.includes(s.settings.character)
+    || s.settings.opponent !== undefined && !['none', 'ai'].includes(s.settings.opponent)
+    || s.settings.opponent === 'ai' && s.settings.multiplayerMode === 'enemy'
+    || s.settings.aiDifficulty !== undefined && !AI_DIFFICULTIES.some(d => d.name === s.settings!.aiDifficulty)
+    || s.settings.aiCharacter !== undefined && !CHARACTERS.includes(s.settings.aiCharacter)
     || !DIFFICULTIES.some(d => JSON.stringify(d) === JSON.stringify(s.settings!.difficulty))
     || !LEVELS.some(m => m.path === s.settings!.map?.path && m.name === s.settings!.map?.name)
     || typeof s.settings.debug !== 'boolean'
@@ -59,6 +71,7 @@ export function validateWorld(value: unknown): asserts value is WorldState {
     || !s.level.seen.every(b => typeof b === 'boolean')) throw new Error('Invalid world settings');
   const ids = new Set<number>();
   const slots = new Set<string>();
+  let computers = 0;
   for (const entry of s.entities) {
     if (!entry || !Number.isInteger(entry.id) || ids.has(entry.id) || !entry.data
       || typeof entry.data !== 'object' || Object.keys(entry.data).some(k => RUNTIME.has(k as keyof Entity)
@@ -73,6 +86,12 @@ export function validateWorld(value: unknown): asserts value is WorldState {
       }
       slots.add(entry.data.playerSlot);
     }
+    if (entry.data.aiPlayer) {
+      if (s.settings.opponent !== 'ai' || entry.data.playerSlot || entry.data.team !== 2 || !entry.data.playerInput
+        || !CHARACTERS.includes(entry.data.aiPlayer.character)
+        || !AI_DIFFICULTIES.some(d => d.name === entry.data.aiPlayer!.difficulty)) throw new Error('Invalid computer opponent');
+      computers++;
+    }
   }
   for (const stack of s.level.tiles) {
     if (!Array.isArray(stack) || !stack.length || stack.some(t => !t || !Number.isInteger(t.type)
@@ -83,13 +102,14 @@ export function validateWorld(value: unknown): asserts value is WorldState {
       || t.collapseTicks !== undefined && (!Number.isInteger(t.collapseTicks) || t.collapseTicks < 0 || t.collapseTicks > 5))) throw new Error('Invalid terrain state');
   }
   if (!slots.has('host')) throw new Error('Save has no host player');
+  if (computers > 1) throw new Error('Save has more than one computer opponent');
   for (const points of s.level.spawns) {
     if (!Array.isArray(points) || points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid spawn state');
   }
 }
 
 const COMPONENTS = new Set([
-  'playerSlot', 'remoteInput', 'aimWorld', 'respawnTicks', 'spawnProtected', 'position', 'velocity', 'radius', 'blocking', 'physicsSlide', 'team',
+  'playerSlot', 'remoteInput', 'aiPlayer', 'aimWorld', 'respawnTicks', 'spawnProtected', 'position', 'velocity', 'radius', 'blocking', 'physicsSlide', 'team',
   'health', 'hurtTime', 'freezeTime', 'bounceWallTime', 'regenInterval', 'regenAmount', 'regenTimer', 'deathPoints',
   'facing', 'speed', 'friction', 'strength', 'aimVector', 'walkTime', 'stepTime', 'limp', 'bump', 'slide', 'chasing',
   'visual', 'frame', 'yOffset', 'flashTime', 'highlight', 'mobType', 'healthBarOffset', 'coinBarOffset', 'fx',
@@ -123,6 +143,7 @@ const REQUIRED: Record<string, Record<string, 'number' | 'string' | 'boolean' | 
   spikeTrap: { phase: 'number', ticks: 'number' }, treasure: { timer: 'number' },
   railDroid: { dir: 'number', lastDir: 'number', full: 'boolean', swapTime: 'number' },
   shopItem: { kind: 'string', cost: 'number' }, ai: { type: 'string' },
+  aiPlayer: { character: 'string', difficulty: 'string' },
   spawner: { mobType: 'string', interval: 'number', timer: 'number', spawnCount: 'number', maxSpawns: 'number' },
   falling: { age: 'number', duration: 'number' }, ephemeral: { age: 'number', life: 'number', drop: 'number' },
   explosion: { life: 'number', duration: 'number', radius: 'number' }, money: { amount: 'number', max: 'number' },
@@ -155,7 +176,7 @@ function checkEntity(data: EntityState): void {
       || !Number.isInteger(i.weaponSlot) || !Number.isInteger(i.weaponStep)) throw new Error('Invalid saved controls');
   }
   if (data.weaponInventory && (!Array.isArray(data.weaponInventory.weapons)
-    || !data.weaponInventory.weapons.every(w => ['rifle', 'shotgun', 'raygun'].includes(w)))) throw new Error('Invalid saved weapons');
+    || !data.weaponInventory.weapons.every(w => Object.prototype.hasOwnProperty.call(WEAPON_STATS, w)))) throw new Error('Invalid saved weapons');
   if (data.upgradable && (!Array.isArray(data.upgradable.costs) || !data.upgradable.costs.every(Number.isFinite))) throw new Error('Invalid upgrade costs');
   if (data.loot?.burstTicks !== undefined && (!Number.isInteger(data.loot.burstTicks)
     || data.loot.burstTicks < 0 || data.loot.burstTicks > 24)) throw new Error('Invalid loot burst timer');
@@ -226,4 +247,7 @@ export function restoreSettings(state: WorldState): void {
   gameState.difficulty = state.settings.difficulty;
   gameState.selectedLevel = state.settings.map;
   gameState.debug = state.settings.debug;
+  gameState.opponent = state.settings.opponent ?? 'none';
+  gameState.aiDifficulty = AI_DIFFICULTIES.find(d => d.name === state.settings.aiDifficulty) ?? AI_DIFFICULTIES[1];
+  if (state.settings.aiCharacter) gameState.aiCharacter = state.settings.aiCharacter;
 }

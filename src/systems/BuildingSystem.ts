@@ -8,7 +8,7 @@ import { hurtEntity, hurtPlayer } from './CombatSystem';
 import { spawnExplosion } from './FxSystem';
 import { Mth } from '../math/Mth';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
-import { gameState } from '../game/GameState';
+import { gameState, isVersus } from '../game/GameState';
 import { sound } from '../audio/SoundPlayer';
 
 /** Turret barrels sit this far above its feet, and this far out along the aim. */
@@ -35,7 +35,7 @@ export function updateTurrets(level: Level, _dt: number): void {
 
     // Mobs and the nests they crawl out of are both fair game.
     for (const mob of world.with('position', 'health', 'radius')) {
-      const opponent = gameState.multiplayerMode === 'enemy' && mob.team !== undefined
+      const opponent = isVersus() && mob.team !== undefined
         && mob.team !== Team.Neutral && mob.team !== turretEntity.team
         && (mob.playerInput || mob.turret || mob.harvester || mob.railDroid);
       if (!mob.ai && !mob.spawner && !opponent) continue;
@@ -175,7 +175,7 @@ export function updateBombs(level: Level, _dt: number): void {
         hurtPlayer(player, bombEntity, data.blastDamage);
       }
     }
-    if (gameState.multiplayerMode === 'enemy') {
+    if (isVersus()) {
       for (const target of world.with('position', 'health')) {
         if (!target.turret && !target.harvester && !target.railDroid) continue;
         if (target.team === data.ownerTeam || target.carriedBy !== undefined || target.removed) continue;
@@ -187,7 +187,7 @@ export function updateBombs(level: Level, _dt: number): void {
     for (let ty = by - reach; ty <= by + reach; ty++) {
       for (let tx = bx - reach; tx <= bx + reach; tx++) {
         const tile = level.getTile(tx, ty);
-        const enemyRail = gameState.multiplayerMode === 'enemy' && tile?.type === TileType.Rail
+        const enemyRail = isVersus() && tile?.type === TileType.Rail
           && tile.team !== undefined && tile.team !== data.ownerTeam;
         if (tile?.destroyable || enemyRail) level.removeTile(tx, ty);
       }

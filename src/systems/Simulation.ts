@@ -2,6 +2,7 @@ import type { Container } from 'pixi.js';
 import type { Level } from '../level/Level';
 import { updateInput } from './InputSystem';
 import { updateTargeting } from './TargetingSystem';
+import { updateAIPlayers } from './AIPlayerSystem';
 import { updateInteraction, updateCarried } from './InteractionSystem';
 import { updateAI } from './AISystem';
 import { updateMobWeapons } from './MobWeaponSystem';
@@ -48,6 +49,8 @@ export type System = (ctx: FrameContext) => void;
 export const SIMULATION: readonly System[] = [
   ({ level, dt }) => updateRespawns(level, dt),
   ({ dt }) => updateInput(dt),
+  // The computer opponent presses its keys where a person's would be read.
+  ({ level }) => updateAIPlayers(level),
   () => updateTargeting(),
   ({ level }) => updateInteraction(level),
   ({ level, dt }) => updateAI(level, dt),

@@ -18,10 +18,11 @@ import { targetOf, updateTargeting } from '../systems/TargetingSystem';
 import { syncWalls, resetWalls } from '../systems/WallSystem';
 import { applyUpgradeLevel, upgradeCostOf } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
-import { takeNotices, clearNotices, updateNotices, noticeEvents } from '../game/Notices';
+import { takeNotices, clearNotices, updateNotices, noticeEvents, notify } from '../game/Notices';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
-import { gameState, DEBUG_COINS } from '../game/GameState';
+import { gameState, DEBUG_COINS, isVersus } from '../game/GameState';
+import type { CharacterType } from '../entities/PlayerFactory';
 import { sound } from '../audio/SoundPlayer';
 import { camera, GAME_WIDTH, GAME_HEIGHT, VIEW_HEIGHT } from '../render/Camera';
 import { getTexture } from '../assets/AssetLoader';
@@ -42,6 +43,8 @@ import { Mth } from '../math/Mth';
 
 /** Tiles of sight around the player, as in Java's Player.tick(). */
 const REVEAL_RADIUS = 5;
+
+const CHARACTERS: CharacterType[] = ['lord_lard', 'countess_cruller', 'herr_von_speck', 'duchess_donut'];
 
 export class InGameScene implements Scene {
   container: Container;
@@ -136,9 +139,20 @@ export class InGameScene implements Scene {
       if (coop.role === 'guest') throw new Error('Waiting for the host world');
       const { path } = gameState.selectedLevel;
       if (!path) throw new Error('This level has no map file.');
+      if (gameState.opponent === 'ai' && gameState.multiplayerMode !== 'enemy') {
+        // The computer never plays the same character as the people.
+        const others = CHARACTERS.filter(c => c !== gameState.selectedCharacter);
+        gameState.aiCharacter = others[Math.floor(Math.random() * others.length)];
+      } else {
+        gameState.opponent = 'none';
+      }
       this.level = await loadTmxLevel(path, gameState.difficulty.shopCostMod);
       if (this.disposed) return;
-      this.level.targetScore = gameState.multiplayerMode === 'enemy' ? 100 : gameState.targetScore;
+      if (gameState.opponent === 'ai' && !this.level.getRandomSpawnPoint(Team.Two)) {
+        gameState.opponent = 'none';
+        notify('This map has no second base - playing without the computer');
+      }
+      this.level.targetScore = isVersus() ? 100 : gameState.targetScore;
     }
     if (import.meta.env.DEV) (window as unknown as { __level: Level }).__level = this.level;
 
@@ -183,6 +197,7 @@ export class InGameScene implements Scene {
         if (entity !== this.player && entity.playerInput) world.addComponent(entity, 'remoteInput', true);
       }
     }
+    if (!snapshot && coop.role !== 'guest' && gameState.opponent === 'ai') this.addComputerOpponent();
     // Placed after the player so no nest lands within sight of the start.
     if (!snapshot) spawnInitialSpawners(this.level);
 
@@ -225,6 +240,16 @@ export class InGameScene implements Scene {
     (this.app.canvas as HTMLCanvasElement).style.cursor = 'none';
     this.centerCameraOn(this.player.position!.x, this.player.position!.y);
     if (coop.role === 'host') coop.sendState(captureWorld(this.level), false);
+  }
+
+  /** Puts the computer opponent at the second base. */
+  private addComputerOpponent(): void {
+    const spawn = this.level.getRandomSpawnPoint(Team.Two);
+    if (!spawn) return;
+    const ai = createPlayer(spawn.x, spawn.y, Team.Two, gameState.aiCharacter);
+    world.addComponent(ai, 'aiPlayer', { character: gameState.aiCharacter, difficulty: gameState.aiDifficulty.name });
+    world.addComponent(ai, 'remoteInput', true);
+    ai.minimapColor = 0xff5040;
   }
 
   /** Redraws the floor texture and wall entities after bombs change the terrain. */
@@ -441,7 +466,8 @@ export class InGameScene implements Scene {
       ((e.health?.current ?? 0) <= 0 && e.respawnTicks === undefined) || e.removed)
       || [...world.with('playerSlot')].length < 2)) {
       this.end(0);
-    } else if (coop.role === 'host' && gameState.multiplayerMode === 'enemy') {
+    } else if (isVersus()) {
+      // Versus play goes on through deaths; the first side to fill its treasury wins.
       if (!gameState.debug) {
         if (this.level.player1Score >= this.level.targetScore) this.end(Team.One);
         else if (this.level.player2Score >= this.level.targetScore) this.end(Team.Two);

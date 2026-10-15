@@ -8,7 +8,8 @@ import { frameTexture } from '../render/Sheets';
 import { makeText } from './PixelText';
 import { PixelLabel } from './PixelText';
 import { GAME_WIDTH, GAME_HEIGHT, camera } from '../render/Camera';
-import { gameState } from '../game/GameState';
+import { characterName, gameState, isVersus } from '../game/GameState';
+import type { CharacterType } from '../entities/PlayerFactory';
 
 const PANEL_TOP = GAME_HEIGHT - 80;
 /** The bars are 101-frame strips, frame 0 full and frame 100 empty. */
@@ -29,6 +30,12 @@ export class HudPanel {
   private nextText!: PixelLabel;
   private coinText!: PixelLabel;
   private scoreText!: PixelLabel;
+  /** Versus: the other side's name and progress (left), and this side's (right), with portraits. */
+  private rivalText!: PixelLabel;
+  private teamText!: PixelLabel;
+  private rivalFace = new Sprite();
+  private teamFace = new Sprite();
+  private versusShown: boolean | null = null;
   private weaponText!: PixelLabel;
   private promptText!: PixelLabel;
   private hint = '';
@@ -84,6 +91,15 @@ export class HudPanel {
     this.weaponText.x = 86;
     this.weaponText.y = GAME_HEIGHT - 42;
     this.container.addChild(this.weaponText);
+
+    // Original versus layout: the rival on the left, your side right-aligned beside your portrait.
+    this.rivalFace.x = 19; this.rivalFace.y = GAME_HEIGHT - 42;
+    this.teamFace.x = 262; this.teamFace.y = GAME_HEIGHT - 42;
+    this.rivalText = makeText('', 0xffdd44, 10);
+    this.rivalText.x = 56; this.rivalText.y = GAME_HEIGHT - 35;
+    this.teamText = makeText('', 0xffdd44, 10, 'right');
+    this.teamText.x = 258; this.teamText.y = GAME_HEIGHT - 21;
+    this.container.addChild(this.rivalFace, this.teamFace, this.rivalText, this.teamText);
 
     // Context prompt sits just above the panel, in the world view.
     this.promptText = new PixelLabel('', { color: 0xffee88, align: 'center', outline: true });
@@ -165,11 +181,14 @@ export class HudPanel {
       this.nextText.text = `${Math.max(0, needed - stats.exp)}`;
       this.coinText.text = `${stats.score}`;
 
-      if (gameState.multiplayerMode === 'enemy') {
+      const versus = isVersus();
+      if (versus !== this.versusShown) this.layoutScores(versus, player);
+      if (versus) {
         const pct = (score: number) => Math.min(100, Math.floor(score * 100 / level.targetScore));
         const yours = player.team === 2 ? level.player2Score : level.player1Score;
-        const enemy = player.team === 2 ? level.player1Score : level.player2Score;
-        this.scoreText.text = `YOU: ${pct(yours)}%  ENEMY: ${pct(enemy)}%`;
+        const rival = player.team === 2 ? level.player1Score : level.player2Score;
+        this.rivalText.text = `${characterName(rivalCharacter())}: ${pct(rival)}%`;
+        this.teamText.text = `${characterName(gameState.selectedCharacter)}: ${pct(yours)}%`;
       } else {
         const pct = Math.floor((stats.score * 100) / gameState.targetScore);
         this.scoreText.text = `${characterLabel()}: ${pct}%`;
@@ -183,6 +202,23 @@ export class HudPanel {
       this.minimapDirty = 15;
       this.drawMinimap(level);
     }
+  }
+
+  /** Switches between the single team score line and the two versus lines with portraits. */
+  private layoutScores(versus: boolean, player: Entity): void {
+    this.versusShown = versus;
+    this.scoreText.visible = !versus;
+    for (const view of [this.rivalText, this.teamText, this.rivalFace, this.teamFace]) view.visible = versus;
+    this.weaponText.x = versus ? 56 : 86;
+    this.weaponText.y = versus ? GAME_HEIGHT - 48 : GAME_HEIGHT - 42;
+    if (!versus) return;
+    this.rivalFace.texture = frameTexture(`${rivalCharacter()}_sheet`, 0, 6);
+    this.teamFace.texture = frameTexture(`${gameState.selectedCharacter}_sheet`, 0, 2);
+    // Host and enemy guest share a character; the guest's portrait wears its tint.
+    const guestTint = 0x80dfff;
+    const enemyGuest = gameState.multiplayerMode === 'enemy';
+    this.rivalFace.tint = enemyGuest && player.team !== 2 ? guestTint : 0xffffff;
+    this.teamFace.tint = enemyGuest && player.team === 2 ? guestTint : 0xffffff;
   }
 
   private drawMinimap(level: Level): void {
@@ -235,6 +271,11 @@ export class HudPanel {
 /** Mirrors the original's escalating per-level XP requirement. */
 export function xpForLevel(level: number): number {
   return 50 * level;
+}
+
+/** Who plays the other side: the computer's character, or the enemy guest's (the same as the host's). */
+function rivalCharacter(): CharacterType {
+  return gameState.opponent === 'ai' ? gameState.aiCharacter : gameState.selectedCharacter;
 }
 
 function characterLabel(): string {

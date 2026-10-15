@@ -1,6 +1,6 @@
 import { world, Team } from '../world';
 import type { Level } from '../level/Level';
-import { gameState } from '../game/GameState';
+import { gameState, isVersus } from '../game/GameState';
 import { respawnPlayer } from './HoleSystem';
 
 export const RESPAWN_TICKS = 600;
@@ -20,7 +20,7 @@ export function updateRespawns(level: Level, dt: number): void {
 
 export function updateSpawnProtection(level: Level): void {
   for (const player of world.with('playerInput', 'position')) {
-    player.spawnProtected = gameState.multiplayerMode === 'enemy'
+    player.spawnProtected = isVersus()
       && level.inOwnBase(player.position!.x, player.position!.y, player.team ?? Team.One);
   }
 }

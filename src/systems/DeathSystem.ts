@@ -8,7 +8,7 @@ import { xpForLevel } from '../ui/HudPanel';
 import { destroyAttachments } from './BarSystem';
 import { coop } from '../network/CoopSession';
 import { respawnPlayer } from './HoleSystem';
-import { gameState } from '../game/GameState';
+import { isVersus } from '../game/GameState';
 import { RESPAWN_TICKS } from './RespawnSystem';
 
 /** Worth of the emerald every pharaoh drops. */
@@ -51,10 +51,12 @@ export function updateDeath(level: Level, _dt: number): void {
     const deathPts = entity.deathPoints ?? 0;
 
     if (entity.playerInput) {
-      sound.playSound('death');
-      if (coop.role === 'host' && entity.playerSlot) {
+      if (entity.aiPlayer) sound.playSound('death', pos.x, pos.y);
+      else sound.playSound('death');
+      const timed = isVersus() && (entity.playerSlot !== undefined || entity.aiPlayer !== undefined);
+      if (timed || coop.role === 'host' && entity.playerSlot) {
         world.removeComponent(entity, 'falling');
-        if (gameState.multiplayerMode === 'enemy') {
+        if (timed) {
           world.addComponent(entity, 'respawnTicks', RESPAWN_TICKS);
           world.removeComponent(entity, 'buffs');
           if (entity.velocity) entity.velocity.x = entity.velocity.y = 0;

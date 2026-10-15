@@ -1,6 +1,7 @@
 import { World } from 'miniplex';
 import type { Sprite, Container, Graphics } from 'pixi.js';
 import type { PixelLabel } from './ui/PixelText';
+import type { CharacterType } from './entities/PlayerFactory';
 
 export const enum Team {
   Neutral = 0,
@@ -31,6 +32,8 @@ export type ShopKind = 'turret' | 'harvester' | 'bomb' | 'rifle' | 'shotgun' | '
 export type Entity = {
   playerSlot?: 'host' | 'guest';
   remoteInput?: true;
+  /** A computer-controlled player; its controls are written by AIPlayerSystem, not a keyboard. */
+  aiPlayer?: { character: CharacterType; difficulty: string };
   aimWorld?: { x: number; y: number };
   respawnTicks?: number;
   spawnProtected?: boolean;

@@ -10,7 +10,7 @@ import { BB } from '../math/BB';
 import { move } from './MovementSystem';
 import { sound } from '../audio/SoundPlayer';
 import { createLoot } from '../entities/LootFactory';
-import { gameState } from '../game/GameState';
+import { gameState, isVersus } from '../game/GameState';
 
 /** Steady speed of Java's RailDroid (0.7 px of thrust against 0.4 drag). */
 const SPEED = 1.15;
@@ -143,10 +143,10 @@ function handleTreasure(level: Level, droid: Entity): void {
 
   const tile = level.getTileAt(pos.x, pos.y);
   if (!tile || tile.type !== TileType.PlayerRail
-    || gameState.multiplayerMode === 'enemy' && tile.team !== droid.team) return;
+    || isVersus() && tile.team !== droid.team) return;
   rd.full = false;
   rd.swapTime = SWAP_TIME;
-  if (gameState.multiplayerMode === 'enemy') {
+  if (isVersus()) {
     if (droid.team === 1) level.player1Score += TREASURE_PROGRESS;
     else if (droid.team === 2) level.player2Score += TREASURE_PROGRESS;
   }
