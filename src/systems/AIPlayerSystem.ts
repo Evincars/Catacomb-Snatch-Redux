@@ -22,6 +22,7 @@ import type { ShopRole } from '../entities/ShopItemFactory';
 import { upgradeCostOf } from '../entities/BuildingFactory';
 import { hitByAimLine, INTERACT_REACH } from './TargetingSystem';
 import { railCost, carriageCost } from './InteractionSystem';
+import { canSpawnRailDroid } from './RailDroidSystem';
 
 /** Distances, in pixels, at which guns are compared. */
 const RANGE_BANDS = [32, 80, 140, 200, 260];
@@ -583,8 +584,9 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   const plan = planRails(level, entity.team ?? Team.Two);
   brain.railPlan = plan ?? [];
   brain.railDone = plan !== null && plan.length === 0;
-  // The next piece of the route is a cracked wall: it has to be blown open first.
-  const wall = plan && plan.length > 0 && tileAt(level, plan[0])?.destroyable ? plan[0] : -1;
+  // Opening a reachable barrier is exploration, not rail construction. Do it
+  // even before laying the intervening track or waiting out the rail delay.
+  const wall = plan?.find((t) => tileAt(level, t)?.destroyable && besideWall(level, field, t) >= 0) ?? -1;
   const bomb = brain.blastId !== undefined ? world.entity(brain.blastId) : undefined;
   if (!bomb || bomb.removed || bomb.carriedBy !== undefined) brain.blastId = undefined;
   const loose = brain.looseBombId !== undefined ? world.entity(brain.looseBombId) : undefined;
@@ -597,6 +599,27 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   // Money is put by for the bomb, rather than spent on extras.
   const saving = wall >= 0 && brain.blastId === undefined && brain.looseBombId === undefined && !held?.bomb && explosive ? explosive.shopItem!.cost : 0;
   const spare = money - profile.reserve - saving;
+
+  const danger = [...world.with('position', 'bomb')].find((b) => !b.removed && b.carriedBy === undefined
+    && b.bomb!.lit && !clearOfBlast(entity, b));
+  if (danger) {
+    const t = blastCover(level, field, danger, false);
+    if (t >= 0) {
+      brain.sidestep = null;
+      setGoal(brain, level, { name: 'escape blast', tile: t, walk: true });
+      return;
+    }
+  }
+
+  const health = entity.health!;
+  if (!held && health.current < health.max * profile.retreatHealth && enemiesNear(entity, 160)) {
+    const turret = nearestOf(level, brain, ownBuildings(entity, 'defense'));
+    const spawn = turret?.position ?? level.getRandomSpawnPoint(entity.team ?? Team.Two);
+    if (spawn) {
+      setGoal(brain, level, { name: 'retreat', tile: approachTile(level, field, tileOf(level, spawn.x, spawn.y)), walk: true });
+      return;
+    }
+  }
 
   // Keep going with an interaction that is under way.
   const g = brain.goal;
@@ -652,14 +675,10 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
     return;
   }
 
-  // 2. Badly hurt with enemies about: fall back to the base.
-  const health = entity.health!;
-  if (health.current < health.max * profile.retreatHealth && enemiesNear(entity, 160)) {
-    // Behind its own guns if it has any, else home.
-    const turret = nearestOf(level, brain, ownBuildings(entity, 'defense'));
-    const spawn = turret?.position ?? level.getRandomSpawnPoint(entity.team ?? Team.Two);
-    if (spawn) {
-      setGoal(brain, level, { name: 'retreat', tile: approachTile(level, field, tileOf(level, spawn.x, spawn.y)), walk: true });
+  if (wall >= 0 && brain.blastId === undefined && brain.looseBombId === undefined) {
+    const stall = stallFor(entity, 'explosive', money);
+    if (stall && reachable(level, brain, stall) < INF) {
+      useGoal(level, brain, 'buy explosive', stall);
       return;
     }
   }
@@ -691,7 +710,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
 
   // 4. The first turret, which starts the coin flow.
   if (turrets.length === 0) {
-    const stall = stallFor(entity, 'defense', money);
+    const stall = stallFor(entity, 'defense', money - saving);
     if (stall && reachable(level, brain, stall) < INF) {
       useGoal(level, brain, 'buy defense', stall);
       return;
@@ -743,14 +762,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   }
 
   // 5. Track to the treasure, a piece at a time, blasting cracked walls on the way.
-  if (brain.age >= profile.railDelay && wall >= 0 && brain.blastId === undefined && brain.looseBombId === undefined && explosive) {
-    const stall = stallFor(entity, 'explosive', money);
-    if (stall && reachable(level, brain, stall) < INF) {
-      useGoal(level, brain, 'buy explosive', stall);
-      return;
-    }
-  }
-  if (brain.age >= profile.railDelay && wall < 0 && plan && plan.length > 0 && money >= railCost()) {
+  if (brain.age >= profile.railDelay && plan && plan.length > 0 && money >= railCost()) {
     const next = plan[0];
     if (Number.isFinite(field.dist[next])) {
       setGoal(brain, level, { name: 'rail', tile: next, build: 'rail' });
@@ -769,7 +781,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
 
   // 7. A harvester for every turret.
   if (turrets.length > harvesters.length) {
-    const stall = stallFor(entity, 'economy', harvesters.length === 0 ? money - profile.reserve : spare);
+    const stall = stallFor(entity, 'economy', harvesters.length === 0 ? spare + profile.reserve : spare);
     if (stall && reachable(level, brain, stall) < INF) {
       useGoal(level, brain, 'buy economy', stall);
       return;
@@ -984,21 +996,36 @@ function besideWall(level: Level, field: Field, wall: number): number {
   return best;
 }
 
-/** A tile well clear of a bomb's blast with a clear shot at it. */
-function blastCover(level: Level, field: Field, bomb: Entity): number {
+function clearOfBlast(entity: Entity, bomb: Entity): boolean {
+  const bx = tileX(bomb.position!.x);
+  const by = tileY(bomb.position!.y - (bomb.yOffset ?? 0));
+  const reach = bomb.bomb!.blastTiles;
+  const r = entity.radius ?? { x: 10, y: 10 };
+  return Math.abs(entity.position!.x - centreX(bx)) >= (reach + 0.5) * TILE_WIDTH + r.x
+    || Math.abs(entity.position!.y - centreY(by)) >= (reach + 0.5) * TILE_HEIGHT + r.y;
+}
+
+/** A reachable tile outside the actual blast, preferably with extra clearance. */
+function blastCover(level: Level, field: Field, bomb: Entity, needsShot = true): number {
   const bp = bomb.position!;
   const bx = tileX(bp.x);
   const by = tileY(bp.y - (bomb.yOffset ?? 0));
-  const reach = (bomb.bomb?.blastTiles ?? 1) + BLAST_CLEARANCE - 1;
+  const reach = bomb.bomb!.blastTiles;
   let best = -1;
-  for (let ty = by - reach - 4; ty <= by + reach + 4; ty++) {
-    for (let tx = bx - reach - 4; tx <= bx + reach + 4; tx++) {
-      if (Math.max(Math.abs(tx - bx), Math.abs(ty - by)) <= reach) continue;
+  let bestScore = INF;
+  for (let ty = by - reach - 6; ty <= by + reach + 6; ty++) {
+    for (let tx = bx - reach - 6; tx <= bx + reach + 6; tx++) {
+      const clearance = Math.max(Math.abs(tx - bx), Math.abs(ty - by)) - reach;
+      if (clearance <= 0) continue;
       if (tx < 0 || ty < 0 || tx >= level.width || ty >= level.height) continue;
       const t = tx + ty * level.width;
       if (!Number.isFinite(field.dist[t])) continue;
-      if (!level.checkLineOfSight(centreX(tx), centreY(ty), bp.x, bp.y)) continue;
-      if (best < 0 || field.dist[t] < field.dist[best]) best = t;
+      if (needsShot && !level.checkLineOfSight(centreX(tx), centreY(ty), bp.x, bp.y)) continue;
+      const score = field.dist[t] + (needsShot ? Math.max(0, BLAST_CLEARANCE - clearance) * 4 : 0);
+      if (score < bestScore) {
+        best = t;
+        bestScore = score;
+      }
     }
   }
   return best;
@@ -1012,7 +1039,6 @@ function ownCarriages(entity: Entity): number {
 
 /** A tile of the team's own base track with no carriage on it. */
 function carriageSpot(level: Level, entity: Entity, field: Field): number {
-  const droids = [...world.with('position', 'railDroid')].filter((d) => !d.removed);
   const props = [...world.with('position')].filter((e) => !e.removed && e.carriedBy === undefined
     && (e.shopItem !== undefined || e.building !== undefined));
   let best = -1;
@@ -1022,7 +1048,7 @@ function carriageSpot(level: Level, entity: Entity, field: Field): number {
     const ty = (t - tx) / level.width;
     const tile = level.getTile(tx, ty);
     if (tile?.type !== TileType.PlayerRail || tile.team !== entity.team) continue;
-    if (droids.some((d) => Math.abs(d.position!.x - centreX(tx)) < 28 && Math.abs(d.position!.y - centreY(ty)) < 28)) continue;
+    if (!canSpawnRailDroid(level, centreX(tx), centreY(ty))) continue;
     // A stall or building within reach would take the key press instead of the track.
     if (props.some((b) => dist(b.position!, { x: centreX(tx), y: centreY(ty) }) < INTERACT_REACH + (b.radius?.x ?? 10) + 8)) continue;
     if (best < 0 || field.dist[t] < field.dist[best]) best = t;
@@ -1185,9 +1211,10 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
       brain.think = Math.min(brain.think, 8);
     } else if (goal.detonate && (onTile || brain.path.length === 0)) {
       const bomb = brain.blastId !== undefined ? world.entity(brain.blastId) : undefined;
-      if (bomb && !bomb.removed && bomb.bomb) {
+      if (bomb && !bomb.removed && bomb.bomb && clearOfBlast(entity, bomb)
+        && level.checkLineOfSight(pos.x, pos.y, bomb.position!.x, bomb.position!.y)) {
         const at = bomb.position!;
-        setAim(entity, at.x - pos.x, at.y - pos.y);
+        setAim(entity, at.x - pos.x, at.y - (bomb.yOffset ?? 0) - pos.y);
         aimed = true;
         shooting = !bomb.bomb.lit;
         brain.path = [];
@@ -1257,7 +1284,7 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
 
   // --- fighting
   const enemy = brain.enemyId !== undefined ? world.entity(brain.enemyId) : undefined;
-  if (alive(enemy) && !aimed && entity.carryingId === undefined) {
+  if (alive(enemy) && !aimed && entity.carryingId === undefined && goal?.name !== 'escape blast') {
     const at = enemy.position!;
     const d = dist(at, pos);
     if (brain.reaction > 0) brain.reaction--;
@@ -1291,7 +1318,7 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
   // With a bomb in hand there is no gun to cover the retreat: it runs for the wall instead.
   const bombInHand = entity.carryingId !== undefined && world.entity(entity.carryingId)?.bomb !== undefined;
   if (bombInHand) out.sprint = profile.sprint;
-  else if (!brain.sidestep && !(aimed && (pi.intents.use || pi.intents.build || pi.intents.upgrade))) {
+  else if (goal?.name !== 'escape blast' && !brain.sidestep && !(aimed && (pi.intents.use || pi.intents.build || pi.intents.upgrade))) {
     const close = crowdEscape(level, entity, 44);
     const pack = close ?? crowdEscape(level, entity, 88);
     const hurt = entity.health!.current < entity.health!.max * 0.6;
@@ -1375,6 +1402,11 @@ export function updateAIPlayers(level: Level): void {
     brain.age++;
     const profile = profileOf(entity);
 
+    const blastDanger = [...world.with('position', 'bomb')].some((b) => !b.removed && b.carriedBy === undefined
+      && b.bomb!.lit && !clearOfBlast(entity, b));
+    if (blastDanger && brain.goal?.name !== 'escape blast') brain.think = 0;
+    if (entity.carryingId === undefined && entity.health!.current < entity.health!.max * profile.retreatHealth
+      && enemiesNear(entity, 160) && brain.goal?.name !== 'retreat') brain.think = 0;
     if (--brain.think <= 0) {
       think(level, entity, brain, profile);
       brain.think = profile.thinkTicks;

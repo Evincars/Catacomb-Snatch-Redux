@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "test": "node --test tests/gameplay.test.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

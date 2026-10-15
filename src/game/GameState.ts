@@ -77,7 +77,7 @@ export type AIDifficulty = {
 
 export const AI_DIFFICULTIES: AIDifficulty[] = [
   { name: 'Easy',   thinkTicks: 45, reactionTicks: 40, aimError: 0.35, engageRange: 150, fireRate: 0.45, drainThreshold: 400,
-    maxCarriages: 1, maxTurrets: 1, maxUpgrade: 1, railDelay: 60 * 90, sprint: false, retreatHealth: 0,    reserve: 100, shopDiscount: 1 },
+    maxCarriages: 1, maxTurrets: 1, maxUpgrade: 1, railDelay: 60 * 90, sprint: false, retreatHealth: 0.25, reserve: 100, shopDiscount: 1 },
   { name: 'Normal', thinkTicks: 25, reactionTicks: 22, aimError: 0.18, engageRange: 200, fireRate: 0.8,  drainThreshold: 250,
     maxCarriages: 2, maxTurrets: 2, maxUpgrade: 2, railDelay: 60 * 40, sprint: true,  retreatHealth: 0.3,  reserve: 50,  shopDiscount: 1 },
   { name: 'Hard',   thinkTicks: 12, reactionTicks: 10, aimError: 0.09, engageRange: 240, fireRate: 1,    drainThreshold: 150,

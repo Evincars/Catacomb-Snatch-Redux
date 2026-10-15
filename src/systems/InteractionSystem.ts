@@ -13,7 +13,7 @@ import { gameState, isVersus } from '../game/GameState';
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { targetOf } from './TargetingSystem';
 import { SLIDE_DRAG } from './MovementSystem';
-import { createRailDroid } from './RailDroidSystem';
+import { canSpawnRailDroid, createRailDroid } from './RailDroidSystem';
 import { BB } from '../math/BB';
 import type { Level } from '../level/Level';
 
@@ -165,6 +165,11 @@ function toggleRail(player: Entity, level: Level): void {
     const cost = carriageCost();
     if (stats.score < cost) {
       notify(`Need ${cost} coins for a carriage`);
+      sound.playSound('fail');
+      return;
+    }
+    if (!canSpawnRailDroid(level, pos.x, pos.y)) {
+      notify('Wait for the track to clear before buying another carriage');
       sound.playSound('fail');
       return;
     }

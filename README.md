@@ -30,6 +30,9 @@ npm install
 # Start dev server
 npm run dev
 
+# Run gameplay regression tests
+npm test
+
 # Build for production
 npm run build
 ```
@@ -42,6 +45,9 @@ The dev server runs at `http://localhost:5173`. The production build outputs to 
   Turret and harvester upgrades cost 500 and 1,000 coins. Prices retain the selected difficulty multiplier.
 - Bombs make a quick, 25-pixel directional toss rather than snapping to a tile centre.
   Walls and structures shorten the toss, keeping the bomb beside the obstacle.
+- Carriage purchases wait until the spawn track is clear. Carriages stay on connected track through
+  bends and reversals; meeting allied carriages exchange a full and empty pot before turning around,
+  relaying treasure home along a crowded single track.
 - Treasure chests cannot be shot apart or carried. Focus a closed chest and press the use key
   to release mixed treasure. Coins and gems scatter in a short airborne arc before collection begins.
   The open chest disappears after 100 ticks with the bat's effect and sound.
@@ -131,6 +137,9 @@ Invite links grant access to the session, so share them only with the intended p
   carriages it runs, upgrade level, how early it starts laying track, sprinting and when it retreats.
   Hard and Insane AIs also pay 10% / 20% less in their own shop.
 - The AI plans its track along the shortest route and blasts cracked walls instead of detouring.
+  Every difficulty opens reachable cracked barriers before its rail-building delay and reserves
+  the bomb's price before spending on other equipment. Even Easy retreats when badly hurt;
+  all difficulties flee lit bombs and only deliberately ignite them from outside the blast.
   It never builds on or right beside rails (players can't build on rails either).
 - Each base's turret/harvester/bomb stalls sit on the side of the flag away from its rails. A rival
   base's prices are hidden and its stalls can't be used.

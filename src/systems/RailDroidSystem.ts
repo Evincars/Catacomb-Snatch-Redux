@@ -15,7 +15,7 @@ import { gameState, isVersus } from '../game/GameState';
 /** Steady speed of Java's RailDroid (0.7 px of thrust against 0.4 drag). */
 const SPEED = 1.15;
 /** Closer than this, two carriages (or a carriage and a player) have bumped. */
-const BUMP_DIST = 18;
+const BUMP_DIST = 23;
 
 const DX = [0, 1, 0, -1];
 const DY = [-1, 0, 1, 0];
@@ -35,6 +35,18 @@ export const TREASURE_REWARD = 100;
 /** Original versus treasury progress per delivery, independent of the coin reward. */
 const TREASURE_PROGRESS = 2;
 const HEALTH = 10;
+
+export function canSpawnRailDroid(level: Level, x: number, y: number): boolean {
+  const tx = Math.floor(x / TILE_WIDTH);
+  const ty = Math.floor(y / TILE_HEIGHT);
+  if (!isRailTile(level, tx, ty)) return false;
+  const cx = tx * TILE_WIDTH + TILE_WIDTH / 2;
+  const cy = ty * TILE_HEIGHT + TILE_HEIGHT / 2;
+  for (const other of world.with('position', 'railDroid')) {
+    if (!other.removed && Math.abs(other.position!.x - cx) < 28 && Math.abs(other.position!.y - cy) < 28) return false;
+  }
+  return true;
+}
 
 export function createRailDroid(x: number, y: number, team: number): Entity {
   const tx = Math.floor(x / TILE_WIDTH);
@@ -83,6 +95,10 @@ function isAhead(self: Entity, other: Entity, dir: number): boolean {
 
 function boxOf(e: Entity, x = e.position!.x, y = e.position!.y): BB {
   return BB.fromCenter(x, y, e.radius!.x, e.radius!.y);
+}
+
+function distSquared(x: number, y: number, other: Entity): number {
+  return (x - other.position!.x) ** 2 + (y - other.position!.y) ** 2;
 }
 
 /** Which way the player is trying to walk, from their held movement keys. */
@@ -176,12 +192,34 @@ export function updateRailDroids(level: Level): void {
     handleTreasure(level, droid);
   }
 
-  // Bumps are judged before anyone moves, so two carriages meeting head-on both turn back.
-  const bumped = droids.filter((droid) => {
-    const dir = droid.railDroid!.dir;
-    if (dir < 0) return false;
-    return droids.some((o) => o !== droid && isAhead(droid, o, dir));
-  });
+  // Process each meeting once, before either carriage moves or changes its cargo.
+  const bumped = new Set<Entity>();
+  const handedOver = new Set<Entity>();
+  for (let i = 0; i < droids.length; i++) {
+    const a = droids[i];
+    const ar = a.railDroid!;
+    for (let j = i + 1; j < droids.length; j++) {
+      const b = droids[j];
+      const br = b.railDroid!;
+      if (ar.dir < 0 || br.dir < 0 || ar.dir === br.dir) continue;
+      const ax = a.position!.x + DX[ar.dir] * SPEED;
+      const ay = a.position!.y + DY[ar.dir] * SPEED;
+      const bx = b.position!.x + DX[br.dir] * SPEED;
+      const by = b.position!.y + DY[br.dir] * SPEED;
+      if ((ax - bx) ** 2 + (ay - by) ** 2 >= distSquared(a.position!.x, a.position!.y, b)) continue;
+      if (!isAhead(a, b, ar.dir) && !isAhead(b, a, br.dir)
+        && !boxOf(a, ax, ay).intersects(boxOf(b, bx, by))) continue;
+      if (a.team === b.team && ar.full !== br.full && !handedOver.has(a) && !handedOver.has(b)) {
+        [ar.full, br.full] = [br.full, ar.full];
+        ar.swapTime = br.swapTime = SWAP_TIME;
+        handedOver.add(a);
+        handedOver.add(b);
+        sound.playSound('gem', a.position!.x, a.position!.y);
+      }
+      bumped.add(a);
+      bumped.add(b);
+    }
+  }
   for (const droid of bumped) droid.railDroid!.dir = (droid.railDroid!.dir + 2) % 4;
 
   for (const droid of droids) {
@@ -195,11 +233,27 @@ export function updateRailDroids(level: Level): void {
     // A struck carriage stalls for a moment, like any hurt mob.
     if (rd.dir >= 0 && (droid.freezeTime ?? 0) <= 0) {
       if (meetPlayers(level, droid, players, rd.dir)) rd.dir = (rd.dir + 2) % 4;
+      // A reversal can happen exactly on a centre, including the instant of
+      // purchase. Never leave that centre along a nonexistent connection.
+      if (!railJoins(level, tx, ty, DX[rd.dir], DY[rd.dir])) {
+        const along = (pos.x - cx) * DX[rd.dir] + (pos.y - cy) * DY[rd.dir];
+        if (along > 0) rd.dir = (rd.dir + 2) % 4;
+        else if (Math.abs(pos.x - cx) < 0.001 && Math.abs(pos.y - cy) < 0.001) {
+          rd.dir = chooseDir(level, tx, ty, rd.dir);
+        }
+      }
+      if (rd.dir < 0) continue;
       const dir = rd.dir;
       // Signed distance to this tile's centre along the heading, before and after the step.
       const before = (pos.x - cx) * DX[dir] + (pos.y - cy) * DY[dir];
-      pos.x += DX[dir] * SPEED;
-      pos.y += DY[dir] * SPEED;
+      const step = before < 0 ? Math.min(SPEED, -before) : SPEED;
+      const nx = pos.x + DX[dir] * step;
+      const ny = pos.y + DY[dir] * step;
+      const next = boxOf(droid, nx, ny);
+      if (droids.some((other) => other !== droid && next.intersects(boxOf(other))
+        && distSquared(nx, ny, other) < distSquared(pos.x, pos.y, other))) continue;
+      pos.x = nx;
+      pos.y = ny;
       const after = (pos.x - cx) * DX[dir] + (pos.y - cy) * DY[dir];
 
       if (before < 0 && after >= 0) {
