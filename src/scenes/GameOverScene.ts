@@ -5,6 +5,7 @@ import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
 import { gameState } from '../game/GameState';
+import { coop } from '../network/CoopSession';
 import { sound } from '../audio/SoundPlayer';
 
 const GW = GAME_WIDTH;
@@ -52,7 +53,13 @@ export class GameOverScene implements Scene {
     const retryBtn = new PixelButton('Play Again', 200, 28);
     retryBtn.x = (GW - 200) / 2;
     retryBtn.y = GH - 112;
-    retryBtn.onPress = () => manager.goto('in_game');
+    retryBtn.onPress = () => {
+      if (coop.role) {
+        const role = coop.role;
+        coop.close();
+        manager.goto(role === 'host' ? 'coop_host' : 'coop_join');
+      } else manager.goto('in_game');
+    };
     this.container.addChild(retryBtn);
   }
 

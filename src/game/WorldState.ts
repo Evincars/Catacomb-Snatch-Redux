@@ -4,7 +4,7 @@ import { Level } from '../level/Level';
 import type { LevelState } from '../level/Level';
 import { gameState } from './GameState';
 import type { CharacterType } from '../entities/PlayerFactory';
-import type { Difficulty, LevelInfo } from './GameState';
+import type { Difficulty, LevelInfo, MultiplayerMode } from './GameState';
 import { DIFFICULTIES, LEVELS } from './GameState';
 import { destroyAttachments } from '../systems/BarSystem';
 import { setVisualFrame } from '../render/AnimatedVisual';
@@ -18,7 +18,7 @@ type RuntimeKey = 'sprite' | 'container' | 'coinBar' | 'healthBar' | 'sprintBar'
 export type EntityState = Omit<Entity, RuntimeKey>;
 export type WorldState = {
   version: 1;
-  settings: { character: CharacterType; difficulty: Difficulty; map: LevelInfo; debug: boolean };
+  settings: { character: CharacterType; difficulty: Difficulty; map: LevelInfo; debug: boolean; multiplayerMode?: MultiplayerMode };
   level: LevelState;
   entities: Array<{ id: number; data: EntityState }>;
 };
@@ -34,7 +34,7 @@ export function captureWorld(level: Level): WorldState {
   return structuredClone({
     version: 1, level: level.snapshot(), entities,
     settings: { character: gameState.selectedCharacter, difficulty: gameState.difficulty,
-      map: gameState.selectedLevel, debug: gameState.debug },
+      map: gameState.selectedLevel, debug: gameState.debug, multiplayerMode: gameState.multiplayerMode },
   });
 }
 
@@ -53,6 +53,7 @@ export function validateWorld(value: unknown): asserts value is WorldState {
     || !DIFFICULTIES.some(d => JSON.stringify(d) === JSON.stringify(s.settings!.difficulty))
     || !LEVELS.some(m => m.path === s.settings!.map?.path && m.name === s.settings!.map?.name)
     || typeof s.settings.debug !== 'boolean'
+    || s.settings.multiplayerMode !== undefined && !['companion', 'enemy'].includes(s.settings.multiplayerMode)
     || !Number.isFinite(s.level.targetScore) || s.level.targetScore < 1
     || !Array.isArray(s.level.scores) || s.level.scores.length !== 2 || !s.level.scores.every(Number.isFinite)
     || !s.level.seen.every(b => typeof b === 'boolean')) throw new Error('Invalid world settings');
@@ -67,13 +68,16 @@ export function validateWorld(value: unknown): asserts value is WorldState {
     if (entry.data.playerSlot) {
       if (!['host', 'guest'].includes(entry.data.playerSlot) || slots.has(entry.data.playerSlot)
         || !entry.data.playerInput || !entry.data.playerStats || !entry.data.health
-        || entry.data.team !== 1) throw new Error('Invalid co-op player state');
+        || entry.data.team !== (entry.data.playerSlot === 'guest' && s.settings.multiplayerMode === 'enemy' ? 2 : 1)) {
+        throw new Error('Invalid multiplayer team state');
+      }
       slots.add(entry.data.playerSlot);
     }
   }
   for (const stack of s.level.tiles) {
     if (!Array.isArray(stack) || !stack.length || stack.some(t => !t || !Number.isInteger(t.type)
       || t.type < 0 || t.type > 10 || typeof t.passable !== 'boolean'
+      || t.team !== undefined && ![1, 2].includes(t.team)
       || t.crumble !== undefined && (!Number.isInteger(t.crumble) || t.crumble < 0 || t.crumble > 7)
       || t.steppedOn !== undefined && typeof t.steppedOn !== 'boolean'
       || t.collapseTicks !== undefined && (!Number.isInteger(t.collapseTicks) || t.collapseTicks < 0 || t.collapseTicks > 5))) throw new Error('Invalid terrain state');
@@ -85,7 +89,7 @@ export function validateWorld(value: unknown): asserts value is WorldState {
 }
 
 const COMPONENTS = new Set([
-  'playerSlot', 'remoteInput', 'aimWorld', 'position', 'velocity', 'radius', 'blocking', 'physicsSlide', 'team',
+  'playerSlot', 'remoteInput', 'aimWorld', 'respawnTicks', 'spawnProtected', 'position', 'velocity', 'radius', 'blocking', 'physicsSlide', 'team',
   'health', 'hurtTime', 'freezeTime', 'bounceWallTime', 'regenInterval', 'regenAmount', 'regenTimer', 'deathPoints',
   'facing', 'speed', 'friction', 'strength', 'aimVector', 'walkTime', 'stepTime', 'limp', 'bump', 'slide', 'chasing',
   'visual', 'frame', 'yOffset', 'flashTime', 'highlight', 'mobType', 'healthBarOffset', 'coinBarOffset', 'fx',
@@ -125,6 +129,10 @@ const REQUIRED: Record<string, Record<string, 'number' | 'string' | 'boolean' | 
 };
 
 function checkEntity(data: EntityState): void {
+  if (data.respawnTicks !== undefined && (!Number.isFinite(data.respawnTicks)
+    || data.respawnTicks < 0 || data.respawnTicks > 600)) throw new Error('Invalid respawn countdown');
+  if (data.spawnProtected !== undefined && typeof data.spawnProtected !== 'boolean') throw new Error('Invalid spawn protection');
+  if (data.bomb?.ownerTeam !== undefined && ![0, 1, 2].includes(data.bomb.ownerTeam)) throw new Error('Invalid bomb owner');
   for (const [key, value] of Object.entries(data)) {
     if (!COMPONENTS.has(key)) throw new Error(`Unknown game component: ${key}`);
     if (value === undefined) continue;
@@ -213,6 +221,7 @@ export class WorldReplica {
 }
 
 export function restoreSettings(state: WorldState): void {
+  gameState.multiplayerMode = state.settings.multiplayerMode ?? 'companion';
   gameState.selectedCharacter = state.settings.character;
   gameState.difficulty = state.settings.difficulty;
   gameState.selectedLevel = state.settings.map;

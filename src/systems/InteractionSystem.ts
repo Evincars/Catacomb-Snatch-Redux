@@ -1,4 +1,4 @@
-import { world } from '../world';
+import { world, Team } from '../world';
 import type { Entity, ShopKind } from '../world';
 import { createBuilding, applyUpgradeLevel, upgradeCostOf } from '../entities/BuildingFactory';
 import type { BuildingType } from '../entities/BuildingFactory';
@@ -131,6 +131,11 @@ function toggleRail(player: Entity, level: Level): void {
 
   // Taking track up is free.
   if (tile.type === TileType.Rail) {
+    if (gameState.multiplayerMode === 'enemy' && tile.team !== undefined && tile.team !== player.team) {
+      notify('Enemy rails can only be destroyed by bombs');
+      sound.playSound('fail');
+      return;
+    }
     level.removeTile(tx, ty);
     player.railCooldown = RAIL_DELAY_TICKS;
     sound.playSound('trackPlace', pos.x, pos.y);
@@ -139,6 +144,11 @@ function toggleRail(player: Entity, level: Level): void {
 
   // The base's fixed track is where carriages are bought (Java Player.handleRailBuilding).
   if (tile.type === TileType.UnbreakableRail || tile.type === TileType.PlayerRail) {
+    if (gameState.multiplayerMode === 'enemy' && tile.team !== undefined && tile.team !== player.team) {
+      notify('Buy carriages on your own base track');
+      sound.playSound('fail');
+      return;
+    }
     const cost = Math.max(1, Math.round(DROID_COST * mod));
     if (stats.score < cost) {
       notify(`Need ${cost} coins for a carriage`);
@@ -167,7 +177,7 @@ function toggleRail(player: Entity, level: Level): void {
   }
 
   stats.score -= cost;
-  level.setTile(tx, ty, createTile(TileType.Rail, 0));
+  level.setTile(tx, ty, { ...createTile(TileType.Rail, 0), team: player.team ?? Team.One });
   level.tilesDirty = true;
   player.railCooldown = RAIL_DELAY_TICKS;
   sound.playSound('trackPlace', pos.x, pos.y);
@@ -340,11 +350,20 @@ export function updateInteraction(level: Level): void {
   updateNotices();
 
   for (const player of world.with('position', 'playerInput', 'playerStats', 'weaponInventory')) {
+    if (player.respawnTicks !== undefined || (player.health?.current ?? 1) <= 0) continue;
     const held = carriedBy(player);
 
     if ((player.railCooldown ?? 0) > 0) player.railCooldown!--;
     const intents = player.playerInput!.intents;
     const target = targetOf(player);
+    if (gameState.multiplayerMode === 'enemy' && target?.team
+      && target.team !== player.team && target.building && !target.bomb) {
+      if (player.playerInput!.intents.use || player.playerInput!.intents.build || player.playerInput!.intents.upgrade) {
+        notify('Enemy buildings cannot be used or upgraded');
+        sound.playSound('fail');
+      }
+      continue;
+    }
 
     if (intents.upgrade) {
       if (held) notify('Place it before upgrading');

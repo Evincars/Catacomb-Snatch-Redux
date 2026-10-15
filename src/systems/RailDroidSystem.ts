@@ -10,6 +10,7 @@ import { BB } from '../math/BB';
 import { move } from './MovementSystem';
 import { sound } from '../audio/SoundPlayer';
 import { createLoot } from '../entities/LootFactory';
+import { gameState } from '../game/GameState';
 
 /** Steady speed of Java's RailDroid (0.7 px of thrust against 0.4 drag). */
 const SPEED = 1.15;
@@ -31,6 +32,8 @@ const TREASURE_REACH = 32;
 const SWAP_TIME = 30;
 /** Worth of the emerald a carriage drops for each pot of treasure brought home. */
 export const TREASURE_REWARD = 100;
+/** Original versus treasury progress per delivery, independent of the coin reward. */
+const TREASURE_PROGRESS = 2;
 const HEALTH = 10;
 
 export function createRailDroid(x: number, y: number, team: number): Entity {
@@ -139,9 +142,14 @@ function handleTreasure(level: Level, droid: Entity): void {
   }
 
   const tile = level.getTileAt(pos.x, pos.y);
-  if (!tile || tile.type !== TileType.PlayerRail) return;
+  if (!tile || tile.type !== TileType.PlayerRail
+    || gameState.multiplayerMode === 'enemy' && tile.team !== droid.team) return;
   rd.full = false;
   rd.swapTime = SWAP_TIME;
+  if (gameState.multiplayerMode === 'enemy') {
+    if (droid.team === 1) level.player1Score += TREASURE_PROGRESS;
+    else if (droid.team === 2) level.player2Score += TREASURE_PROGRESS;
+  }
   // The haul tumbles out as an emerald that has to be picked up before it fades.
   const angle = Math.random() * Math.PI * 2;
   createLoot(pos.x, pos.y, Math.cos(angle) * 0.5, Math.sin(angle) * 0.5, TREASURE_REWARD, true);

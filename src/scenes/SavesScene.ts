@@ -35,7 +35,7 @@ export class SavesScene implements Scene {
     this.page = Math.min(this.page, Math.max(0, Math.ceil(saves.length / 4) - 1));
     saves.slice(this.page * 4, this.page * 4 + 4).forEach((save, i) => {
       const y = 78 + i * 57;
-      const label = `${save.name} ${save.coop ? '(CO-OP)' : ''}`;
+      const label = `${save.name} ${save.coop ? save.state.settings.multiplayerMode === 'enemy' ? '(ENEMY)' : '(CO-OP)' : ''}`;
       const text = makeText(`${label.length > 32 ? label.slice(0, 29) + '...' : label}\n${save.updatedAt.slice(0, 16).replace('T', ' ')}`, 0xffdd88);
       text.x = 24; text.y = y; this.container.addChild(text);
       this.button(this.state ? 'Replace' : 'Load', 305, y, 86, () => this.attempt(() => {

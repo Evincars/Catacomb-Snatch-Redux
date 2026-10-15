@@ -117,7 +117,7 @@ function layoutSpawnAreas(level: Level, shops: PendingShop[], costMod: number): 
     const x1 = Math.max(...flag.map((t) => t.tileX), ...base.map((t) => t.tileX));
     // The map fences the base with unpassable sand. It must keep blocking, but the
     // original shows plain sand there, so it becomes an invisible barrier.
-    level.baseAreas.push({ x0, y0: minY - 1, x1, y1: maxY + 1 });
+    level.baseAreas.push({ x0, y0: minY - 1, x1, y1: maxY + 1, team });
     for (let ty = minY - 1; ty <= maxY + 1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         if (level.getTile(tx, ty)?.type === TileType.UnpassableSand) {

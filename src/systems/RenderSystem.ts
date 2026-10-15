@@ -41,7 +41,7 @@ function overlayFor(entity: Entity): Overlay | null {
 }
 
 function syncOverlay(entity: Entity, sprite: Sprite): void {
-  const overlay = overlayFor(entity);
+  const overlay = sprite.visible ? overlayFor(entity) : null;
   if (!overlay) {
     if (entity.hurtOverlay) entity.hurtOverlay.visible = false;
     return;
@@ -73,6 +73,8 @@ export function updateRender(_dt: number, level: Level): void {
   for (const entity of world.with('position', 'sprite')) {
     const pos = entity.position!;
     const sprite = entity.sprite!;
+    const carrier = entity.carriedBy === undefined ? undefined : world.entity(entity.carriedBy);
+    if (entity.playerInput || carrier?.playerInput) sprite.visible = entity.respawnTicks === undefined && carrier?.respawnTicks === undefined;
     sprite.tint = entity.playerSlot === 'guest' ? 0x80dfff : 0xffffff;
     const yOff = entity.yOffset ?? 0;
 

@@ -19,6 +19,7 @@ import { updateTreasure } from './TreasureSystem';
 import { updateDeath } from './DeathSystem';
 import { updateHoles } from './HoleSystem';
 import { updateDropTraps } from './DropTrapSystem';
+import { updateRespawns, updateSpawnProtection } from './RespawnSystem';
 import { updateSprites } from './SpriteSystem';
 import { updateFx, updateExplosions } from './FxSystem';
 import { updateRailDroids, updateRailDroidCargo } from './RailDroidSystem';
@@ -45,6 +46,7 @@ export type System = (ctx: FrameContext) => void;
 
 /** Game rules, run in this order every tick: input, intent, movement, combat, then cleanup. */
 export const SIMULATION: readonly System[] = [
+  ({ level, dt }) => updateRespawns(level, dt),
   ({ dt }) => updateInput(dt),
   () => updateTargeting(),
   ({ level }) => updateInteraction(level),
@@ -55,6 +57,7 @@ export const SIMULATION: readonly System[] = [
   ({ level, dt }) => updateMovement(level, dt),
   ({ level }) => updateSlides(level),
   ({ level }) => updateRailDroids(level),
+  ({ level }) => updateSpawnProtection(level),
   () => updateDust(),
   () => updateFootsteps(),
   () => updateEphemerals(),

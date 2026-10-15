@@ -32,6 +32,8 @@ export type Entity = {
   playerSlot?: 'host' | 'guest';
   remoteInput?: true;
   aimWorld?: { x: number; y: number };
+  respawnTicks?: number;
+  spawnProtected?: boolean;
   // --- spatial ---
   position?: { x: number; y: number };
   velocity?: { x: number; y: number };
@@ -259,7 +261,7 @@ export type Entity = {
   turret?: { radius: number; delay: number; cooldown: number; damage: number };
   /** Explodes when destroyed, damaging nearby mobs. `lit` counts down the fuse. */
   /** `blastTiles` is how many tiles the blast reaches beyond the bomb's own, in every direction. */
-  bomb?: { blastTiles: number; blastDamage: number; lit: boolean; fuse: number; fuseMax: number };
+  bomb?: { ownerTeam?: number; blastTiles: number; blastDamage: number; lit: boolean; fuse: number; fuseMax: number };
   /** Vacuums up nearby loot. */
   harvester?: {
     radius: number;

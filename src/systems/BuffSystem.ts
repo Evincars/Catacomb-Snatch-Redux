@@ -3,6 +3,7 @@ import { world } from '../world';
 /** Ticks buffs and applies their effects. Ported from Buffs.tick() / Buff effects. */
 export function updateBuffs(_dt: number): void {
   for (const entity of world.with('buffs')) {
+    if (entity.respawnTicks !== undefined) continue;
     const buffs = entity.buffs!;
 
     for (let i = buffs.length - 1; i >= 0; i--) {

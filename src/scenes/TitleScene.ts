@@ -19,6 +19,7 @@ export class TitleScene implements Scene {
 
   constructor(manager: SceneManager) {
     coop.close();
+    gameState.multiplayerMode = 'companion';
     savedRun.pending = null;
     const url = new URL(location.href);
     if (url.searchParams.has('join')) {
@@ -37,8 +38,8 @@ export class TitleScene implements Scene {
 
     const menuItems: { label: string; action: () => void }[] = [
       { label: 'Start',       action: () => manager.goto('level_select') },
-      { label: 'Host co-op', action: () => manager.goto('coop_host') },
-      { label: 'Join co-op', action: () => manager.goto('coop_join') },
+      { label: 'Host multiplayer', action: () => manager.goto('coop_host') },
+      { label: 'Join multiplayer', action: () => manager.goto('coop_join') },
       { label: 'Saved games', action: () => manager.goto('saves') },
       { label: 'How To Play', action: () => manager.goto('how_to_play') },
       { label: 'Options',     action: () => manager.goto('options') },

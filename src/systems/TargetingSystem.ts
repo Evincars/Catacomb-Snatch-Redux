@@ -98,6 +98,10 @@ export function updateTargeting(): void {
   for (const entity of world.with('hovered')) world.removeComponent(entity, 'hovered');
 
   for (const player of world.with('position', 'playerInput')) {
+    if (player.respawnTicks !== undefined || (player.health?.current ?? 1) <= 0) {
+      delete player.targetId;
+      continue;
+    }
     // A carried building is already in hand; nothing else can be targeted.
     if (player.carryingId !== undefined) {
       delete player.targetId;

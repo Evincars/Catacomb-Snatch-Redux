@@ -8,6 +8,8 @@ import { xpForLevel } from '../ui/HudPanel';
 import { destroyAttachments } from './BarSystem';
 import { coop } from '../network/CoopSession';
 import { respawnPlayer } from './HoleSystem';
+import { gameState } from '../game/GameState';
+import { RESPAWN_TICKS } from './RespawnSystem';
 
 /** Worth of the emerald every pharaoh drops. */
 const PHARAOH_GEM = 100;
@@ -43,7 +45,7 @@ export function updateDeath(level: Level, _dt: number): void {
   for (const entity of world.with('health', 'position')) {
     const h = entity.health!;
     if (h.current > 0) continue;
-    if (entity.removed) continue;
+    if (entity.removed || entity.respawnTicks !== undefined) continue;
 
     const pos = entity.position!;
     const deathPts = entity.deathPoints ?? 0;
@@ -52,7 +54,13 @@ export function updateDeath(level: Level, _dt: number): void {
       sound.playSound('death');
       if (coop.role === 'host' && entity.playerSlot) {
         world.removeComponent(entity, 'falling');
-        respawnPlayer(entity, level, 'death');
+        if (gameState.multiplayerMode === 'enemy') {
+          world.addComponent(entity, 'respawnTicks', RESPAWN_TICKS);
+          world.removeComponent(entity, 'buffs');
+          if (entity.velocity) entity.velocity.x = entity.velocity.y = 0;
+          if (entity.bump) entity.bump.x = entity.bump.y = 0;
+          spawnDeathFx(entity);
+        } else respawnPlayer(entity, level, 'death');
         continue;
       }
     } else if (entity.chest) {

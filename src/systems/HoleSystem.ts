@@ -16,7 +16,7 @@ const FEMALE_CHARACTERS = ['countess_cruller', 'duchess_donut'];
  */
 export function updateHoles(level: Level): void {
   for (const entity of world.with('position', 'health')) {
-    if (entity.removed || entity.mobType === 'bat') continue;
+    if (entity.removed || entity.mobType === 'bat' || entity.respawnTicks !== undefined) continue;
 
     const tile = level.getTileAt(entity.position!.x, entity.position!.y);
     if (tile?.type !== TileType.Hole) continue;

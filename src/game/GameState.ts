@@ -42,17 +42,18 @@ export const LEVELS: LevelInfo[] = [
 ];
 
 export const DEBUG_COINS = 99999;
+export type MultiplayerMode = 'companion' | 'enemy';
 
 // Mutable singleton, carries choices across scenes
 export const gameState = {
+  multiplayerMode: 'companion' as MultiplayerMode,
   selectedCharacter: 'lord_lard' as CharacterType,
   difficulty: DIFFICULTIES[1],
   selectedLevel: LEVELS[0],
   winningTeam: 0,
   /** Debug mode: players start with DEBUG_COINS and the target score cannot end the run. */
   debug: false,
-  // Victory is measured in coins carried, as in the Java GoldRush mode, whose
-  // target is 5000. Vanilla's 100 applies to a separate deposited-treasury
-  // counter and would end the game before any shop item is affordable.
+  // Solo/companion GoldRush counts carried coins. Enemy matches instead use
+  // the original versus treasury target of 100, with two points per delivery.
   targetScore: 5000,
 };

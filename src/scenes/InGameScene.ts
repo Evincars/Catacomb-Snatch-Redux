@@ -69,6 +69,7 @@ export class InGameScene implements Scene {
   private lastTerrain = '';
   private disposed = false;
   private finished = false;
+  private respawnLabel = makeText('', 0xffdd88, 18, 'center');
   private manager: SceneManager;
   private app: Application;
   private onKeyDown: (e: KeyboardEvent) => void;
@@ -137,7 +138,7 @@ export class InGameScene implements Scene {
       if (!path) throw new Error('This level has no map file.');
       this.level = await loadTmxLevel(path, gameState.difficulty.shopCostMod);
       if (this.disposed) return;
-      this.level.targetScore = gameState.targetScore;
+      this.level.targetScore = gameState.multiplayerMode === 'enemy' ? 100 : gameState.targetScore;
     }
     if (import.meta.env.DEV) (window as unknown as { __level: Level }).__level = this.level;
 
@@ -145,6 +146,9 @@ export class InGameScene implements Scene {
     this.container.addChild(this.gameLayer);
     this.container.addChild(this.hudLayer);
     this.container.addChild(this.overlay);
+    this.respawnLabel.x = GAME_WIDTH / 2;
+    this.respawnLabel.y = VIEW_HEIGHT / 2 - 18;
+    this.overlay.addChild(this.respawnLabel);
 
     this.levelView = buildLevelView(this.level);
     this.levelView.zIndex = -Number.MAX_SAFE_INTEGER;
@@ -164,8 +168,11 @@ export class InGameScene implements Scene {
     world.removeComponent(this.player, 'remoteInput');
     if (!snapshot && gameState.debug) this.player.playerStats!.score = DEBUG_COINS;
     if (coop.role === 'host') {
+      const guestTeam = gameState.multiplayerMode === 'enemy' ? Team.Two : Team.One;
+      const guestSpawn = guestTeam === Team.One ? spawn : this.level.getRandomSpawnPoint(guestTeam);
+      if (!guestSpawn) throw new Error('This map has no second-player spawn point');
       const guest = [...world.with('playerSlot')].find(e => e.playerSlot === 'guest')
-        ?? createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
+        ?? createPlayer(guestSpawn.x, guestSpawn.y, guestTeam, gameState.selectedCharacter);
       world.addComponent(guest, 'playerSlot', 'guest');
       world.addComponent(guest, 'remoteInput', true);
       guest.minimapColor = 0x80dfff;
@@ -216,7 +223,7 @@ export class InGameScene implements Scene {
     // The crosshair stands in for the OS pointer while playing.
     this.container.addChild(this.crosshair.graphics);
     (this.app.canvas as HTMLCanvasElement).style.cursor = 'none';
-    this.centerCameraOn(spawn.x, spawn.y);
+    this.centerCameraOn(this.player.position!.x, this.player.position!.y);
     if (coop.role === 'host') coop.sendState(captureWorld(this.level), false);
   }
 
@@ -418,6 +425,8 @@ export class InGameScene implements Scene {
     this.darkness.update(this.level);
 
     this.hud.update(this.player, this.level);
+    this.respawnLabel.text = this.player.respawnTicks !== undefined
+      ? `Respawning in ${Math.ceil(this.player.respawnTicks / 60)}...` : '';
     this.weaponBar.update(this.player);
     this.tooltip.update(this.player);
     this.crosshair.update();
@@ -428,9 +437,15 @@ export class InGameScene implements Scene {
 
     // The player entity is removed by DeathSystem once health hits zero.
     if (coop.role === 'guest') return;
-    if (coop.role === 'host' && ([...world.with('playerSlot')].some(e => (e.health?.current ?? 0) <= 0 || e.removed)
+    if (coop.role === 'host' && ([...world.with('playerSlot')].some(e =>
+      ((e.health?.current ?? 0) <= 0 && e.respawnTicks === undefined) || e.removed)
       || [...world.with('playerSlot')].length < 2)) {
       this.end(0);
+    } else if (coop.role === 'host' && gameState.multiplayerMode === 'enemy') {
+      if (!gameState.debug) {
+        if (this.level.player1Score >= this.level.targetScore) this.end(Team.One);
+        else if (this.level.player2Score >= this.level.targetScore) this.end(Team.Two);
+      }
     } else if (!health || health.current <= 0 || this.player.removed) {
       this.end(0);
     } else if (!gameState.debug && stats
@@ -442,7 +457,7 @@ export class InGameScene implements Scene {
   private sendGuestInput(idle: boolean): void {
     updateInput(1);
     const input = structuredClone(this.player.playerInput!);
-    if (idle) {
+    if (idle || this.player.respawnTicks !== undefined) {
       input.up = input.down = input.left = input.right = input.shoot = input.use = input.sprint = false;
       input.keyAim = null;
       input.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };

@@ -4,6 +4,7 @@ import { coop, invitePeer } from '../network/CoopSession';
 import { savedRun } from '../game/SaveStore';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
+import { gameState } from '../game/GameState';
 
 export class CoopScene implements Scene {
   container = new Container();
@@ -11,14 +12,24 @@ export class CoopScene implements Scene {
   private disposed = false;
 
   constructor(private manager: SceneManager, role: 'host' | 'guest', destination?: string) {
-    const title = makeTitle(role === 'host' ? 'Host co-op' : 'Join co-op');
+    const title = makeTitle(role === 'host' ? 'Host multiplayer' : 'Join multiplayer');
     title.x = 256; title.y = 38;
     this.container.addChild(title);
+    if (role === 'host') {
+      gameState.multiplayerMode = savedRun.pending?.state.settings.multiplayerMode ?? 'companion';
+      const mode = this.button('', 70, () => {
+        gameState.multiplayerMode = gameState.multiplayerMode === 'companion' ? 'enemy' : 'companion';
+        mode.setText(`Guest: ${gameState.multiplayerMode === 'enemy' ? 'Enemy' : 'Companion'}`);
+        coop.sendMode();
+      });
+      mode.setText(`Guest: ${gameState.multiplayerMode === 'enemy' ? 'Enemy' : 'Companion'}`);
+      mode.setEnabled(!savedRun.pending);
+    }
     const status = makeText('', 0xffdd88, 8, 'center');
     status.x = 256; status.y = 110;
     this.container.addChild(status);
     this.input.type = 'text';
-    this.input.setAttribute('aria-label', role === 'host' ? 'Co-op invite link' : 'Host invite link or peer ID');
+    this.input.setAttribute('aria-label', role === 'host' ? 'Multiplayer invite link' : 'Host invite link or peer ID');
     this.input.placeholder = 'Paste invite link or peer ID';
     this.input.style.cssText = 'position:fixed;left:15%;top:42%;width:70%;box-sizing:border-box;padding:10px;background:#241b18;color:#fff;border:1px solid #d9a454';
     this.input.readOnly = role === 'host';
@@ -28,7 +39,7 @@ export class CoopScene implements Scene {
         if (role === 'host') {
           if (!coop.invite) throw new Error('Invite is not ready yet');
           await navigator.clipboard.writeText(coop.invite);
-          status.text = 'Invite copied. Send it to your teammate.';
+          status.text = 'Invite copied. Send it to the other player.';
         } else {
           const peer = invitePeer(this.input.value);
           await coop.open('guest', peer);

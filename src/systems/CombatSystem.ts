@@ -15,6 +15,7 @@ const PLAYER_KNOCKBACK = 10;
 /** Decrements combat timers and handles regen. Ported from Mob.tick() / countdownTimers(). */
 export function updateCombatTimers(_dt: number): void {
   for (const entity of world.with('health')) {
+    if (entity.respawnTicks !== undefined) continue;
     if (entity.hurtTime !== undefined && entity.hurtTime > 0) entity.hurtTime--;
     if (entity.freezeTime !== undefined && entity.freezeTime > 0) entity.freezeTime--;
     if (entity.bounceWallTime !== undefined && entity.bounceWallTime > 0) entity.bounceWallTime--;
@@ -71,6 +72,8 @@ export function updateBulletCollision(_dt: number): void {
 
       for (const target of targets) {
         if (target === bullet) continue;
+        if (target.removed || target.health!.current <= 0 || target.respawnTicks !== undefined) continue;
+        if (target.shopItem || target.chest || target.treasure) continue;
         // Whatever a player holds overhead is out of the line of fire.
         if (target.carriedBy !== undefined) continue;
         // Don't hit the shooter or anyone on their side
@@ -153,7 +156,9 @@ export function updateContactDamage(_dt: number): void {
 /** Damages a player and shoves them clear of whatever hit them. */
 export function hurtPlayer(player: Entity, source: Entity, damage: number): void {
   const h = player.health;
-  if (!h || h.immortal || player.falling) return;
+  if (!h || h.immortal || player.falling || player.respawnTicks !== undefined || h.current <= 0) return;
+  const sourceTeam = source.bomb?.ownerTeam ?? source.team;
+  if (player.spawnProtected && sourceTeam !== undefined && sourceTeam !== Team.Neutral && sourceTeam !== player.team) return;
 
   player.hurtTime = PLAYER_HURT_TIME;
   player.freezeTime = PLAYER_FREEZE_TIME;

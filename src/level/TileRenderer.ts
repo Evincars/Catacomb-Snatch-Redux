@@ -47,7 +47,7 @@ function floorImageIndex(type: TileType, variant: number): number {
  * Team 2 is unused in single player, so it gets the neutral "no opponent" art.
  */
 function baseSheet(team: Team, side: 'left' | 'right'): string {
-  const character = team === Team.One ? gameState.selectedCharacter : null;
+  const character = team === Team.One || gameState.multiplayerMode === 'enemy' ? gameState.selectedCharacter : null;
   const stem = character ? BASE_STEMS[character] : 'no_opponent';
   return `start_${stem}_${side}`;
 }
@@ -67,7 +67,7 @@ const SPAWN_SHEET_KEYS: Record<string, string> = {
 };
 
 function spawnSheet(team: Team): string {
-  const character = team === Team.One ? gameState.selectedCharacter : null;
+  const character = team === Team.One || gameState.multiplayerMode === 'enemy' ? gameState.selectedCharacter : null;
   return character ? (SPAWN_SHEET_KEYS[character] ?? 'start_no_opponent') : 'start_no_opponent';
 }
 

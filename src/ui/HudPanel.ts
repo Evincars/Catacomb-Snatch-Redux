@@ -165,8 +165,15 @@ export class HudPanel {
       this.nextText.text = `${Math.max(0, needed - stats.exp)}`;
       this.coinText.text = `${stats.score}`;
 
-      const pct = Math.floor((stats.score * 100) / gameState.targetScore);
-      this.scoreText.text = `${characterLabel()}: ${pct}%`;
+      if (gameState.multiplayerMode === 'enemy') {
+        const pct = (score: number) => Math.min(100, Math.floor(score * 100 / level.targetScore));
+        const yours = player.team === 2 ? level.player2Score : level.player1Score;
+        const enemy = player.team === 2 ? level.player1Score : level.player2Score;
+        this.scoreText.text = `YOU: ${pct(yours)}%  ENEMY: ${pct(enemy)}%`;
+      } else {
+        const pct = Math.floor((stats.score * 100) / gameState.targetScore);
+        this.scoreText.text = `${characterLabel()}: ${pct}%`;
+      }
       this.weaponName = player.weapon?.type ?? '';
       this.renderWeaponLabel();
     }

@@ -139,7 +139,7 @@ export function createBuilding(
   }
   // Bombs ignore damage entirely; a bullet lights the fuse instead.
   if (type === 'bomb') {
-    entity.bomb = { blastTiles: 1, blastDamage: 5, lit: false, fuse: 60, fuseMax: 60 };
+    entity.bomb = { ownerTeam: team, blastTiles: 1, blastDamage: 5, lit: false, fuse: 60, fuseMax: 60 };
     entity.health!.immortal = true;
   }
   if (type === 'chest') {

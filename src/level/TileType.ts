@@ -24,7 +24,7 @@ export type TileData = {
   buildable: boolean;
   castsShadow: boolean;
   imageVariant: number;
-  /** Which player's base a PlayerRail piece belongs to. */
+  /** Owner of a base-track piece or player-built rail. */
   team?: number;
   /** Cracked walls, which a bomb blast clears away. */
   destroyable?: boolean;

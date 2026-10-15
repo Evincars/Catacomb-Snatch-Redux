@@ -1,4 +1,4 @@
-import { world } from '../world';
+import { world, Team } from '../world';
 import type { Entity } from '../world';
 import type { Level } from '../level/Level';
 import { createBullet } from '../entities/BulletFactory';
@@ -7,7 +7,8 @@ import { spawnSteam, spawnTakeFx } from '../entities/FxFactory';
 import { hurtEntity, hurtPlayer } from './CombatSystem';
 import { spawnExplosion } from './FxSystem';
 import { Mth } from '../math/Mth';
-import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
+import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
+import { gameState } from '../game/GameState';
 import { sound } from '../audio/SoundPlayer';
 
 /** Turret barrels sit this far above its feet, and this far out along the aim. */
@@ -34,7 +35,11 @@ export function updateTurrets(level: Level, _dt: number): void {
 
     // Mobs and the nests they crawl out of are both fair game.
     for (const mob of world.with('position', 'health', 'radius')) {
-      if (!mob.ai && !mob.spawner) continue;
+      const opponent = gameState.multiplayerMode === 'enemy' && mob.team !== undefined
+        && mob.team !== Team.Neutral && mob.team !== turretEntity.team
+        && (mob.playerInput || mob.turret || mob.harvester || mob.railDroid);
+      if (!mob.ai && !mob.spawner && !opponent) continue;
+      if ((mob.playerInput && mob.spawnProtected) || mob.respawnTicks !== undefined) continue;
       if (mob.health!.current <= 0 || mob.removed || mob.carriedBy !== undefined) continue;
       const d = (mob.position!.x - pos.x) ** 2 + (mob.position!.y - pos.y) ** 2;
       if (d >= t.radius ** 2 || d >= closestDist) continue;
@@ -94,7 +99,7 @@ export function updateHarvesters(_dt: number): void {
 
     if (h.emptying && h.time % EMPTY_INTERVAL === 0) {
       const player = h.emptyingPlayerId !== undefined ? world.entity(h.emptyingPlayerId) : undefined;
-      if (!player?.playerStats || h.collected <= 0) {
+      if (!player?.playerStats || player.respawnTicks !== undefined || h.collected <= 0) {
         h.emptying = false;
       } else {
         const amount = Math.min(EMPTY_AMOUNT, h.collected);
@@ -170,11 +175,21 @@ export function updateBombs(level: Level, _dt: number): void {
         hurtPlayer(player, bombEntity, data.blastDamage);
       }
     }
+    if (gameState.multiplayerMode === 'enemy') {
+      for (const target of world.with('position', 'health')) {
+        if (!target.turret && !target.harvester && !target.railDroid) continue;
+        if (target.team === data.ownerTeam || target.carriedBy !== undefined || target.removed) continue;
+        if (inBlast(target.position!.x, target.position!.y)) hurtEntity(target, bombEntity, data.blastDamage);
+      }
+    }
 
     // Bombs exist mainly to open up cracked walls.
     for (let ty = by - reach; ty <= by + reach; ty++) {
       for (let tx = bx - reach; tx <= bx + reach; tx++) {
-        if (level.getTile(tx, ty)?.destroyable) level.removeTile(tx, ty);
+        const tile = level.getTile(tx, ty);
+        const enemyRail = gameState.multiplayerMode === 'enemy' && tile?.type === TileType.Rail
+          && tile.team !== undefined && tile.team !== data.ownerTeam;
+        if (tile?.destroyable || enemyRail) level.removeTile(tx, ty);
       }
     }
 

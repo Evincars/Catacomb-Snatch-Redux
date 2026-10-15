@@ -6,10 +6,13 @@ import { validateWorld } from '../game/WorldState';
 import { SFX, sound } from '../audio/SoundPlayer';
 import type { SfxName } from '../audio/SoundPlayer';
 import { notify } from '../game/Notices';
+import { gameState } from '../game/GameState';
+import type { MultiplayerMode } from '../game/GameState';
 
 export type InputFrame = { input: NonNullable<Entity['playerInput']>; aim: { x: number; y: number }; sequence: number };
 type Message =
-  | { type: 'hello'; version: 1 }
+  | { type: 'hello'; version: 2; mode: MultiplayerMode }
+  | { type: 'mode'; mode: MultiplayerMode }
   | { type: 'state'; compressed: ArrayBuffer | Uint8Array }
   | { type: 'input'; frame: InputFrame }
   | { type: 'end'; winner: number }
@@ -81,7 +84,7 @@ export class CoopSession {
         url.hash = '';
         url.searchParams.set('join', id);
         this.invite = url.href;
-        this.setStatus('Invite ready. Waiting for your teammate.');
+        this.setStatus('Invite ready. Waiting for the other player.');
       } else if (destination) {
         this.attach(peer.connect(destination, { reliable: true, serialization: 'binary' }));
       } else this.fail('Enter a host invite link or peer ID.');
@@ -94,7 +97,7 @@ export class CoopSession {
     this.sequence = -1;
     this.input = null;
     this.timeout = setTimeout(() => this.fail('Teammate handshake timed out.'), 15000);
-    connection.on('open', () => connection.send({ type: 'hello', version: 1 } satisfies Message));
+    connection.on('open', () => connection.send({ type: 'hello', version: 2, mode: gameState.multiplayerMode } satisfies Message));
     connection.on('data', value => {
       this.receiving = this.receiving.then(async () => {
         if (this.connection !== connection) return;
@@ -102,15 +105,21 @@ export class CoopSession {
         const message = value as Message;
         this.lastMessageAt = performance.now();
         if (message.type === 'hello') {
-          if (message.version !== 1) throw new Error('Co-op version mismatch');
+          if (message.version !== 2) throw new Error('Multiplayer version mismatch. Reload both browsers.');
+          if (!['companion', 'enemy'].includes(message.mode)) throw new Error('Invalid multiplayer mode');
+          if (this.role === 'guest') gameState.multiplayerMode = message.mode;
           clearTimeout(this.timeout);
           this.connected = true;
           clearInterval(this.heartbeat);
           this.heartbeat = setInterval(() => {
-            if (performance.now() - this.lastMessageAt > 10000) this.fail('Teammate connection timed out.');
+            if (performance.now() - this.lastMessageAt > 10000) this.fail('Other player connection timed out.');
             else this.send({ type: 'ping' });
           }, 1000);
-          this.setStatus('Teammate connected.');
+          this.setStatus(gameState.multiplayerMode === 'enemy' ? 'Opponent connected.' : 'Companion connected.');
+        } else if (message.type === 'mode' && this.role === 'guest') {
+          if (!['companion', 'enemy'].includes(message.mode)) throw new Error('Invalid multiplayer mode');
+          gameState.multiplayerMode = message.mode;
+          this.setStatus(message.mode === 'enemy' ? 'Opponent connected.' : 'Companion connected.');
         } else if (message.type === 'ping' && this.connected) {
           return;
         } else if (message.type === 'sound' && this.role === 'guest') {
@@ -149,7 +158,7 @@ export class CoopSession {
           this.latest = { state: decoded.state, paused: decoded.paused };
           this.onState?.();
         } else if (message.type === 'input' && this.role === 'host') {
-          if (!validInput(message.frame)) throw new Error('Invalid teammate controls');
+          if (!validInput(message.frame)) throw new Error('Invalid remote controls');
           if (message.frame.sequence <= this.sequence) return;
           this.sequence = message.frame.sequence;
           const previous = this.input?.input.intents;
@@ -163,7 +172,7 @@ export class CoopSession {
           this.input = message.frame;
           this.lastInputAt = performance.now();
         } else if (message.type === 'end' && this.role === 'guest') {
-          if (![0, 1].includes(message.winner)) throw new Error('Invalid game result');
+          if (![0, 1, 2].includes(message.winner)) throw new Error('Invalid game result');
           this.onEnd?.(message.winner);
         } else throw new Error('Unexpected co-op message');
       }).catch(error => {
@@ -177,7 +186,7 @@ export class CoopSession {
       this.connection = null;
       this.input = null;
       this.connected = false;
-      this.setStatus('Teammate disconnected. Return to the menu to reconnect.');
+      this.setStatus('Other player disconnected. Return to the menu to reconnect.');
     });
     connection.on('error', error => this.fail(error.message));
   }
@@ -199,6 +208,7 @@ export class CoopSession {
   sendInput(frame: InputFrame): void {
     this.send({ type: 'input', frame });
   }
+  sendMode(): void { this.send({ type: 'mode', mode: gameState.multiplayerMode }); }
   sendSound(name: SfxName, x?: number, y?: number): void {
     this.send({ type: 'sound', name, ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y }) });
   }

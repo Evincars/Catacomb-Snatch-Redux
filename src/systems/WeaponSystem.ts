@@ -40,6 +40,7 @@ function updateWeaponSelection(entity: Entity): void {
 /** Fires player weapons while the shoot input is held, respecting cooldowns. */
 export function updateWeapons(_dt: number): void {
   for (const entity of world.with('position', 'playerInput', 'weapon', 'aimVector')) {
+    if (entity.respawnTicks !== undefined || (entity.health?.current ?? 1) <= 0) continue;
     const pi = entity.playerInput!;
     const aim = entity.aimVector!;
 

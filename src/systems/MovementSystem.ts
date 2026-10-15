@@ -120,6 +120,11 @@ export function updateMovement(level: Level, _dt: number): void {
   for (const entity of allPhysical) {
     const { position, velocity, radius } = entity;
     if (!position || !velocity || !radius) continue;
+    if (entity.respawnTicks !== undefined) {
+      velocity.x = velocity.y = 0;
+      if (entity.bump) entity.bump.x = entity.bump.y = 0;
+      continue;
+    }
 
     const bump = entity.bump;
     const frozen = (entity.freezeTime ?? 0) > 0;
@@ -156,6 +161,7 @@ export function updateMovement(level: Level, _dt: number): void {
   for (const entity of players) {
     const { playerInput: pi, velocity: vel, position: pos, playerStats } = entity;
     if (!pi || !vel || !pos || !playerStats) continue;
+    if (entity.respawnTicks !== undefined || entity.health!.current <= 0) continue;
 
     if ((entity.freezeTime ?? 0) > 0) continue;
 

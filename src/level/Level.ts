@@ -61,7 +61,7 @@ export class Level {
   readonly baseTiles: BaseTile[] = [];
   readonly spawnTiles: SpawnTile[] = [];
   /** Tile rectangles (inclusive) of the players' bases, where no track may be laid. */
-  readonly baseAreas: Array<{ x0: number; y0: number; x1: number; y1: number }> = [];
+  readonly baseAreas: Array<{ x0: number; y0: number; x1: number; y1: number; team?: Team }> = [];
 
   /**
    * Fog of war, stored per tile *corner* on a (width+1) x (height+1) grid so
@@ -203,6 +203,16 @@ export class Level {
 
   inBaseArea(tx: number, ty: number): boolean {
     return this.baseAreas.some((a) => tx >= a.x0 && tx <= a.x1 && ty >= a.y0 && ty <= a.y1);
+  }
+
+  inOwnBase(x: number, y: number, team: Team): boolean {
+    const tx = Math.floor(x / TILE_WIDTH);
+    const ty = Math.floor(y / TILE_HEIGHT);
+    const spawns = team === Team.One ? this.spawnPointsP1 : this.spawnPointsP2;
+    return this.baseAreas.some(a => tx >= a.x0 && tx <= a.x1 && ty >= a.y0 && ty <= a.y1
+      && (a.team === team || a.team === undefined && spawns.some(p =>
+        p.x / TILE_WIDTH >= a.x0 && p.x / TILE_WIDTH < a.x1 + 1
+        && p.y / TILE_HEIGHT >= a.y0 && p.y / TILE_HEIGHT < a.y1 + 1)));
   }
 
   addBaseTile(tileX: number, tileY: number, team: Team, side: 'left' | 'right', img: number): void {

@@ -37,7 +37,7 @@ export function updateBars(gameLayer: Container): void {
   for (const entity of world.with('position', 'health', 'healthBarOffset')) {
     const { current, max } = entity.health!;
     const maxValue = Math.trunc(max);
-    const visible = !entity.removed && current < max && maxValue > 0;
+    const visible = !entity.removed && entity.respawnTicks === undefined && current < max && maxValue > 0;
 
     let bar = entity.healthBar;
     if (!visible) {
@@ -85,7 +85,7 @@ export function updateBars(gameLayer: Container): void {
     const stats = player.playerStats!;
     let bar = player.sprintBar;
 
-    if (stats.sprint <= 0 || player.removed) {
+    if (stats.sprint <= 0 || player.removed || player.respawnTicks !== undefined) {
       if (bar) bar.visible = false;
       continue;
     }

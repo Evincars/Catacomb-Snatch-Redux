@@ -68,27 +68,42 @@ by the game loop with automatic ticker updates disabled, preserving pause, save 
 The renderer uses a 512×384 logical viewport at 2× resolution, with an unscaled stage so tilemaps,
 actors, pointer coordinates and collision tiles all share the same world coordinates.
 
-## Co-op multiplayer and saves
+## Multiplayer and saves
 
-- Choose **Host co-op** from the main menu, copy the invite link, and send it to one teammate.
+- Choose **Host multiplayer** from the main menu and select **Guest: Companion** or
+  **Guest: Enemy**, then copy the invite link and send it to one other player.
   Once connected, the host chooses the map, difficulty and character, then starts the game.
-- The teammate can open the link directly or paste it into **Join co-op**.
-  Both players fight the existing AI on Team One, start at the same spawn, and use the host's
-  character. The guest has a cyan tint so the two players remain distinguishable.
+- The guest can open the link directly or paste it into **Join multiplayer**.
+  Companions fight the existing AI on Team One and start at the same spawn.
+  Enemies use opposing teams and their own spawn points. Both modes use the host's
+  character; the guest has a cyan tint so the two players remain distinguishable.
 - The host runs the authoritative simulation. The guest sends controls, not positions or money;
   compressed world snapshots synchronize players, enemies, buildings, loot, terrain and progression.
   Positional sound effects and game notices are forwarded to the guest as well.
   Each player has their own controls, camera, inventory and purse. Combined carried coins count
   toward victory. A player killed in co-op respawns at the base with full health and brief protection;
   the teammate's game continues. Single-player death behavior is unchanged.
+- In enemy mode, guns and turrets can damage opposing players, turrets, harvesters and
+  carriages. Bombs also damage enemy equipment and destroy enemy-built rails; gunfire
+  cannot destroy rails. Opposing equipment cannot be picked up, drained or upgraded.
+  Carriages are purchased and unload on their own team's base track.
+- Enemy-mode deaths show a centred **10-second respawn countdown**. The dead player
+  cannot move, fire, interact or collect coins until respawning at their own base.
+  Players inside their own base area are protected from opponent damage, but can fire
+  outward. Leaving that area immediately removes this protection.
+- Enemy victory depends on **delivered treasure**, not coins carried or spent.
+  Each full carriage delivery adds **2%**, matching the original versus game, and still
+  drops its 100-coin emerald reward. The bottom HUD shows both teams' delivered percentages.
+  The first team to reach 100% wins. Companions retain combined-carried-coin victory.
 - The host's pause menu pauses the world; the guest's pause menu only stops their own controls.
   A lost connection pauses the host's run, where it can still be saved. Return to the main menu
   and reload that save to reconnect with a new invite.
 - Use **Save game** from the single-player or host pause menu to create a named save or replace
   an existing one. **Saved games** in the main menu supports loading and deleting saves.
   Replacement and deletion ask for confirmation. Saves include the complete world and both
-  players' progression, but not the old network connection. Loading a co-op save creates a fresh
-  host lobby and invite. The guest reconnects into their saved state.
+  players' progression, multiplayer mode, delivered treasure and pending respawn countdowns,
+  but not the old network connection. Loading a multiplayer save creates a fresh
+  host lobby and invite, with the saved mode locked. The guest reconnects into their saved state.
 - Saves use this browser's local storage for this site/origin. Clearing site data removes them,
   and a different browser or device will not have them. Storage and connection errors are shown
   explicitly rather than treated as successful saves or joins.
@@ -97,7 +112,7 @@ PeerJS uses WebRTC data channels and its public PeerServer for signaling. An int
 is needed to establish the session; no application game server is required. Deploy on HTTPS
 (localhost also works). Some restrictive networks/NAT combinations may require a separately
 configured TURN relay; this version does not bundle or operate one. Keep the host tab open.
-Invite links grant access to the session, so share them only with your teammate.
+Invite links grant access to the session, so share them only with the intended player.
 
 ## Original Game
 
