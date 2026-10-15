@@ -102,7 +102,8 @@ export function updateSlides(level: Level): void {
     const bbs = level.getClipBBs(pos.x, pos.y, r.x, r.y);
     bbs.push(...structureBBs(pos.x, pos.y, r.x, r.y, entity));
     move(pos, r, slide.x, slide.y, bbs, true);
-    if (!level.getTileAt(pos.x, pos.y)?.buildable) {
+    const fits = entity.bomb ? level.getTileAt(pos.x, pos.y)?.buildable : level.footprintBuildable(pos.x, pos.y, r.x, r.y);
+    if (!fits) {
       pos.x = from.x;
       pos.y = from.y;
       slide.x = slide.y = 0;

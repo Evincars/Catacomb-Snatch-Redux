@@ -1,4 +1,4 @@
-import { Container, Sprite } from 'pixi.js';
+import { Container, Rectangle, Sprite } from 'pixi.js';
 import { GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
 import type { Scene } from '../game/SceneManager';
 import type { SceneManager } from '../game/SceneManager';
@@ -68,11 +68,21 @@ export class TitleScene implements Scene {
     this.buttons.push(debug);
     this.container.addChild(debug);
 
-    // Version label
-    const ver = makeText('v0.1.0', 0xaaaaaa, 8, 'right');
+    const ver = makeText(`v${__APP_VERSION__}`, 0xaaaaaa, 8, 'right');
     ver.x = GW - 4;
     ver.y = GH - 12;
     this.container.addChild(ver);
+
+    const author = makeText('by Evincars', 0xffcc66, 8, 'left');
+    author.x = 4;
+    author.y = GH - 12;
+    author.eventMode = 'static';
+    author.cursor = 'pointer';
+    author.hitArea = new Rectangle(-3, -3, author.width + 6, 14);
+    author.on('pointerover', () => { author.alpha = 0.7; });
+    author.on('pointerout', () => { author.alpha = 1; });
+    author.on('pointertap', () => { window.open('https://github.com/Evincars', '_blank', 'noopener'); });
+    this.container.addChild(author);
   }
 
   destroy(): void {

@@ -450,6 +450,8 @@ export class InGameScene implements Scene {
     this.darkness.update(this.level);
 
     this.hud.update(this.player, this.level);
+    // The other side's stalls are not for sale to this player, so their prices stay hidden.
+    for (const stall of world.with('shopItem', 'priceLabel')) stall.priceLabel!.visible = stall.team === this.player.team;
     this.respawnLabel.text = this.player.respawnTicks !== undefined
       ? `Respawning in ${Math.ceil(this.player.respawnTicks / 60)}...` : '';
     this.weaponBar.update(this.player);

@@ -140,6 +140,20 @@ export class Level {
     return this.getTile(Math.floor(worldX / TILE_WIDTH), Math.floor(worldY / TILE_HEIGHT));
   }
 
+  /** Whether every tile under a box centred at (x, y) can take a building, so nothing overhangs track or holes. */
+  footprintBuildable(x: number, y: number, rx: number, ry: number): boolean {
+    const x0 = Math.floor((x - rx + 1) / TILE_WIDTH);
+    const x1 = Math.floor((x + rx - 1) / TILE_WIDTH);
+    const y0 = Math.floor((y - ry + 1) / TILE_HEIGHT);
+    const y1 = Math.floor((y + ry - 1) / TILE_HEIGHT);
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        if (!this.getTile(tx, ty)?.buildable) return false;
+      }
+    }
+    return true;
+  }
+
   setTile(x: number, y: number, tile: TileData): void {
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
     this.tileStacks[x + y * this.width].push(tile);

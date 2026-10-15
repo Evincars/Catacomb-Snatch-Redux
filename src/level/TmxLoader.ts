@@ -8,7 +8,7 @@ import { createSpawner } from '../entities/SpawnerFactory';
 import { createBuilding } from '../entities/BuildingFactory';
 import { createShopItem } from '../entities/ShopItemFactory';
 import { createSpikeTrap } from '../entities/SpikeTrapFactory';
-import { LEVELS } from '../game/GameState';
+import { LEVELS, gameState } from '../game/GameState';
 import { loadLevelBitmap, restoreCrackedFloors } from './LevelBitmap';
 
 // TMX tileset firstgid offsets (from LevelUtils.java)
@@ -66,22 +66,40 @@ function entryShift(level: Level, team: Team, flagMinX: number, flagMaxX: number
   return ((minRailX + maxRailX + 1) * TILE_WIDTH) / 2 - ((flagMinX + flagMaxX + 1) * TILE_WIDTH) / 2;
 }
 
+/** Whether the team's own track leaves the base below its flag rather than above it. */
+function railsBelow(level: Level, team: Team, flagMinY: number, flagMaxY: number): boolean {
+  let below = 0;
+  let above = 0;
+  for (let ty = 0; ty < level.height; ty++) {
+    for (let tx = 0; tx < level.width; tx++) {
+      const tile = level.getTile(tx, ty);
+      if (tile?.type !== TileType.PlayerRail || tile.team !== team) continue;
+      if (ty > flagMaxY) below++;
+      else if (ty < flagMinY) above++;
+    }
+  }
+  return below > above;
+}
+
 /**
  * Arranges each base around its spawn flag: weapons stand in a column on the
  * flag's left, turret/harvester/bomb in a row beneath it, and the stumps that
  * fence the base are hidden. The rifle stall is dropped because players
  * start with a rifle. A team with no flag keeps the stalls where the map put them.
  */
-function layoutSpawnAreas(level: Level, shops: PendingShop[], costMod: number): void {
-  const place = (tx: number, ty: number, kind: ShopKind, team: Team) =>
-    createShopItem(tx * TILE_WIDTH + TILE_WIDTH / 2, ty * TILE_HEIGHT + TILE_HEIGHT / 2, kind, team, costMod);
-
+function layoutSpawnAreas(level: Level, shops: PendingShop[], baseCostMod: number): void {
   for (const team of [Team.One, Team.Two]) {
+    const costMod = team === Team.Two && gameState.opponent === 'ai'
+      ? baseCostMod * gameState.aiDifficulty.shopDiscount
+      : baseCostMod;
+    const place = (tx: number, ty: number, kind: ShopKind) =>
+      createShopItem(tx * TILE_WIDTH + TILE_WIDTH / 2, ty * TILE_HEIGHT + TILE_HEIGHT / 2, kind, team, costMod);
+
     const teamShops = shops.filter((s) => s.team === team);
     const flag = level.spawnTiles.filter((t) => t.team === team);
 
     if (flag.length === 0) {
-      for (const s of teamShops) place(s.tx, s.ty, s.kind, team);
+      for (const s of teamShops) place(s.tx, s.ty, s.kind);
       continue;
     }
 
@@ -91,18 +109,20 @@ function layoutSpawnAreas(level: Level, shops: PendingShop[], costMod: number): 
     const maxY = Math.max(...flag.map((t) => t.tileY));
 
     WEAPON_STALLS.filter((k) => teamShops.some((s) => s.kind === k)).forEach((kind, i) =>
-      place(minX - 1, minY + 1 + i, kind, team),
+      place(minX - 1, minY + 1 + i, kind),
     );
     // The flag is four tiles wide but the rail loop at the base's entry only three, so the loop's
     // centre sits half a tile off the flag's. The flag, its shops and the spawn move onto the loop's axis.
     const flagCentreX = ((minX + maxFlagX + 1) * TILE_WIDTH) / 2 + entryShift(level, team, minX, maxFlagX);
     for (const t of flag) t.offsetX = flagCentreX - ((minX + maxFlagX + 1) * TILE_WIDTH) / 2;
-    // The gear row is centred under the flag, as in the original, rather than starting at its edge.
+    // The gear row is centred on the flag, as in the original, rather than starting at its edge,
+    // on the side away from the base's rail loop so it never stands over the track.
     const gear = GEAR_STALLS.filter((k) => teamShops.some((s) => s.kind === k));
+    const gearRow = railsBelow(level, team, minY, maxY) ? minY - 1 : maxY + 1;
     gear.forEach((kind, i) =>
       createShopItem(
         flagCentreX + (i - (gear.length - 1) / 2) * GEAR_SPACING,
-        (maxY + 1) * TILE_HEIGHT + TILE_HEIGHT / 2,
+        gearRow * TILE_HEIGHT + TILE_HEIGHT / 2,
         kind,
         team,
         costMod,

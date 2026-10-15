@@ -129,6 +129,11 @@ Invite links grant access to the session, so share them only with the intended p
   range, damage), so new guns, turrets or harvesters are used without changes to the AI.
 - Difficulty changes reaction time, aim error, fire rate, engagement range, how many turrets and
   carriages it runs, upgrade level, how early it starts laying track, sprinting and when it retreats.
+  Hard and Insane AIs also pay 10% / 20% less in their own shop.
+- The AI plans its track along the shortest route and blasts cracked walls instead of detouring.
+  It never builds on or right beside rails (players can't build on rails either).
+- Each base's turret/harvester/bomb stalls sit on the side of the flag away from its rails. A rival
+  base's prices are hidden and its stalls can't be used.
 
 ## Original Game
 

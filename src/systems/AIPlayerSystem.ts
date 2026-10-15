@@ -45,6 +45,7 @@ const TREASURE_REACH = 32;
 const CARRIAGE_RADIUS = { x: 10, y: 8 };
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const;
 /** Planner cost of a cracked wall in the way, in tiles of track. */
+const BLAST_STEP = 3;
 /** Tiles (on either axis) to keep between itself and a bomb it is about to set off. */
 const BLAST_CLEARANCE = 3;
 const INF = Number.POSITIVE_INFINITY;
@@ -375,14 +376,6 @@ function planRails(level: Level, team: Team): number[] | null {
   const cost = new Float64Array(n).fill(INF);
   const parent = new Int32Array(n).fill(-1);
   const heap = new Heap();
-  // A cracked wall is worth as many plain tiles as the bomb to open it costs in track.
-  let bombCost = INF;
-  for (const stall of q.shopItems) {
-    if (!stall.removed && stall.team === team && SHOP_DEFS[stall.shopItem!.kind].role === 'explosive') {
-      bombCost = Math.min(bombCost, stall.shopItem!.cost);
-    }
-  }
-  const blastStep = Math.max(4, bombCost / railCost());
 
   for (let ty = 0; ty < level.height; ty++) {
     for (let tx = 0; tx < level.width; tx++) {
@@ -406,7 +399,7 @@ function planRails(level: Level, team: Team): number[] | null {
     const t = tx + ty * level.width;
     if (level.inBaseArea(tx, ty)) return INF;
     // A cracked wall can be blasted open, at the price of a bomb.
-    if (tile.destroyable) return blastStep;
+    if (tile.destroyable) return BLAST_STEP;
     if (!tile.buildable || blocked.has(t)) return INF;
     return 1;
   };
@@ -456,7 +449,7 @@ function canPlaceOn(level: Level, t: number, reserved: Set<number>, blocked: Set
   const ty = (t - tx) / level.width;
   const tile = level.getTile(tx, ty);
   if (!tile?.buildable || tile.type === TileType.DropTrap || reserved.has(t) || blocked.has(t)) return false;
-  if (level.inBaseArea(tx, ty)) return false;
+  if (level.inBaseArea(tx, ty) || besideTrack(level, t)) return false;
   // Leave corridors open: at least three passable neighbours.
   let open = 0;
   for (const [dx, dy] of DIRS) if (level.getTile(tx + dx, ty + dy)?.passable) open++;
@@ -620,7 +613,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
 
   // 0. Hands full and something biting: put it down here and fight.
   if (threatened) {
-    setGoal(brain, level, { name: 'stash', tile: field.origin, drop: true, stash: true });
+    stashGoal(level, brain);
     return;
   }
 
@@ -634,13 +627,13 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   }
   if (held?.bomb) {
     // No wall to open from here: set it down out of harm's way and keep it.
-    setGoal(brain, level, { name: 'stash', tile: field.origin, drop: true, stash: true });
+    stashGoal(level, brain);
     return;
   }
   if (held) {
     const t = placementFor(level, entity, brain, held);
     if (t >= 0) setGoal(brain, level, { name: 'place', tile: t, drop: true });
-    else setGoal(brain, level, { name: 'place', tile: field.origin, drop: true });
+    else stashGoal(level, brain);
     return;
   }
 
@@ -840,6 +833,37 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
     }
     if (best >= 0) setGoal(brain, level, { name: 'clear track', tile: best, walk: true });
   }
+}
+
+/** Track, or a tile touching it, where anything set down would hold up carriages. */
+function besideTrack(level: Level, t: number): boolean {
+  if (onTrack(level, t)) return true;
+  const tx = t % level.width;
+  const ty = (t - tx) / level.width;
+  for (const [dx, dy] of DIRS) {
+    const nx = tx + dx;
+    const ny = ty + dy;
+    if (nx >= 0 && ny >= 0 && nx < level.width && ny < level.height && onTrack(level, nx + ny * level.width)) return true;
+  }
+  return false;
+}
+
+/** Puts the load down right here, unless here is on or against the track (or its planned route); then the nearest clear tile. */
+function stashGoal(level: Level, brain: Brain): void {
+  const field = brain.field!;
+  const planned = new Set(brain.railPlan);
+  const clear = (t: number) => tileAt(level, t)?.buildable === true && !besideTrack(level, t) && !planned.has(t);
+  if (clear(field.origin)) {
+    setGoal(brain, level, { name: 'stash', tile: field.origin, drop: true, stash: true });
+    return;
+  }
+  let best = -1;
+  for (let t = 0; t < field.dist.length; t++) {
+    if (field.dist[t] > 8 || !clear(t)) continue;
+    if (best < 0 || field.dist[t] < field.dist[best]) best = t;
+  }
+  if (best >= 0) setGoal(brain, level, { name: 'stash', tile: best, drop: true });
+  else setGoal(brain, level, { name: 'stash', tile: field.origin, drop: true, stash: true });
 }
 
 function onTrack(level: Level, t: number): boolean {

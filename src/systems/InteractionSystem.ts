@@ -51,6 +51,7 @@ export function carriedByPlayer(player: Entity): Entity | null {
 function buy(player: Entity, item: Entity): void {
   const stats = player.playerStats!;
   const { kind, cost } = item.shopItem!;
+  if (item.team !== player.team) return;
 
   if (stats.score < cost) {
     notify(`Need ${cost} coins for ${SHOP_DEFS[kind].label}`);
@@ -235,6 +236,8 @@ function fitsAt(level: Level, building: Entity, x: number, y: number): boolean {
   const tile = level.getTileAt(x, y);
   if (!tile || !tile.buildable) return false;
   const r = building.radius ?? { x: 8, y: 8 };
+  // Bombs may sit on track (they are how rails get blown); other buildings must not overhang it.
+  if (!building.bomb && !level.footprintBuildable(x, y, r.x, r.y)) return false;
   const bb = BB.fromCenter(x, y, r.x, r.y);
   return !level.getClipBBs(x, y, r.x, r.y).some((clip) => clip.intersects(bb));
 }

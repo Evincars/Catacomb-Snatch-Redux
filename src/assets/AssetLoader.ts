@@ -101,7 +101,7 @@ export const ASSETS: AssetManifest = {
     weapon_list: '/art/weapons/weapon_list.png',
 
     // UI / Screen
-    titlescreen:    '/art/screen/TITLESCREEN.png',
+    titlescreen:    '/art/screen/TITLESCREEN_REDUX.png',
     background:     '/art/screen/BACKGROUND.png',
     button:         '/art/screen/button.png',
     level_panel:    '/art/screen/empty_background.png',

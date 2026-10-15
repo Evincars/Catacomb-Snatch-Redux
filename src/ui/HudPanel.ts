@@ -26,8 +26,6 @@ export class HudPanel {
   private xpBar = new Sprite();
   private healthText!: PixelLabel;
   private levelText!: PixelLabel;
-  private expText!: PixelLabel;
-  private nextText!: PixelLabel;
   private coinText!: PixelLabel;
   private scoreText!: PixelLabel;
   /** Versus: the other side's name and progress (left), and this side's (right), with portraits. */
@@ -54,32 +52,26 @@ export class HudPanel {
     panel.y = PANEL_TOP;
     this.container.addChild(panel);
 
-    this.healthBar.x = 311;
-    this.healthBar.y = GAME_HEIGHT - 11;
-    this.container.addChild(this.healthBar);
+    // Original right-hand board: coin and count, star and level over the XP bar, heart and health over its bar.
+    const icon = (key: string, y: number) => {
+      const sprite = new Sprite(getTexture(key));
+      sprite.x = 313;
+      sprite.y = y;
+      this.container.addChild(sprite);
+    };
+    icon('p_coin', GAME_HEIGHT - 71);
+    icon('p_level', GAME_HEIGHT - 54);
+    icon('p_heart', GAME_HEIGHT - 31);
+
+    this.coinText = this.label(330, GAME_HEIGHT - 69);
+    this.levelText = this.label(330, GAME_HEIGHT - 52);
+    this.healthText = this.label(330, GAME_HEIGHT - 29);
 
     this.xpBar.x = 311;
-    this.xpBar.y = GAME_HEIGHT - 29;
-    this.container.addChild(this.xpBar);
-
-    const heart = new Sprite(getTexture('p_heart'));
-    heart.x = 314; heart.y = GAME_HEIGHT - 25;
-    this.container.addChild(heart);
-
-    const coin = new Sprite(getTexture('p_coin'));
-    coin.x = 314; coin.y = GAME_HEIGHT - 43;
-    this.container.addChild(coin);
-
-    // LVL / EXP / NEXT stack, in the green of the original panel.
-    this.addCaption('LVL', GAME_HEIGHT - 72);
-    this.addCaption('EXP', GAME_HEIGHT - 62);
-    this.addCaption('NEXT', GAME_HEIGHT - 52);
-
-    this.levelText = this.label(360, GAME_HEIGHT - 72);
-    this.expText = this.label(360, GAME_HEIGHT - 62);
-    this.nextText = this.label(360, GAME_HEIGHT - 52);
-    this.coinText = this.label(332, GAME_HEIGHT - 42);
-    this.healthText = this.label(332, GAME_HEIGHT - 24);
+    this.xpBar.y = GAME_HEIGHT - 39;
+    this.healthBar.x = 311;
+    this.healthBar.y = GAME_HEIGHT - 16;
+    this.container.addChild(this.xpBar, this.healthBar);
 
     // Team progress toward the target score, bottom-left of the panel.
     this.scoreText = makeText('', 0xffdd44, 10);
@@ -131,13 +123,6 @@ export class HudPanel {
     return t;
   }
 
-  private addCaption(text: string, y: number): void {
-    const t = makeText(text, 0x66dd44, 9);
-    t.x = 314;
-    t.y = y;
-    this.container.addChild(t);
-  }
-
   private barFrame(sheet: string, fraction: number): Texture {
     const f = Math.max(0, Math.min(1, fraction));
     // Frame 0 is a full bar, so the index counts *down* as the value drops.
@@ -177,8 +162,6 @@ export class HudPanel {
       const needed = xpForLevel(stats.level);
       this.xpBar.texture = this.barFrame('panel_xpbar', stats.exp / needed);
       this.levelText.text = `${stats.level}`;
-      this.expText.text = `${stats.exp}`;
-      this.nextText.text = `${Math.max(0, needed - stats.exp)}`;
       this.coinText.text = `${stats.score}`;
 
       const versus = isVersus();
