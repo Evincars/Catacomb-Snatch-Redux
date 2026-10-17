@@ -1,8 +1,9 @@
 import { assetUrl } from '../assets/assetUrl';
 /**
- * Web Audio port of the Java ISoundPlayer. Browsers refuse to start audio
- * before a user gesture, so playback requests made before the first click are
- * dropped and music is restarted by unlock().
+ * Web Audio port of the Java ISoundPlayer. Music is queued as soon as it is
+ * requested and is heard the moment the browser lets the AudioContext run
+ * (immediately if autoplay is allowed, otherwise on the first user gesture).
+ * Sound effects requested while the context is still suspended are dropped.
  */
 
 export const SFX = {
@@ -56,27 +57,34 @@ class SoundPlayer {
   private buffers = new Map<string, AudioBuffer>();
   private music: AudioBufferSourceNode | null = null;
   private currentMusic: string | null = null;
-  private unlocked = false;
+  private currentLoop = true;
   private listener = { x: 0, y: 0 };
 
   sfxVolume = 0.6;
   musicVolume = 0.35;
 
+  /** Number of clips load() fetches, for progress reporting. */
+  readonly clipCount = Object.keys(SFX).length + 2 + MUSIC.background.length;
+
   /** Decodes every clip up front. Safe to call before any user gesture. */
-  async load(): Promise<void> {
+  async load(onClipDone?: () => void): Promise<void> {
     const ctx = this.context();
-    const paths = [...Object.values(SFX), MUSIC.title, MUSIC.end, ...MUSIC.background];
+    // The title theme goes first so the menu music can start while the rest downloads.
+    const paths = [MUSIC.title, ...Object.values(SFX), MUSIC.end, ...MUSIC.background];
 
     await Promise.all(
       paths.map(async (path) => {
         try {
           const res = await fetch(assetUrl(path));
-          if (!res.ok) return;
-          const bytes = await res.arrayBuffer();
-          this.buffers.set(path, await ctx.decodeAudioData(bytes));
+          if (res.ok) {
+            const bytes = await res.arrayBuffer();
+            this.buffers.set(path, await ctx.decodeAudioData(bytes));
+            if (path === this.currentMusic && !this.music) this.playMusic(path, this.currentLoop);
+          }
         } catch {
           // A single unplayable clip must not break the whole game.
         }
+        onClipDone?.();
       }),
     );
   }
@@ -94,13 +102,29 @@ class SoundPlayer {
     return this.ctx;
   }
 
-  /** Call from a click/keypress handler. Resumes the context and starts any pending track. */
+  /**
+   * Tries to start audio right away and otherwise retries on the first user
+   * gesture, which browsers with a strict autoplay policy require.
+   */
+  autoStart(): void {
+    const events = ['pointerdown', 'keydown', 'touchend'] as const;
+    const ctx = this.context();
+    const detach = () => events.forEach((e) => window.removeEventListener(e, unlock, true));
+    const unlock = () => {
+      void ctx.resume();
+      if (ctx.state === 'running') detach();
+    };
+    events.forEach((e) => window.addEventListener(e, unlock, true));
+    ctx.addEventListener('statechange', () => {
+      if (ctx.state === 'running') detach();
+    });
+    void ctx.resume().catch(() => {});
+  }
+
+  /** Call from a click/keypress handler. Resumes the context if the browser suspended it. */
   unlock(): void {
     const ctx = this.context();
     if (ctx.state === 'suspended') void ctx.resume();
-    if (this.unlocked) return;
-    this.unlocked = true;
-    if (this.currentMusic && !this.music) this.playMusic(this.currentMusic, true);
   }
 
   setListener(x: number, y: number): void {
@@ -113,7 +137,7 @@ class SoundPlayer {
     // Interface sounds (no position) of the computer opponent are not heard.
     if (this.muteInterface && (x === undefined || y === undefined)) return;
     this.onEffect?.(name, x, y);
-    if (!this.unlocked) return;
+    if (this.ctx?.state !== 'running') return;
     const buffer = this.buffers.get(SFX[name]);
     if (!buffer) return;
 
@@ -170,10 +194,9 @@ class SoundPlayer {
     this.music?.stop();
     this.music = null;
     this.currentMusic = path;
+    this.currentLoop = loop;
 
-    // Remember the request so unlock() can start it after the first gesture.
-    if (!this.unlocked) return;
-
+    // If the clip is still downloading, load() starts it once decoded.
     const buffer = this.buffers.get(path);
     if (!buffer) return;
 

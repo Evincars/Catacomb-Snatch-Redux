@@ -9,9 +9,24 @@
       body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
       /* Fill as much of the window as the 4:3 game surface allows. */
       canvas { image-rendering: pixelated; width: min(100vw, calc(100vh * 4 / 3)); height: auto; }
+      #loading { position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; background: #000; z-index: 10; }
+      #loading .frame { position: relative; width: min(100vw, calc(100vh * 4 / 3)); aspect-ratio: 4 / 3; }
+      #loading img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+      #loading .progress { position: absolute; left: 20%; right: 20%; bottom: 7%; color: #fff; font: bold clamp(12px, 3vmin, 26px) monospace; text-align: center; text-shadow: 0 0 4px #000, 0 2px 0 #000; }
+      #loading .bar { height: 10px; margin-top: 6px; background: rgba(0, 0, 0, 0.6); border: 2px solid #fff; }
+      #loading .fill { width: 0; height: 100%; background: #f5b82e; }
     </style>
   </head>
   <body>
+    <div id="loading">
+      <div class="frame">
+        <img src="/art/screen/download_screen_redux.png" alt="" />
+        <div class="progress">
+          <span id="loading-text">Loading 0%</span>
+          <div class="bar"><div class="fill" id="loading-fill"></div></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

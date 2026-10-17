@@ -148,10 +148,13 @@ export const ASSETS: AssetManifest = {
 
 const textures = new Map<string, Texture>();
 
-export async function loadAllAssets(): Promise<void> {
+export const ART_COUNT = Object.keys(ASSETS.art).length;
+
+/** @param onProgress receives the fraction (0..1) of art files downloaded so far. */
+export async function loadAllAssets(onProgress?: (fraction: number) => void): Promise<void> {
   const entries = Object.entries(ASSETS.art);
   const bundle = entries.map(([alias, src]) => ({ alias, src: assetUrl(src) }));
-  await Assets.load(bundle);
+  await Assets.load(bundle, onProgress);
 
   for (const [key] of entries) {
     textures.set(key, Assets.get<Texture>(key));
