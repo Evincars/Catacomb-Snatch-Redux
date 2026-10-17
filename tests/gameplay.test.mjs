@@ -14,7 +14,7 @@ const { createBuilding } = await load('entities/BuildingFactory');
 const { createPlayer } = await load('entities/PlayerFactory');
 const { createShopItem } = await load('entities/ShopItemFactory');
 const { updateAIPlayers } = await load('systems/AIPlayerSystem');
-const { updateAI } = await load('systems/AISystem');
+const { updateAI, MAX_CHASERS } = await load('systems/AISystem');
 const { updateTargeting } = await load('systems/TargetingSystem');
 const { updateInteraction, updateCarried } = await load('systems/InteractionSystem');
 const { updateMovement, updateSlides } = await load('systems/MovementSystem');
@@ -23,9 +23,9 @@ const { updateBullets } = await load('systems/BulletSystem');
 const { updateBulletCollision, updateCombatTimers } = await load('systems/CombatSystem');
 const { updateBombs } = await load('systems/BuildingSystem');
 const { updateHoles, overHole } = await load('systems/HoleSystem');
-const { canSpawnMob, updateSpawners } = await load('systems/SpawnerSystem');
+const { canSpawnMob, updateSpawners, MAX_PER_NEST } = await load('systems/SpawnerSystem');
 const { updateRandomSpawner, spawnInitialSpawners } = await load('systems/RandomSpawnerSystem');
-const { updateTreasure } = await load('systems/TreasureSystem');
+const { spawnTreasureGuards } = await load('systems/TreasureSystem');
 const { createSpawner } = await load('entities/SpawnerFactory');
 const { createMob } = await load('entities/MobFactory');
 const { gameState, DIFFICULTIES, AI_DIFFICULTIES } = await load('game/GameState');
@@ -80,6 +80,32 @@ test('occupied carriage purchases are rejected without spending coins', () => {
   assert.equal(p.playerStats.score, 50);
   assert.equal(canSpawnRailDroid(level, centre(5), centre(4)), false);
   assert.equal(canSpawnRailDroid(level, centre(6), centre(4)), true);
+});
+
+test('a player standing inside a carriage is eased out, not thrown across the tile', () => {
+  const level = new Level(12, 8);
+  for (let x = 2; x <= 9; x++) track(level, x, 4);
+  const droid = createRailDroid(centre(5), centre(4), Team.Two);
+  droid.railDroid.dir = 1;
+  const p = createPlayer(centre(5) + 1, centre(4), Team.One);
+  const startX = p.position.x;
+  updateRailDroids(level);
+  assert.ok(Math.abs(p.position.x - startX) <= 3, `shoved ${p.position.x - startX}px in one tick`);
+});
+
+test('a player carrying a building cannot shoot', () => {
+  const p = createPlayer(centre(5), centre(4), Team.One);
+  p.playerInput.shoot = true;
+  p.aimVector = { x: 1, y: 0 };
+  updateWeapons(1);
+  assert.ok([...world.with('bullet')].length > 0, 'an empty-handed player should shoot');
+  for (const b of [...world.with('bullet')]) world.remove(b);
+  p.weapon.currentCooldown = 0;
+  const held = createBuilding(centre(5), centre(4), 'turret', Team.One);
+  world.addComponent(held, 'carriedBy', world.id(p));
+  world.addComponent(p, 'carryingId', world.id(held));
+  updateWeapons(1);
+  assert.equal([...world.with('bullet')].length, 0);
 });
 
 test('carriages stay on centres and connected track through corners and end reversals', () => {
@@ -346,7 +372,7 @@ test('a sustained eight-nest siege pauses reinforcements instead of growing with
     updateMovement(level, 1);
     peak = Math.max(peak, [...world.with('ai')].length);
   }
-  assert.ok(peak <= 16, `eight nests accumulated ${peak} mobs around an undefended player`);
+  assert.ok(peak <= 8 * MAX_PER_NEST, `eight nests accumulated ${peak} mobs around an undefended player`);
 });
 
 test('Normal and Hard have the same bounded populations; only Nightmare is moderately busier', () => {
@@ -360,12 +386,48 @@ test('Normal and Hard have the same bounded populations; only Nightmare is moder
     const level = new Level(128, 128);
     for (let i = 0; i < difficulty.maxMobs; i++) createMob(level, 'bat', centre(i % 16 * 7), centre(Math.floor(i / 16) * 7));
     assert.equal(canSpawnMob(level, 'mummy', centre(115), centre(115)), false, `${difficulty.name} exceeds mob cap`);
-    const pile = createBuilding(centre(115), centre(115), 'treasure');
-    pile.treasure.timer = 0;
-    updateTreasure(level);
-    assert.equal([...world.with('ai')].length, difficulty.maxMobs, 'treasure guards bypassed the mob cap');
     for (const e of [...world]) world.remove(e);
   }
+});
+
+test('treasure guards are placed once by difficulty and never rise again', () => {
+  for (const difficulty of DIFFICULTIES) {
+    gameState.difficulty = difficulty;
+    const level = new Level(40, 40);
+    createBuilding(centre(20), centre(20), 'treasure');
+    spawnTreasureGuards(level);
+    const guards = () => [...world.with('ai')].filter((m) => m.mobType === 'pharao');
+    assert.equal(guards().length, difficulty.pharaohs, difficulty.name);
+    for (const g of guards()) g.removed = true;
+    for (const e of [...world]) if (e.removed) world.remove(e);
+    for (let t = 0; t < 60 * 60 * 2; t++) updateSpawners(level, 1);
+    assert.equal(guards().length, 0, `${difficulty.name} pharaohs respawned`);
+    for (const e of [...world]) world.remove(e);
+  }
+});
+
+test('a nest stops at its brood limit', () => {
+  const level = new Level(40, 40);
+  gameState.difficulty = DIFFICULTIES[3];
+  const nest = createSpawner(centre(20), centre(20), 'snake');
+  nest.freezeTime = 0;
+  for (let t = 0; t < 60 * 60 * 5; t++) {
+    nest.spawner.timer = Math.min(nest.spawner.timer, 1);
+    updateSpawners(level, 1);
+    // Far from home, the brood still counts against its nest.
+    for (const m of world.with('ai')) m.position.x = nest.position.x + 500 + (m.position.x % 7) * 20;
+  }
+  assert.equal([...world.with('ai')].length, MAX_PER_NEST);
+});
+
+test('only the nearest few mobs keep chasing one player', () => {
+  const level = new Level(40, 40);
+  const p = createPlayer(centre(20), centre(20), Team.One);
+  const mobs = [];
+  for (let i = 0; i < 10; i++) mobs.push(createMob(level, 'bat', p.position.x + 20 + i * 8, p.position.y));
+  for (let t = 0; t < 120; t++) updateAI(level, 1);
+  const chasing = mobs.filter((m) => m.ai.type === 'chase');
+  assert.equal(chasing.length, MAX_CHASERS);
 });
 
 test('Hard mobs regenerate health, Normal mobs do not', () => {
@@ -476,6 +538,23 @@ test('Normal AI places three spaced home turrets before rails, then stages one c
   assert.ok(firstRail >= 0, 'never started track construction');
   assert.ok(firstCarriage >= 0, 'never staged a carriage');
   assert.equal([...world.with('railDroid')].length, 1, 'overpopulated the short unfinished line');
+});
+
+test('AI stands a turret beside laid track far from home', () => {
+  const level = new Level(32, 32);
+  level.setSpawnPoints(Team.Two, [{ x: centre(14), y: centre(5) }]);
+  track(level, 14, 8, TileType.PlayerRail);
+  for (let y = 9; y <= 22; y++) track(level, 14, y);
+  createBuilding(centre(14), centre(28), 'treasure');
+  createShopItem(centre(12), centre(4), 'turret', Team.Two);
+  createShopItem(centre(10), centre(4), 'harvester', Team.Two);
+  for (const x of [10, 14, 18]) createBuilding(centre(x), centre(5), 'turret', Team.Two);
+  computer(14, 5, 1500).aiPlayer.difficulty = 'Normal';
+  for (let tick = 0; tick < 6000; tick++) aiTick(level);
+  const far = [...world.with('turret')].filter((e) => e.carriedBy === undefined
+    && Math.hypot(e.position.x - centre(14), e.position.y - centre(5)) > 8 * 32);
+  assert.ok(far.length >= 1, 'no turret was stood along the track');
+  assert.ok(far.every((e) => Math.abs(e.position.x - centre(14)) <= 4 * 32), 'turret not beside the track');
 });
 
 test('an unfinished long line gets only two staggered carriages, not a purchase burst', () => {

@@ -51,6 +51,8 @@ const BLAST_STEP = 3;
 /** Tiles (on either axis) to keep between itself and a bomb it is about to set off. */
 const BLAST_CLEARANCE = 3;
 const BASE_DEFENSE_RANGE = 7 * TILE_WIDTH;
+/** Uncovered tiles of laid track that call for a turret of their own. */
+const GUARD_SPAN = 4;
 const CARRIAGE_DELAY = 60 * 10;
 const INF = Number.POSITIVE_INFINITY;
 
@@ -524,7 +526,10 @@ function placementFor(level: Level, entity: Entity, brain: Brain, held: Entity):
   if (held.harvester) {
     // Beside a turret that has no harvester of its own yet, so its kills are collected.
     const harvesters = ownBuildings(entity, 'economy');
-    for (const turret of ownBuildings(entity, 'defense')) {
+    const home = level.getRandomSpawnPoint(entity.team ?? Team.Two);
+    // Turrets out on the track come first: their kills lie farthest from the base's own harvesters.
+    const byDistance = (b: Entity) => (home ? dist(b.position!, home) : 0);
+    for (const turret of [...ownBuildings(entity, 'defense')].sort((a, b) => byDistance(b) - byDistance(a))) {
       const reach = held.harvester.radius;
       if (harvesters.some((h) => dist(h.position!, turret.position!) < reach)) continue;
       const t = near(turret.position!, TILE_WIDTH * 0.9, Math.max(TILE_WIDTH * 1.5, reach * 0.8));
@@ -536,7 +541,7 @@ function placementFor(level: Level, entity: Entity, brain: Brain, held: Entity):
     if (t >= 0) return t;
   }
   if (held.turret && brain.front) {
-    const t = near(brain.front, TILE_WIDTH * 1.5, held.turret.radius * 0.6);
+    const t = near(brain.front, TILE_WIDTH * 1.4, Math.max(held.turret.radius * 0.6, TILE_WIDTH * 2.5));
     if (t >= 0) return t;
   }
   if (held.turret) {
@@ -797,7 +802,23 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
     }
   }
 
-  // 4d. Money beyond what the rest of the track needs is spent rather than left piling up:
+  // 4d. The laid track gets turrets of its own, so the line is held as it grows. Track laying
+  // pauses while it saves up for one; each such turret later gets a harvester from step 7.
+  let savingForGuard = false;
+  const unguarded = needsBaseDefense ? null : unguardedTrack(level, entity, field);
+  if (unguarded && unguarded.count >= GUARD_SPAN && turrets.length < profile.maxTurrets + profile.trackTurrets) {
+    const stall = cheapestStall(entity, 'defense');
+    if (stall && reachable(level, brain, stall) < INF) {
+      if (spare >= stall.shopItem!.cost) {
+        brain.front = unguarded;
+        useGoal(level, brain, 'buy defense', stall);
+        return;
+      }
+      savingForGuard = true;
+    }
+  }
+
+  // 4e. Money beyond what the rest of the track needs is spent rather than left piling up:
   // a harvester for each turret, more turrets, then upgrades. Only on a trip home or while the
   // track is held up, so it does not crowd out laying track.
   const atHome = home !== null && home !== undefined
@@ -831,7 +852,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   }
 
   // 5. Track to the treasure, once the base has its opening defenses.
-  if (!needsBaseDefense && brain.age >= profile.railDelay && plan && plan.length > 0 && money >= railCost()) {
+  if (!needsBaseDefense && !savingForGuard && brain.age >= profile.railDelay && plan && plan.length > 0 && money >= railCost()) {
     const next = plan[0];
     if (Number.isFinite(field.dist[next])) {
       setGoal(brain, level, { name: 'rail', tile: next, build: 'rail' });
@@ -905,6 +926,32 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
     }
     if (best >= 0) setGoal(brain, level, { name: 'clear track', tile: best, walk: true });
   }
+}
+
+/**
+ * Laid track of ours beyond the home defences that no turret of ours covers: its
+ * length in tiles and the stretch farthest from home, where the next turret goes.
+ */
+function unguardedTrack(level: Level, entity: Entity, field: Field): { x: number; y: number; count: number } | null {
+  const home = level.getRandomSpawnPoint(entity.team ?? Team.Two);
+  if (!home) return null;
+  const turrets = ownBuildings(entity, 'defense').filter((b) => b.turret && alive(b) && b.carriedBy === undefined);
+  let best: { x: number; y: number } | null = null;
+  let bestDist = BASE_DEFENSE_RANGE;
+  let count = 0;
+  for (let t = 0; t < level.width * level.height; t++) {
+    const tile = tileAt(level, t);
+    if (!tile || !RAIL_TYPES.has(tile.type) || tile.team !== entity.team || !Number.isFinite(field.dist[t])) continue;
+    const p = { x: centreX(t % level.width), y: centreY(Math.floor(t / level.width)) };
+    const d = dist(p, home);
+    if (d <= BASE_DEFENSE_RANGE || turrets.some((b) => dist(b.position!, p) < b.turret!.radius * 0.85)) continue;
+    count++;
+    if (d > bestDist) {
+      best = p;
+      bestDist = d;
+    }
+  }
+  return best ? { ...best, count } : null;
 }
 
 /** Track, or a tile touching it, where anything set down would hold up carriages. */

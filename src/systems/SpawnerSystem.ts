@@ -9,6 +9,8 @@ const DENSITY_RADIUS = 5 * TILE_WIDTH;
 const PLAYER_PRESSURE_RADIUS = 6 * TILE_WIDTH;
 /** No mob of the same kind may already stand this close to a new one. */
 const SAME_KIND_CLEARANCE = 8;
+/** A nest stops producing while this many of its own mobs are alive, wherever they have wandered to. */
+export const MAX_PER_NEST = 3;
 /** Mobs appear within a couple of pixels of their nest. */
 const SPAWN_JITTER = 5;
 
@@ -55,8 +57,16 @@ function spawnFrom(level: Level, nest: Entity): void {
   const x = clamp(pos.x + (Math.random() - 0.5) * SPAWN_JITTER, 0, level.width * TILE_WIDTH);
   const y = clamp(pos.y + (Math.random() - 0.5) * SPAWN_JITTER, 0, level.height * TILE_HEIGHT);
 
+  const nestId = world.id(nest);
+  let brood = 0;
+  for (const mob of world.with('ai', 'spawnedBy')) {
+    if (mob.spawnedBy === nestId && !mob.removed && (mob.health?.current ?? 1) > 0) brood++;
+  }
+  if (brood >= MAX_PER_NEST) return;
+
   if (!canSpawnMob(level, s.mobType, x, y)) return;
-  createMob(level, s.mobType, x, y);
+  const mob = createMob(level, s.mobType, x, y);
+  if (nestId !== undefined) world.addComponent(mob, 'spawnedBy', nestId);
   s.spawnCount++;
 }
 

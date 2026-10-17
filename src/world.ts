@@ -235,7 +235,7 @@ export type Entity = {
   stepTimer?: number;
   /** Ticks before a player may lay or lift another rail. */
   railCooldown?: number;
-  /** The treasure pile; `timer` counts down to the next pharaoh rising beside it. */
+  /** Marks the treasure pile. `timer` is unused and only kept so older saves still validate. */
   treasure?: { timer: number };
   chest?: { value: number; opened: boolean; disappearTicks: number };
   spikeTrap?: { phase: number; ticks: number };
@@ -292,6 +292,9 @@ export type Entity = {
     /** Ticks until a ranged mob spits again. */
     shootIn?: number;
   };
+
+  /** The nest that produced this mob, which caps how many of its mobs live at once. */
+  spawnedBy?: number;
 
   // --- spawner ---
   spawner?: {

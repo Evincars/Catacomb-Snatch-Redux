@@ -124,9 +124,10 @@ function meetPlayers(level: Level, droid: Entity, players: Entity[], dir: number
     const w = walkDir(player);
     if (w.x * DX[dir] + w.y * DY[dir] < 0) return true;
 
-    // Shove the player just clear of where the carriage is about to be.
+    // Shove the player just clear of where the carriage is about to be. A player already
+    // overlapping it is eased out over a few ticks instead of being flung across the tile.
     const gap = ahead - (DX[dir] !== 0 ? droid.radius!.x + player.radius!.x : droid.radius!.y + player.radius!.y);
-    const push = Math.max(0, SPEED - gap);
+    const push = Math.min(SPEED * 2, Math.max(0, SPEED - gap));
     const bx = pp.x;
     const by = pp.y;
     const r = player.radius!;

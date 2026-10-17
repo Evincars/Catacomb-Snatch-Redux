@@ -16,7 +16,6 @@ import { updateBuffs } from './BuffSystem';
 import { updateLoot } from './LootSystem';
 import { updateSpawners } from './SpawnerSystem';
 import { updateRandomSpawner } from './RandomSpawnerSystem';
-import { updateTreasure } from './TreasureSystem';
 import { updateDeath } from './DeathSystem';
 import { updateHoles } from './HoleSystem';
 import { updateDropTraps } from './DropTrapSystem';
@@ -75,7 +74,6 @@ export const SIMULATION: readonly System[] = [
   ({ dt }) => updateHarvesters(dt),
   ({ level, dt }) => updateSpawners(level, dt),
   ({ level }) => updateRandomSpawner(level),
-  ({ level }) => updateTreasure(level),
   // Bombs must detonate before DeathSystem clears the destroyed entity.
   ({ level, dt }) => updateBombs(level, dt),
   () => updateExplosions(),

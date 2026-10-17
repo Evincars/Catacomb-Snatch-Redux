@@ -5,8 +5,14 @@ import type { Level } from '../level/Level';
 import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 
 const WALK_SPEED = 0.8;
-const CHASE_RANGE = 12 * TILE_WIDTH;
-const GIVE_UP_RANGE = CHASE_RANGE * 1.5;
+/** Java's ATTACK_RADIUS: mummies notice a player 128px away, pharaohs 5 tiles away. */
+const CHASE_RANGE = 4 * TILE_WIDTH;
+const CHASE_RANGE_BY_TYPE: Record<string, number> = { pharao: 5 * TILE_WIDTH };
+const GIVE_UP_FACTOR = 1.5;
+/** No more mobs than this hound one player at once; the farthest ones drop out, so a trail never grows into a mob. */
+export const MAX_CHASERS = 4;
+/** Ticks a mob that was dropped from a pursuit ignores players. */
+const DROPPED_COOLDOWN = 180;
 /** A* is far too costly to run per mob per frame, so routes are reused. */
 const REPATH_TICKS = 20;
 const RETARGET_TICKS = 15;
@@ -32,7 +38,40 @@ function nearestPlayer(from: { x: number; y: number }): Entity | null {
   return nearest;
 }
 
+function chaseRange(entity: Entity): number {
+  return CHASE_RANGE_BY_TYPE[entity.mobType ?? ''] ?? CHASE_RANGE;
+}
+
+/** Counts each target's pursuers and releases the farthest ones beyond MAX_CHASERS. */
+function limitChasers(): Map<number, number> {
+  const byTarget = new Map<number, Array<{ entity: Entity; dist: number }>>();
+  for (const entity of world.with('position', 'ai')) {
+    const ai = entity.ai!;
+    if (ai.type !== 'chase' || ai.targetId === undefined) continue;
+    const target = world.entity(ai.targetId);
+    if (!target?.position) continue;
+    let list = byTarget.get(ai.targetId);
+    if (!list) byTarget.set(ai.targetId, list = []);
+    list.push({ entity, dist: distSqr(entity.position!, target.position) });
+  }
+
+  const counts = new Map<number, number>();
+  for (const [targetId, list] of byTarget) {
+    list.sort((a, b) => a.dist - b.dist);
+    for (const { entity } of list.slice(MAX_CHASERS)) {
+      const ai = entity.ai!;
+      ai.type = 'wander';
+      ai.path = undefined;
+      ai.retargetIn = DROPPED_COOLDOWN;
+      entity.chasing = false;
+    }
+    counts.set(targetId, Math.min(list.length, MAX_CHASERS));
+  }
+  return counts;
+}
+
 export function updateAI(level: Level, _dt: number): void {
+  const chasers = limitChasers();
   for (const entity of world.with('position', 'velocity', 'ai', 'radius')) {
     const ai = entity.ai!;
     const pos = entity.position!;
@@ -64,9 +103,12 @@ export function updateAI(level: Level, _dt: number): void {
       if (ai.retargetIn <= 0) {
         ai.retargetIn = RETARGET_TICKS;
         const target = nearestPlayer(pos);
-        if (target && distSqr(pos, target.position!) < CHASE_RANGE ** 2) {
+        const targetId = target ? world.id(target) : undefined;
+        if (target && targetId !== undefined && distSqr(pos, target.position!) < chaseRange(entity) ** 2
+          && (chasers.get(targetId) ?? 0) < MAX_CHASERS) {
+          chasers.set(targetId, (chasers.get(targetId) ?? 0) + 1);
           ai.type = 'chase';
-          ai.targetId = world.id(target);
+          ai.targetId = targetId;
           ai.repathIn = 0;
           ai.path = undefined;
         }
@@ -83,7 +125,7 @@ export function updateAI(level: Level, _dt: number): void {
       continue;
     }
 
-    if (distSqr(pos, target.position) > GIVE_UP_RANGE ** 2) {
+    if (distSqr(pos, target.position) > (chaseRange(entity) * GIVE_UP_FACTOR) ** 2) {
       ai.type = 'wander';
       ai.path = undefined;
       entity.chasing = false;

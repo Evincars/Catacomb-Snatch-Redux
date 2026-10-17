@@ -51,7 +51,8 @@ export function updateWeapons(_dt: number): void {
 
     // Firing is deliberately allowed while frozen — Java calls handleWeaponFire
     // regardless of freezeTime, so being hit never disarms the player.
-    if (!pi.shoot || entity.falling) continue;
+    // Both hands are full while carrying a building.
+    if (!pi.shoot || entity.falling || entity.carryingId !== undefined) continue;
     if (weapon.currentCooldown > 0) continue;
     if (aim.x === 0 && aim.y === 0) continue;
 

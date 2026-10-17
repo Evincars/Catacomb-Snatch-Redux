@@ -116,7 +116,7 @@ const COMPONENTS = new Set([
   'animation', 'playerInput', 'playerStats', 'weapon', 'weaponInventory', 'money', 'buffs', 'loot', 'bullet',
   'building', 'tooltip', 'upgradable', 'rangeTicks', 'ephemeral', 'falling', 'stepTimer', 'railCooldown',
   'treasure', 'chest', 'spikeTrap', 'railDroid', 'explosion', 'dustTimer', 'shopItem', 'carriedBy', 'targetId',
-  'carryingId', 'turret', 'bomb', 'harvester', 'facing8', 'ai', 'spawner', 'minimapIcon', 'minimapColor', 'tile',
+  'carryingId', 'turret', 'bomb', 'harvester', 'facing8', 'ai', 'spawner', 'spawnedBy', 'minimapIcon', 'minimapColor', 'tile',
 ]);
 const REQUIRED: Record<string, Record<string, 'number' | 'string' | 'boolean' | 'object'>> = {
   position: { x: 'number', y: 'number' }, velocity: { x: 'number', y: 'number' },
@@ -214,6 +214,7 @@ export class WorldReplica {
       next.carriedBy = reference(next.carriedBy);
       next.carryingId = reference(next.carryingId);
       next.targetId = reference(next.targetId);
+      next.spawnedBy = reference(next.spawnedBy);
       if (next.bullet) next.bullet.ownerId = reference(next.bullet.ownerId) ?? -1;
       if (next.ai) next.ai.targetId = reference(next.ai.targetId);
       if (next.harvester) next.harvester.emptyingPlayerId = reference(next.harvester.emptyingPlayerId);

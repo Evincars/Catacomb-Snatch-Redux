@@ -13,14 +13,16 @@ export type Difficulty = {
   mobDensity: number;
   maxMobs: number;
   maxSpawners: number;
+  /** Pharaohs placed around each treasure pile when the level opens; they never respawn. */
+  pharaohs: number;
   coinLifespan: number;
 };
 
 export const DIFFICULTIES: Difficulty[] = [
-  { name: 'Easy',      healthMod: 0.5, strengthMod: 0.5, spawnMod: 1.5,  shopCostMod: 0.5, mobRegen: false, regenInterval: 25, mobDensity: 4, maxMobs: 60, maxSpawners: 10, coinLifespan: 30 },
-  { name: 'Normal',    healthMod: 1.0, strengthMod: 1.0, spawnMod: 1.25, shopCostMod: 1.0, mobRegen: false, regenInterval: 25, mobDensity: 6, maxMobs: 95, maxSpawners: 15, coinLifespan: 20 },
-  { name: 'Hard',      healthMod: 3.0, strengthMod: 3.0, spawnMod: 1.25, shopCostMod: 1.5, mobRegen: true,  regenInterval: 25, mobDensity: 6, maxMobs: 95, maxSpawners: 15, coinLifespan: 15 },
-  { name: 'Nightmare', healthMod: 6.0, strengthMod: 5.0, spawnMod: 1.0,  shopCostMod: 2.5, mobRegen: true,  regenInterval: 15, mobDensity: 7, maxMobs: 115, maxSpawners: 18, coinLifespan: 10 },
+  { name: 'Easy',      healthMod: 0.5, strengthMod: 0.5, spawnMod: 1.5,  shopCostMod: 0.5, mobRegen: false, regenInterval: 25, mobDensity: 4, maxMobs: 60, maxSpawners: 10, pharaohs: 1, coinLifespan: 30 },
+  { name: 'Normal',    healthMod: 1.0, strengthMod: 1.0, spawnMod: 1.25, shopCostMod: 1.0, mobRegen: false, regenInterval: 25, mobDensity: 6, maxMobs: 95, maxSpawners: 15, pharaohs: 2, coinLifespan: 20 },
+  { name: 'Hard',      healthMod: 3.0, strengthMod: 3.0, spawnMod: 1.25, shopCostMod: 1.5, mobRegen: true,  regenInterval: 25, mobDensity: 6, maxMobs: 95, maxSpawners: 15, pharaohs: 3, coinLifespan: 15 },
+  { name: 'Nightmare', healthMod: 6.0, strengthMod: 5.0, spawnMod: 1.0,  shopCostMod: 2.5, mobRegen: true,  regenInterval: 15, mobDensity: 7, maxMobs: 115, maxSpawners: 18, pharaohs: 4, coinLifespan: 10 },
 ];
 
 export type LevelInfo = {
@@ -65,6 +67,8 @@ export type AIDifficulty = {
   drainThreshold: number;
   maxCarriages: number;
   maxTurrets: number;
+  /** Further turrets, beyond maxTurrets, it stands along its laid track. */
+  trackTurrets: number;
   /** Highest level it will upgrade its buildings to. */
   maxUpgrade: number;
   /** Ticks into the match before it starts laying track. */
@@ -80,13 +84,13 @@ export type AIDifficulty = {
 
 export const AI_DIFFICULTIES: AIDifficulty[] = [
   { name: 'Easy',   thinkTicks: 45, reactionTicks: 40, aimError: 0.35, engageRange: 150, fireRate: 0.45, drainThreshold: 400,
-    maxCarriages: 1, maxTurrets: 2, maxUpgrade: 1, railDelay: 60 * 90, sprint: false, retreatHealth: 0.25, reserve: 100, shopDiscount: 1 },
+    maxCarriages: 1, maxTurrets: 2, trackTurrets: 1, maxUpgrade: 1, railDelay: 60 * 90, sprint: false, retreatHealth: 0.25, reserve: 100, shopDiscount: 1 },
   { name: 'Normal', thinkTicks: 25, reactionTicks: 22, aimError: 0.18, engageRange: 200, fireRate: 0.8,  drainThreshold: 250,
-    maxCarriages: 2, maxTurrets: 3, maxUpgrade: 2, railDelay: 60 * 40, sprint: true,  retreatHealth: 0.3,  reserve: 50,  shopDiscount: 1 },
+    maxCarriages: 2, maxTurrets: 3, trackTurrets: 2, maxUpgrade: 2, railDelay: 60 * 40, sprint: true,  retreatHealth: 0.3,  reserve: 50,  shopDiscount: 1 },
   { name: 'Hard',   thinkTicks: 12, reactionTicks: 10, aimError: 0.09, engageRange: 240, fireRate: 1,    drainThreshold: 150,
-    maxCarriages: 3, maxTurrets: 4, maxUpgrade: 3, railDelay: 60 * 15, sprint: true,  retreatHealth: 0.35, reserve: 25,  shopDiscount: 0.9 },
+    maxCarriages: 3, maxTurrets: 4, trackTurrets: 3, maxUpgrade: 3, railDelay: 60 * 15, sprint: true,  retreatHealth: 0.35, reserve: 25,  shopDiscount: 0.9 },
   { name: 'Insane', thinkTicks: 6,  reactionTicks: 4,  aimError: 0.04, engageRange: 280, fireRate: 1,    drainThreshold: 100,
-    maxCarriages: 4, maxTurrets: 5, maxUpgrade: 3, railDelay: 0,       sprint: true,  retreatHealth: 0.4,  reserve: 0,   shopDiscount: 0.8 },
+    maxCarriages: 4, maxTurrets: 5, trackTurrets: 4, maxUpgrade: 3, railDelay: 0,       sprint: true,  retreatHealth: 0.4,  reserve: 0,   shopDiscount: 0.8 },
 ];
 
 // Mutable singleton, carries choices across scenes

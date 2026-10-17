@@ -165,7 +165,8 @@ export class InGameScene implements Scene {
     this.container.addChild(this.overlay);
     this.respawnLabel.x = GAME_WIDTH / 2;
     this.respawnLabel.y = VIEW_HEIGHT / 2 - 18;
-    this.overlay.addChild(this.respawnLabel);
+    // Not on the overlay: pausing destroys everything there, which used to take the label with it.
+    this.hudLayer.addChild(this.respawnLabel);
 
     this.levelView = buildLevelView(this.level);
     this.levelView.zIndex = -Number.MAX_SAFE_INTEGER;
