@@ -62,7 +62,7 @@ export function validateWorld(value: unknown): asserts value is WorldState {
     || s.settings.opponent === 'ai' && s.settings.multiplayerMode === 'enemy'
     || s.settings.aiDifficulty !== undefined && !AI_DIFFICULTIES.some(d => d.name === s.settings!.aiDifficulty)
     || s.settings.aiCharacter !== undefined && !CHARACTERS.includes(s.settings.aiCharacter)
-    || !DIFFICULTIES.some(d => JSON.stringify(d) === JSON.stringify(s.settings!.difficulty))
+    || !DIFFICULTIES.some(d => d.name === s.settings?.difficulty?.name)
     || !LEVELS.some(m => m.path === s.settings!.map?.path && m.name === s.settings!.map?.name)
     || typeof s.settings.debug !== 'boolean'
     || s.settings.multiplayerMode !== undefined && !['companion', 'enemy'].includes(s.settings.multiplayerMode)
@@ -244,7 +244,8 @@ export class WorldReplica {
 export function restoreSettings(state: WorldState): void {
   gameState.multiplayerMode = state.settings.multiplayerMode ?? 'companion';
   gameState.selectedCharacter = state.settings.character;
-  gameState.difficulty = state.settings.difficulty;
+  // Old saves must not restore the superseded, effectively unlimited spawn rates.
+  gameState.difficulty = DIFFICULTIES.find(d => d.name === state.settings.difficulty.name)!;
   gameState.selectedLevel = state.settings.map;
   gameState.debug = state.settings.debug;
   gameState.opponent = state.settings.opponent ?? 'none';

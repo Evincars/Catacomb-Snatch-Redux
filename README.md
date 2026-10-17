@@ -39,8 +39,27 @@ npm run build
 
 The dev server runs at `http://localhost:5173`. The production build outputs to `dist/`.
 
+In VS Code, run the **Dev server** task to serve at `http://localhost:5199/`.
+Keep the server running while playing: map previews and levels are fetched when opened.
+
 ### Gameplay fidelity
 
+- Mob populations are bounded, with mixed-species density checks across tile-region boundaries
+  and fewer reinforcements while a player is surrounded. Normal and Hard use the same spawn
+  amounts (up to 95 mobs, with random nests capped at 15); Hard retains health regeneration.
+  Nightmare raises those limits only modestly to 115 mobs and 18 nests; Easy uses 60 and 10.
+  A new map opens with half the nest cap already placed (never near either base), and a
+  random nest placement is attempted every second. Map-authored nests are preserved and still
+  obey the mob limits. Nests produce every 5 seconds on Normal/Hard, 4 on Nightmare and 6 on Easy.
+- The computer opponent is the default. The opponent and AI level picked on the difficulty
+  screen are saved with the other settings; a map without a second base, an enemy match or a
+  loaded save no longer clears them. Pressing the AI level button also selects the computer.
+- When nests can reach its base, the AI builds its home turrets before saving for a bomb;
+  walled into its base with nothing to fight, it buys the bomb first.
+- Feet may overhang a hole's edge by 6 pixels while still supported by adjacent floor.
+  Falling starts only when the small foot-support box is fully over a hole.
+- The level picker puts Cancel on the left and Start on the right. Pause > Main asks for
+  confirmation before discarding the match; Cancel or Escape returns to the still-paused game.
 - Base equipment prices are 75 coins for a turret, 300 for a harvester, and 500 for a bomb.
   Turret and harvester upgrades cost 500 and 1,000 coins. Prices retain the selected difficulty multiplier.
 - Bombs make a quick, 25-pixel directional toss rather than snapping to a tile centre.
@@ -141,6 +160,11 @@ Invite links grant access to the session, so share them only with the intended p
   the bomb's price before spending on other equipment. Even Easy retreats when badly hurt;
   all difficulties flee lit bombs and only deliberately ignite them from outside the blast.
   It never builds on or right beside rails (players can't build on rails either).
+- Opening defenses take priority over rail construction: two home turrets on Easy and three on
+  Normal/Hard/Insane, spaced around the base without obstructing its tracks. Bombs can still open
+  a sealed exit when needed. Carriages are staged on connected unfinished lines from six outward
+  rail tiles, sized roughly one per twelve tiles and limited to two before reaching treasure.
+  Purchases are spaced ten seconds apart and retain each AI difficulty's fleet limit.
 - Each base's turret/harvester/bomb stalls sit on the side of the flag away from its rails. A rival
   base's prices are hidden and its stalls can't be used.
 

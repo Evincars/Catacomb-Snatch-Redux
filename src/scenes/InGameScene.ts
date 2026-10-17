@@ -64,6 +64,7 @@ export class InGameScene implements Scene {
   private weaponBar = new WeaponBar();
 
   private paused = false;
+  private mainConfirmation: Container | null = null;
   private hostPaused = false;
   private wasConnected = false;
   private replica = new WorldReplica();
@@ -92,7 +93,8 @@ export class InGameScene implements Scene {
     this.onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Escape' || this.finished) return;
       // Escape backs out of a sub-screen first, and only then closes the pause menu.
-      if (this.manager.hasOverlay) this.manager.escapeOverlay();
+      if (this.mainConfirmation) this.closeMainConfirmation();
+      else if (this.manager.hasOverlay) this.manager.escapeOverlay();
       else this.togglePause();
     };
     window.addEventListener('keydown', this.onKeyDown);
@@ -139,7 +141,8 @@ export class InGameScene implements Scene {
       if (coop.role === 'guest') throw new Error('Waiting for the host world');
       const { path } = gameState.selectedLevel;
       if (!path) throw new Error('This level has no map file.');
-      if (gameState.opponent === 'ai' && gameState.multiplayerMode !== 'enemy') {
+      if (gameState.opponentChoice === 'ai' && gameState.multiplayerMode !== 'enemy') {
+        gameState.opponent = 'ai';
         // The computer never plays the same character as the people.
         const others = CHARACTERS.filter(c => c !== gameState.selectedCharacter);
         gameState.aiCharacter = others[Math.floor(Math.random() * others.length)];
@@ -328,6 +331,7 @@ export class InGameScene implements Scene {
 
   private togglePause(): void {
     this.paused = !this.paused;
+    this.mainConfirmation = null;
     this.overlay.removeChildren().forEach((c) => c.destroy({ children: true }));
     const canvas = this.app.canvas as HTMLCanvasElement;
     this.crosshair.graphics.visible = !this.paused;
@@ -360,7 +364,7 @@ export class InGameScene implements Scene {
         },
       }] : []),
       ...(coop.role !== 'guest' ? [{ label: 'Debug', action: () => this.enableDebug() }] : []),
-      { label: 'Main', action: () => this.manager.goto('title') },
+      { label: 'Main', action: () => this.confirmMainMenu() },
       { label: 'Exit Game', action: () => this.exitGame() },
     ];
 
@@ -373,6 +377,45 @@ export class InGameScene implements Scene {
       button.onPress = action;
       this.overlay.addChild(button);
     });
+  }
+
+  private closeMainConfirmation(): void {
+    this.mainConfirmation?.destroy({ children: true });
+    this.mainConfirmation = null;
+  }
+
+  private confirmMainMenu(): void {
+    if (this.mainConfirmation) return;
+    const dialog = new Container();
+    this.mainConfirmation = dialog;
+    const dim = new Graphics();
+    dim.rect(0, 0, GAME_WIDTH, GAME_HEIGHT).fill({ color: 0x000000, alpha: 0.85 });
+    dim.eventMode = 'static';
+    dialog.addChild(dim);
+    const panel = new Graphics();
+    panel.rect(90, 112, GAME_WIDTH - 180, 148).fill(0x241a13).stroke({ color: 0x8b613d, width: 2 });
+    dialog.addChild(panel);
+    const title = makeText('RETURN TO MAIN MENU?', 0xffdd88, 16, 'center');
+    title.x = GAME_WIDTH / 2;
+    title.y = 130;
+    dialog.addChild(title);
+    const warning = makeText(coop.role === 'guest'
+      ? 'You will disconnect from the match.\nUnsaved progress may be lost.'
+      : 'Unsaved progress will be lost.\nCancel to return and save your game.', 0xffffff, 10, 'center');
+    warning.x = GAME_WIDTH / 2;
+    warning.y = 163;
+    dialog.addChild(warning);
+    const cancel = new PixelButton('Cancel', 126, 26);
+    cancel.x = GAME_WIDTH / 2 - 136;
+    cancel.y = 215;
+    cancel.onPress = () => this.closeMainConfirmation();
+    dialog.addChild(cancel);
+    const leave = new PixelButton('Main Menu', 126, 26);
+    leave.x = GAME_WIDTH / 2 + 10;
+    leave.y = 215;
+    leave.onPress = () => this.manager.goto('title');
+    dialog.addChild(leave);
+    this.overlay.addChild(dialog);
   }
 
   /** Testing aid: fills the purse and stops the coin target from ending the run. */

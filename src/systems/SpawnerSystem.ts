@@ -5,11 +5,8 @@ import { createMob, mobRadius } from '../entities/MobFactory';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { gameState } from '../game/GameState';
 
-/** Mob cap for the whole level: 1500 plus 500 scaled by difficulty strength (Java maxMonsters). */
-const BASE_MOB_CAP = 1500;
-const MOB_CAP_PER_STRENGTH = 500;
-/** Side, in tiles, of the square regions the per-difficulty density limit applies to. */
-const DENSITY_TILES = 5;
+const DENSITY_RADIUS = 5 * TILE_WIDTH;
+const PLAYER_PRESSURE_RADIUS = 6 * TILE_WIDTH;
 /** No mob of the same kind may already stand this close to a new one. */
 const SAME_KIND_CLEARANCE = 8;
 /** Mobs appear within a couple of pixels of their nest. */
@@ -19,19 +16,16 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
-function canSpawnAt(level: Level, type: string, x: number, y: number): boolean {
+export function canSpawnMob(level: Level, type: string, x: number, y: number): boolean {
   const tile = level.getTileAt(x, y);
   if (!tile || !tile.passable || tile.type === TileType.Hole) return false;
 
   const r = mobRadius(type);
-  const cellW = DENSITY_TILES * TILE_WIDTH;
-  const cellH = DENSITY_TILES * TILE_HEIGHT;
-  const cellX = Math.floor(x / cellW);
-  const cellY = Math.floor(y / cellH);
+  const mobs = [...world.with('position', 'radius', 'ai')].filter((m) => !m.removed && (m.health?.current ?? 1) > 0);
 
   let total = 0;
   let inRegion = 0;
-  for (const mob of world.with('position', 'radius', 'ai')) {
+  for (const mob of mobs) {
     total++;
     const mp = mob.position;
     if (
@@ -41,11 +35,17 @@ function canSpawnAt(level: Level, type: string, x: number, y: number): boolean {
     ) {
       return false;
     }
-    if (Math.floor(mp.x / cellW) === cellX && Math.floor(mp.y / cellH) === cellY) inRegion++;
+    if (Math.hypot(mp.x - x, mp.y - y) < DENSITY_RADIUS) inRegion++;
   }
 
   const difficulty = gameState.difficulty;
-  if (total >= BASE_MOB_CAP + MOB_CAP_PER_STRENGTH * difficulty.strengthMod) return false;
+  if (total >= difficulty.maxMobs) return false;
+  for (const player of world.with('position', 'playerInput')) {
+    const p = player.position!;
+    if (Math.hypot(p.x - x, p.y - y) > PLAYER_PRESSURE_RADIUS * 2) continue;
+    if (mobs.filter((m) => Math.hypot(m.position.x - p.x, m.position.y - p.y) < PLAYER_PRESSURE_RADIUS).length
+      >= difficulty.mobDensity * 2) return false;
+  }
   return inRegion < difficulty.mobDensity;
 }
 
@@ -55,7 +55,7 @@ function spawnFrom(level: Level, nest: Entity): void {
   const x = clamp(pos.x + (Math.random() - 0.5) * SPAWN_JITTER, 0, level.width * TILE_WIDTH);
   const y = clamp(pos.y + (Math.random() - 0.5) * SPAWN_JITTER, 0, level.height * TILE_HEIGHT);
 
-  if (!canSpawnAt(level, s.mobType, x, y)) return;
+  if (!canSpawnMob(level, s.mobType, x, y)) return;
   createMob(level, s.mobType, x, y);
   s.spawnCount++;
 }
@@ -66,6 +66,7 @@ function spawnFrom(level: Level, nest: Entity): void {
  */
 export function updateSpawners(level: Level, _dt: number): void {
   for (const nest of world.with('position', 'spawner')) {
+    if (nest.removed || (nest.health?.current ?? 1) <= 0) continue;
     const s = nest.spawner!;
     if (s.spawnCount >= s.maxSpawns) continue;
     // A nest being carried around stays shut.

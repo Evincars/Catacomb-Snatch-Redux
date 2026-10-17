@@ -14,6 +14,7 @@ const { createBuilding } = await load('entities/BuildingFactory');
 const { createPlayer } = await load('entities/PlayerFactory');
 const { createShopItem } = await load('entities/ShopItemFactory');
 const { updateAIPlayers } = await load('systems/AIPlayerSystem');
+const { updateAI } = await load('systems/AISystem');
 const { updateTargeting } = await load('systems/TargetingSystem');
 const { updateInteraction, updateCarried } = await load('systems/InteractionSystem');
 const { updateMovement, updateSlides } = await load('systems/MovementSystem');
@@ -21,7 +22,14 @@ const { updateWeapons } = await load('systems/WeaponSystem');
 const { updateBullets } = await load('systems/BulletSystem');
 const { updateBulletCollision, updateCombatTimers } = await load('systems/CombatSystem');
 const { updateBombs } = await load('systems/BuildingSystem');
-const { gameState, DIFFICULTIES } = await load('game/GameState');
+const { updateHoles, overHole } = await load('systems/HoleSystem');
+const { canSpawnMob, updateSpawners } = await load('systems/SpawnerSystem');
+const { updateRandomSpawner, spawnInitialSpawners } = await load('systems/RandomSpawnerSystem');
+const { updateTreasure } = await load('systems/TreasureSystem');
+const { createSpawner } = await load('entities/SpawnerFactory');
+const { createMob } = await load('entities/MobFactory');
+const { gameState, DIFFICULTIES, AI_DIFFICULTIES } = await load('game/GameState');
+const { captureWorld, validateWorld, restoreSettings } = await load('game/WorldState');
 
 const centre = (t) => t * 32 + 16;
 const put = (level, x, y, type, extra = {}) => level.setTile(x, y, { ...createTile(type), ...extra });
@@ -54,6 +62,8 @@ beforeEach(() => {
   gameState.opponent = 'ai';
   gameState.difficulty = DIFFICULTIES[1];
   gameState.debug = false;
+  gameState.multiplayerMode = 'companion';
+  gameState.aiDifficulty = AI_DIFFICULTIES[1];
 });
 
 test('occupied carriage purchases are rejected without spending coins', () => {
@@ -194,6 +204,21 @@ test('Easy buys, places and safely detonates a bomb before its rail delay', () =
   assert.equal([...world.with('turret')].length, 0, 'spent the escape budget on a turret');
 });
 
+test('a base exposed to nests gets its home turret before the bomb fund on a walled route', () => {
+  const level = new Level(20, 20);
+  for (let x = 0; x < level.width; x++) put(level, x, 10, TileType.Wall, { destroyable: true });
+  track(level, 9, 4, TileType.PlayerRail);
+  level.setSpawnPoints(Team.Two, [{ x: centre(9), y: centre(3) }]);
+  createBuilding(centre(9), centre(16), 'treasure');
+  createShopItem(centre(8), centre(3), 'bomb', Team.Two);
+  createShopItem(centre(10), centre(3), 'turret', Team.Two);
+  const nest = createSpawner(centre(17), centre(7), 'bat');
+  nest.spawner.timer = 1e9;
+  computer(9, 3, 100);
+  for (let tick = 0; tick < 1800 && [...world.with('turret')].length === 0; tick++) aiTick(level);
+  assert.equal([...world.with('turret')].length, 1, 'saved for the bomb while nests could reach the base');
+});
+
 test('Easy interrupts an ongoing purchase to retreat when badly hurt', () => {
   const level = new Level(24, 16);
   level.setSpawnPoints(Team.Two, [{ x: centre(3), y: centre(5) }]);
@@ -250,4 +275,245 @@ test('Easy immediately flees a lit bomb, even while carrying equipment', () => {
   for (let t = 0; t < 65; t++) aiTick(level);
   assert.equal(ai.health.current, ai.health.max);
   assert.ok(ai.position.x < centre(8) || ai.position.y !== centre(8), 'did not flee the bomb');
+});
+
+test('hole edges support the feet on all four sides, but not deep inside the hole', () => {
+  const level = new Level(12, 12);
+  put(level, 5, 5, TileType.Hole);
+  const p = createPlayer(centre(5), centre(5), Team.One);
+  for (const [x, y] of [[165, 176], [187, 176], [176, 165], [176, 187], [165, 165]]) {
+    p.position = { x, y };
+    assert.equal(overHole(level, p), false, `lost footing on edge ${x},${y}`);
+    updateHoles(level);
+    assert.equal(p.falling, undefined);
+  }
+  p.position = { x: 167, y: 176 };
+  assert.equal(overHole(level, p), true);
+  updateHoles(level);
+  assert.ok(p.falling);
+});
+
+test('adjacent hole tiles do not provide false support at their seam; flying and held entities are safe', () => {
+  const level = new Level(12, 12);
+  put(level, 5, 5, TileType.Hole);
+  put(level, 6, 5, TileType.Hole);
+  const p = createPlayer(192, centre(5), Team.One);
+  const bat = createMob(level, 'bat', 192, centre(5));
+  const held = createBuilding(192, centre(5), 'bomb', Team.One);
+  world.addComponent(held, 'carriedBy', world.id(p));
+  updateHoles(level);
+  assert.ok(p.falling);
+  assert.equal(bat.removed, undefined);
+  assert.equal(held.removed, undefined);
+});
+
+test('Normal spawn pressure spans grid boundaries and counts mixed species', () => {
+  const level = new Level(32, 32);
+  for (let i = 0; i < gameState.difficulty.mobDensity; i++) {
+    createMob(level, i % 2 ? 'snake' : 'bat', 330 + i * 15, 330);
+  }
+  assert.equal(canSpawnMob(level, 'mummy', 310, 310), false);
+  for (const mob of world.with('ai')) mob.removed = true;
+  assert.equal(canSpawnMob(level, 'mummy', 310, 310), true, 'removed mobs should not consume population');
+});
+
+test('nearby nests pause while the player is already surrounded', () => {
+  const level = new Level(40, 40);
+  const p = createPlayer(centre(12), centre(12), Team.One);
+  for (let i = 0; i < gameState.difficulty.mobDensity * 2; i++) {
+    createMob(level, 'snake', p.position.x + 25 + i * 3, p.position.y);
+  }
+  // Outside the nest's local density radius, but still feeding the same fight.
+  assert.equal(canSpawnMob(level, 'mummy', centre(22), centre(12)), false);
+});
+
+test('a sustained eight-nest siege pauses reinforcements instead of growing without bound', () => {
+  const level = new Level(64, 64);
+  const p = createPlayer(centre(32), centre(32), Team.One);
+  // The player deliberately does not shoot: reinforcement pressure must work
+  // without depending on kills to keep the base usable.
+  for (let i = 0; i < 8; i++) {
+    const angle = i * Math.PI / 4;
+    const nest = createSpawner(p.position.x + Math.cos(angle) * 288, p.position.y + Math.sin(angle) * 288,
+      ['bat', 'snake', 'mummy'][i % 3]);
+    nest.freezeTime = 0;
+    nest.spawner.timer = 1 + i * 30;
+  }
+  let peak = 0;
+  for (let tick = 0; tick < 60 * 120; tick++) {
+    updateSpawners(level, 1);
+    updateAI(level, 1);
+    updateMovement(level, 1);
+    peak = Math.max(peak, [...world.with('ai')].length);
+  }
+  assert.ok(peak <= 16, `eight nests accumulated ${peak} mobs around an undefended player`);
+});
+
+test('Normal and Hard have the same bounded populations; only Nightmare is moderately busier', () => {
+  const [, normal, hard, nightmare] = DIFFICULTIES;
+  for (const key of ['maxMobs', 'maxSpawners', 'mobDensity', 'spawnMod']) assert.equal(hard[key], normal[key], key);
+  assert.ok(nightmare.maxMobs <= normal.maxMobs * 1.25);
+  assert.ok(nightmare.maxSpawners <= normal.maxSpawners * 1.25);
+  assert.ok(nightmare.mobDensity <= normal.mobDensity * 1.25);
+  for (const difficulty of DIFFICULTIES) {
+    gameState.difficulty = difficulty;
+    const level = new Level(128, 128);
+    for (let i = 0; i < difficulty.maxMobs; i++) createMob(level, 'bat', centre(i % 16 * 7), centre(Math.floor(i / 16) * 7));
+    assert.equal(canSpawnMob(level, 'mummy', centre(115), centre(115)), false, `${difficulty.name} exceeds mob cap`);
+    const pile = createBuilding(centre(115), centre(115), 'treasure');
+    pile.treasure.timer = 0;
+    updateTreasure(level);
+    assert.equal([...world.with('ai')].length, difficulty.maxMobs, 'treasure guards bypassed the mob cap');
+    for (const e of [...world]) world.remove(e);
+  }
+});
+
+test('Hard mobs regenerate health, Normal mobs do not', () => {
+  const level = new Level(12, 12);
+  for (const index of [1, 2]) {
+    gameState.difficulty = DIFFICULTIES[index];
+    const mob = createMob(level, 'mummy', centre(5), centre(5));
+    mob.health.current = 1;
+    mob.regenTimer = 1;
+    updateCombatTimers(1);
+    assert.equal(mob.health.current, index === 2 ? 2 : 1);
+    world.remove(mob);
+  }
+});
+
+test('nest output respects the original interval and ignores dead nests', () => {
+  const level = new Level(20, 20);
+  const nest = createSpawner(centre(8), centre(8), 'mummy');
+  nest.freezeTime = 0;
+  nest.spawner.timer = 1;
+  updateSpawners(level, 1);
+  assert.equal(nest.spawner.spawnCount, 1);
+  assert.equal(nest.spawner.timer, 300, 'Normal nests should wait five seconds');
+  for (const mob of [...world.with('ai')]) world.remove(mob);
+  for (let t = 0; t < 299; t++) updateSpawners(level, 1);
+  assert.equal(nest.spawner.spawnCount, 1);
+  updateSpawners(level, 1);
+  assert.equal(nest.spawner.spawnCount, 2);
+  nest.health.current = 0;
+  nest.spawner.timer = 1;
+  updateSpawners(level, 1);
+  assert.equal(nest.spawner.spawnCount, 2);
+});
+
+test('random nests replenish each second, stay away from home, and stop at the nest cap', () => {
+  const level = new Level(96, 96);
+  level.setSpawnPoints(Team.One, [{ x: centre(48), y: centre(48) }]);
+  for (let t = 0; t < 59; t++) updateRandomSpawner(level);
+  assert.equal([...world.with('spawner')].length, 0);
+  for (let t = 0; t < 60000; t++) updateRandomSpawner(level);
+  const nests = [...world.with('spawner')];
+  assert.equal(nests.length, gameState.difficulty.maxSpawners);
+  for (const nest of nests) assert.ok(Math.hypot(nest.position.x - centre(48), nest.position.y - centre(48)) >= 256);
+});
+
+test('a new map opens with half the nest cap, all clear of both homes', () => {
+  const level = new Level(96, 96);
+  level.setSpawnPoints(Team.One, [{ x: centre(48), y: centre(80) }]);
+  level.setSpawnPoints(Team.Two, [{ x: centre(48), y: centre(15) }]);
+  spawnInitialSpawners(level);
+  const nests = [...world.with('spawner')];
+  assert.equal(nests.length, Math.ceil(gameState.difficulty.maxSpawners / 2));
+  for (const nest of nests) {
+    for (const team of [Team.One, Team.Two]) {
+      const home = level.getRandomSpawnPoint(team);
+      assert.ok(Math.hypot(nest.position.x - home.x, nest.position.y - home.y) >= 256);
+    }
+  }
+});
+
+test('old saves adopt current spawn limits rather than restoring the former unlimited settings', () => {
+  const p = createPlayer(centre(5), centre(5), Team.One);
+  world.addComponent(p, 'playerSlot', 'host');
+  const state = captureWorld(new Level(12, 12));
+  state.settings.difficulty = { ...state.settings.difficulty, mobDensity: 100000, spawnMod: 0.25 };
+  delete state.settings.difficulty.maxMobs;
+  delete state.settings.difficulty.maxSpawners;
+  validateWorld(state);
+  restoreSettings(state);
+  assert.equal(gameState.difficulty, DIFFICULTIES[1]);
+});
+
+test('Normal AI places three spaced home turrets before rails, then stages one carriage on an unfinished line', () => {
+  const level = new Level(32, 32);
+  level.setSpawnPoints(Team.Two, [{ x: centre(14), y: centre(5) }]);
+  track(level, 14, 8, TileType.PlayerRail);
+  for (let y = 9; y <= 15; y++) track(level, 14, y);
+  createBuilding(centre(14), centre(28), 'treasure');
+  createShopItem(centre(12), centre(4), 'turret', Team.Two);
+  const ai = computer(14, 5, 1500);
+  ai.aiPlayer.difficulty = 'Normal';
+  let firstRail = -1;
+  let firstCarriage = -1;
+  let turretsAtFirstTransport = 0;
+  for (let tick = 0; tick < 3400; tick++) {
+    aiTick(level);
+    updateRailDroids(level);
+    if (firstRail < 0 && level.getTile(14, 16).type === TileType.Rail) {
+      firstRail = tick;
+      turretsAtFirstTransport = [...world.with('turret')].filter((e) => e.carriedBy === undefined).length;
+    }
+    if (firstCarriage < 0 && [...world.with('railDroid')].length > 0) {
+      firstCarriage = tick;
+      turretsAtFirstTransport = [...world.with('turret')].filter((e) => e.carriedBy === undefined).length;
+      assert.notEqual(level.getTile(14, 26).type, TileType.Rail, 'waited until the line reached treasure');
+    }
+    if (firstRail >= 0 && firstCarriage >= 0) break;
+  }
+  const turrets = [...world.with('turret')].filter((e) => e.carriedBy === undefined);
+  assert.equal(turrets.length, 3);
+  assert.equal(turretsAtFirstTransport, 3, 'started transport before securing home');
+  for (const turret of turrets) {
+    assert.ok(Math.hypot(turret.position.x - centre(14), turret.position.y - centre(5)) <= 224 + 26);
+    for (const other of turrets) if (turret !== other) {
+      assert.ok(Math.hypot(turret.position.x - other.position.x, turret.position.y - other.position.y) >= 54);
+    }
+  }
+  assert.ok(firstRail >= 0, 'never started track construction');
+  assert.ok(firstCarriage >= 0, 'never staged a carriage');
+  assert.equal([...world.with('railDroid')].length, 1, 'overpopulated the short unfinished line');
+});
+
+test('an unfinished long line gets only two staggered carriages, not a purchase burst', () => {
+  const level = new Level(36, 40);
+  level.setSpawnPoints(Team.Two, [{ x: centre(14), y: centre(5) }]);
+  track(level, 14, 8, TileType.PlayerRail);
+  for (let y = 9; y <= 25; y++) track(level, 14, y);
+  createBuilding(centre(14), centre(37), 'treasure');
+  const ai = computer(14, 5, 400);
+  ai.aiPlayer.difficulty = 'Normal';
+  // Other expenditures are unavailable so only the carriage strategy is measured.
+  const buys = [];
+  let count = 0;
+  for (let tick = 0; tick < 1700; tick++) {
+    aiTick(level);
+    updateRailDroids(level);
+    const next = [...world.with('railDroid')].length;
+    if (next > count) {
+      buys.push(tick);
+      count = next;
+    }
+  }
+  assert.equal(buys.length, 2);
+  assert.ok(buys[1] - buys[0] >= 600, `carriage purchase burst: ${buys}`);
+  assert.notEqual(level.getTile(14, 26).type, TileType.Rail);
+});
+
+test('isolated rails do not inflate the AI fleet for a short connected line', () => {
+  const level = new Level(32, 32);
+  level.setSpawnPoints(Team.Two, [{ x: centre(14), y: centre(5) }]);
+  track(level, 14, 8, TileType.PlayerRail);
+  for (let y = 9; y <= 11; y++) track(level, 14, y);
+  for (let y = 15; y <= 25; y++) {
+    for (let x = 18; x <= 22; x++) track(level, x, y);
+  }
+  createBuilding(centre(14), centre(28), 'treasure');
+  const ai = computer(14, 5, 200);
+  ai.aiPlayer.difficulty = 'Normal';
+  for (let tick = 0; tick < 300; tick++) aiTick(level);
+  assert.equal([...world.with('railDroid')].length, 0);
 });

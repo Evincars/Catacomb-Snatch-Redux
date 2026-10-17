@@ -13,6 +13,7 @@ import { world, q, Team } from '../world';
 import type { Entity } from '../world';
 import type { Level } from '../level/Level';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
+import { railJoins } from '../level/RailLayout';
 import { AI_DIFFICULTIES, isVersus } from '../game/GameState';
 import type { AIDifficulty } from '../game/GameState';
 import { WEAPON_STATS } from '../entities/WeaponStats';
@@ -49,6 +50,8 @@ const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const;
 const BLAST_STEP = 3;
 /** Tiles (on either axis) to keep between itself and a bomb it is about to set off. */
 const BLAST_CLEARANCE = 3;
+const BASE_DEFENSE_RANGE = 7 * TILE_WIDTH;
+const CARRIAGE_DELAY = 60 * 10;
 const INF = Number.POSITIVE_INFINITY;
 
 type Goal = {
@@ -98,6 +101,7 @@ type Brain = {
   /** Tiles of track to lay, from the base outward, and tiles reserved for it. */
   railPlan: number[];
   railDone: boolean;
+  lastCarriageAt: number;
   /** Our own explosive, put down to clear a wall, waiting to be shot. */
   blastId?: number;
   /** Bomb put down in a hurry to fight, to be picked up again. */
@@ -108,6 +112,9 @@ type Brain = {
 };
 
 const brains = new WeakMap<Entity, Brain>();
+if (import.meta.env?.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __aiBrain: (e: Entity) => Brain | undefined }).__aiBrain = (e) => brains.get(e);
+}
 
 function brainOf(entity: Entity): Brain {
   let brain = brains.get(entity);
@@ -116,7 +123,7 @@ function brainOf(entity: Entity): Brain {
       age: 0, think: 0, field: null, goal: null, path: [], reaction: 0, jitter: 0,
       trigger: false, triggerTicks: 0, swapTicks: 0,
       lastX: entity.position!.x, lastY: entity.position!.y, stuck: 0, sidestep: null,
-      railPlan: [], railDone: false, blacklist: new Map(),
+      railPlan: [], railDone: false, lastCarriageAt: -CARRIAGE_DELAY, blacklist: new Map(),
     };
     brains.set(entity, brain);
   }
@@ -457,6 +464,34 @@ function canPlaceOn(level: Level, t: number, reserved: Set<number>, blocked: Set
   return open >= 3;
 }
 
+function baseTurrets(level: Level, entity: Entity): Entity[] {
+  const home = level.getRandomSpawnPoint(entity.team ?? Team.Two);
+  return home ? ownBuildings(entity, 'defense').filter((b) => alive(b) && dist(b.position!, home) <= BASE_DEFENSE_RANGE) : [];
+}
+
+function baseDefenseSpot(level: Level, entity: Entity, brain: Brain): number {
+  const home = level.getRandomSpawnPoint(entity.team ?? Team.Two);
+  if (!home) return -1;
+  const field = brain.field!;
+  const reserved = new Set(brain.railPlan);
+  const { blocked } = obstacles(level);
+  const turrets = baseTurrets(level, entity);
+  let best = -1;
+  let bestScore = INF;
+  for (let t = 0; t < field.dist.length; t++) {
+    if (!Number.isFinite(field.dist[t]) || !canPlaceOn(level, t, reserved, blocked)) continue;
+    const p = { x: centreX(t % level.width), y: centreY(Math.floor(t / level.width)) };
+    const d = dist(p, home);
+    if (d > BASE_DEFENSE_RANGE - 26 || turrets.some((b) => dist(b.position!, p) < TILE_WIDTH * 2.5)) continue;
+    const score = d / TILE_WIDTH + field.dist[t] * 0.25;
+    if (score < bestScore) {
+      best = t;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 /** Where a carried building should go, judged by what it does. */
 function placementFor(level: Level, entity: Entity, brain: Brain, held: Entity): number {
   const field = brain.field!;
@@ -495,6 +530,10 @@ function placementFor(level: Level, entity: Entity, brain: Brain, held: Entity):
       const t = near(turret.position!, TILE_WIDTH * 0.9, Math.max(TILE_WIDTH * 1.5, reach * 0.8));
       if (t >= 0) return t;
     }
+  }
+  if (held.turret && baseTurrets(level, entity).length < Math.min(3, profileOf(entity).maxTurrets)) {
+    const t = baseDefenseSpot(level, entity, brain);
+    if (t >= 0) return t;
   }
   if (held.turret && brain.front) {
     const t = near(brain.front, TILE_WIDTH * 1.5, held.turret.radius * 0.6);
@@ -599,6 +638,11 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   // Money is put by for the bomb, rather than spent on extras.
   const saving = wall >= 0 && brain.blastId === undefined && brain.looseBombId === undefined && !held?.bomb && explosive ? explosive.shopItem!.cost : 0;
   const spare = money - profile.reserve - saving;
+  const defenseStall = cheapestStall(entity, 'defense');
+  const defenseSpot = defenseStall && reachable(level, brain, defenseStall) < INF
+    && baseTurrets(level, entity).length < Math.min(3, profile.maxTurrets)
+    ? baseDefenseSpot(level, entity, brain) : -1;
+  const needsBaseDefense = defenseSpot >= 0;
 
   const danger = [...world.with('position', 'bomb')].find((b) => !b.removed && b.carriedBy === undefined
     && b.bomb!.lit && !clearOfBlast(entity, b));
@@ -624,6 +668,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   // Keep going with an interaction that is under way.
   const g = brain.goal;
   if (g && brain.age - g.since < GOAL_TIMEOUT && !g.walk && !g.huntId && !(threatened && !g.stash)
+    && !(needsBaseDefense && g.build)
     && goalStillValid(level, entity, brain, g)) {
     brain.path = pathTo(field, g.tile);
     if (brain.path.length > 0 || field.dist[g.tile] === 0) return;
@@ -673,6 +718,19 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   if (brain.looseBombId !== undefined && wall >= 0 && mobsNear(level, entity, 120) === 0) {
     useGoal(level, brain, 'fetch bomb', world.entity(brain.looseBombId)!);
     return;
+  }
+
+  if (needsBaseDefense) {
+    // Home turrets come before savings for a bomb when nests can reach the base: on maps whose
+    // route is walled with cracked stone the bomb fund would otherwise starve it for good.
+    // Walled in with nothing to fight, the bomb that opens the way comes first.
+    const exposed = [...q.spawners].some((s) => hostile(entity, s)
+      && walkDistance(level, field, s.position!.x, s.position!.y) < INF);
+    const stall = stallFor(entity, 'defense', exposed ? money : money - saving);
+    if (stall && reachable(level, brain, stall) < INF) {
+      useGoal(level, brain, 'secure base', stall);
+      return;
+    }
   }
 
   if (wall >= 0 && brain.blastId === undefined && brain.looseBombId === undefined) {
@@ -761,20 +819,22 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
     return;
   }
 
-  // 5. Track to the treasure, a piece at a time, blasting cracked walls on the way.
-  if (brain.age >= profile.railDelay && plan && plan.length > 0 && money >= railCost()) {
-    const next = plan[0];
-    if (Number.isFinite(field.dist[next])) {
-      setGoal(brain, level, { name: 'rail', tile: next, build: 'rail' });
+  // Stage a small fleet as the connected line grows, not only after it reaches treasure.
+  const desiredCarriages = carriageDemand(level, entity, profile);
+  if (!needsBaseDefense && desiredCarriages > ownCarriages(entity) && money >= carriageCost()
+    && brain.age - brain.lastCarriageAt >= CARRIAGE_DELAY) {
+    const spot = carriageSpot(level, entity, field);
+    if (spot >= 0) {
+      setGoal(brain, level, { name: 'carriage', tile: spot, build: 'carriage' });
       return;
     }
   }
 
-  // 6. Carriages, once the line is complete.
-  if (brain.railDone && ownCarriages(entity) < profile.maxCarriages && money >= carriageCost()) {
-    const spot = carriageSpot(level, entity, field);
-    if (spot >= 0) {
-      setGoal(brain, level, { name: 'carriage', tile: spot, build: 'carriage' });
+  // 5. Track to the treasure, once the base has its opening defenses.
+  if (!needsBaseDefense && brain.age >= profile.railDelay && plan && plan.length > 0 && money >= railCost()) {
+    const next = plan[0];
+    if (Number.isFinite(field.dist[next])) {
+      setGoal(brain, level, { name: 'rail', tile: next, build: 'rail' });
       return;
     }
   }
@@ -1037,6 +1097,40 @@ function ownCarriages(entity: Entity): number {
   return count;
 }
 
+function carriageDemand(level: Level, entity: Entity, profile: AIDifficulty): number {
+  const connected = new Set<number>();
+  const queue: number[] = [];
+  for (let ty = 0; ty < level.height; ty++) {
+    for (let tx = 0; tx < level.width; tx++) {
+      const tile = level.getTile(tx, ty);
+      if (tile?.type !== TileType.PlayerRail || tile.team !== entity.team) continue;
+      const t = tx + ty * level.width;
+      connected.add(t);
+      queue.push(t);
+    }
+  }
+  for (let i = 0; i < queue.length; i++) {
+    const cur = queue[i];
+    const x = cur % level.width;
+    const y = Math.floor(cur / level.width);
+    for (const [dx, dy] of DIRS) {
+      if (!railJoins(level, x, y, dx, dy)) continue;
+      const tile = level.getTile(x + dx, y + dy)!;
+      if (tile.team !== undefined && tile.team !== entity.team) continue;
+      const t = x + dx + (y + dy) * level.width;
+      if (!connected.has(t)) {
+        connected.add(t);
+        queue.push(t);
+      }
+    }
+  }
+  const outward = queue.filter((t) => tileAt(level, t)?.type === TileType.Rail).length;
+  const treasure = treasureOf();
+  const reachesTreasure = treasure !== null && [...treasureReachTiles(level, treasure)].some((t) => connected.has(t));
+  if (!reachesTreasure && outward < 6) return 0;
+  return Math.min(profile.maxCarriages, reachesTreasure ? profile.maxCarriages : 2, Math.max(1, Math.ceil(outward / 12)));
+}
+
 /** A tile of the team's own base track with no carriage on it. */
 function carriageSpot(level: Level, entity: Entity, field: Field): number {
   const props = [...world.with('position')].filter((e) => !e.removed && e.carriedBy === undefined
@@ -1227,6 +1321,7 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
       if (ready && aimAtNothing(entity)) {
         aimed = true;
         pi.intents.build = true;
+        if (goal.build === 'carriage') brain.lastCarriageAt = brain.age;
       }
       brain.goal = null;
       brain.think = Math.min(brain.think, 6);

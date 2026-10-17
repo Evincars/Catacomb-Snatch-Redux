@@ -10,16 +10,23 @@ import { spawnFx } from '../entities/FxFactory';
 export const FALL_TICKS = 60;
 const FEMALE_CHARACTERS = ['countess_cruller', 'duchess_donut'];
 
+/** Feet can overhang an edge while any part of their small support box has floor under it. */
+export function overHole(level: Level, entity: Entity): boolean {
+  const p = entity.position!;
+  const rx = Math.min(6, entity.radius?.x ?? 0);
+  const ry = Math.min(6, entity.radius?.y ?? 0);
+  return [-rx, rx].every((dx) => [-ry, ry].every((dy) =>
+    level.getTileAt(p.x + dx, p.y + dy)?.type === TileType.Hole));
+}
+
 /**
  * Anything that walks onto a hole falls in. Mobs and buildings are simply lost;
  * a player drops what they carry, scatters half their coins and respawns.
  */
 export function updateHoles(level: Level): void {
   for (const entity of world.with('position', 'health')) {
-    if (entity.removed || entity.mobType === 'bat' || entity.respawnTicks !== undefined) continue;
-
-    const tile = level.getTileAt(entity.position!.x, entity.position!.y);
-    if (tile?.type !== TileType.Hole) continue;
+    if (entity.removed || entity.carriedBy !== undefined || entity.mobType === 'bat' || entity.respawnTicks !== undefined) continue;
+    if (!overHole(level, entity)) continue;
 
     if (entity.playerInput) {
       if (!entity.falling) startFall(entity);

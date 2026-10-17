@@ -19,8 +19,6 @@ export class CoopScene implements Scene {
       gameState.multiplayerMode = savedRun.pending?.state.settings.multiplayerMode ?? 'companion';
       const mode = this.button('', 70, () => {
         gameState.multiplayerMode = gameState.multiplayerMode === 'companion' ? 'enemy' : 'companion';
-        // An enemy guest takes the second base, so there is no room for the computer.
-        if (gameState.multiplayerMode === 'enemy') gameState.opponent = 'none';
         mode.setText(`Guest: ${gameState.multiplayerMode === 'enemy' ? 'Enemy' : 'Companion'}`);
         coop.sendMode();
       });

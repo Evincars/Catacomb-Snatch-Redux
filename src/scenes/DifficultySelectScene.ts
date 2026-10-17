@@ -5,6 +5,7 @@ import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
 import { AI_DIFFICULTIES, DIFFICULTIES, gameState } from '../game/GameState';
+import { saveSettings, settings } from '../game/Settings';
 
 const GW = GAME_WIDTH;
 const GH = GAME_HEIGHT;
@@ -89,7 +90,6 @@ export class DifficultySelectScene implements Scene {
   private addOpponentChoice(x: number, y: number): void {
     // An enemy guest already holds the second base.
     const allowed = gameState.multiplayerMode !== 'enemy';
-    if (!allowed) gameState.opponent = 'none';
 
     const opponent = new PixelButton('', BTN_W, BTN_H);
     opponent.x = x;
@@ -102,20 +102,29 @@ export class DifficultySelectScene implements Scene {
     desc.y = y + BTN_H + 6;
 
     const refresh = () => {
-      const ai = gameState.opponent === 'ai';
+      settings.opponent = gameState.opponentChoice;
+      settings.aiDifficulty = gameState.aiDifficulty.name;
+      saveSettings();
+      const ai = allowed && gameState.opponentChoice === 'ai';
       opponent.setText(`Opponent: ${ai ? 'AI' : 'None'}`);
       level.setText(`AI: ${gameState.aiDifficulty.name}`);
-      level.setEnabled(ai);
+      level.setEnabled(allowed);
+      level.alpha = ai ? 1 : 0.6;
       desc.text = !allowed ? 'The enemy guest is your opponent'
         : ai ? 'The computer races you to fill its treasury first' : 'Collect coins with no rival base';
     };
     opponent.onPress = () => {
-      gameState.opponent = gameState.opponent === 'ai' ? 'none' : 'ai';
+      gameState.opponentChoice = gameState.opponentChoice === 'ai' ? 'none' : 'ai';
       refresh();
     };
     level.onPress = () => {
-      const i = AI_DIFFICULTIES.indexOf(gameState.aiDifficulty);
-      gameState.aiDifficulty = AI_DIFFICULTIES[(i + 1) % AI_DIFFICULTIES.length];
+      // Pressing the AI level while no opponent is chosen means "play the AI".
+      if (gameState.opponentChoice !== 'ai') {
+        gameState.opponentChoice = 'ai';
+      } else {
+        const i = AI_DIFFICULTIES.indexOf(gameState.aiDifficulty);
+        gameState.aiDifficulty = AI_DIFFICULTIES[(i + 1) % AI_DIFFICULTIES.length];
+      }
       refresh();
     };
     opponent.setEnabled(allowed);

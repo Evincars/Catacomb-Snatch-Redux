@@ -164,7 +164,7 @@ export class LevelSelectScene implements Scene {
     });
 
     this.startBtn = new PixelButton('Start', 126, 22);
-    this.startBtn.x = 228;
+    this.startBtn.x = 365;
     this.startBtn.y = 336;
     this.startBtn.onPress = () => {
       gameState.selectedLevel = LEVELS[this.selected];
@@ -173,7 +173,7 @@ export class LevelSelectScene implements Scene {
     this.container.addChild(this.startBtn);
 
     const cancelBtn = new PixelButton('Cancel', 127, 22);
-    cancelBtn.x = 365;
+    cancelBtn.x = 228;
     cancelBtn.y = 336;
     cancelBtn.onPress = () => manager.goto('title');
     this.container.addChild(cancelBtn);

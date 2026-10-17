@@ -2,17 +2,19 @@ import { world } from '../world';
 import type { Level } from '../level/Level';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { createSpawner } from '../entities/SpawnerFactory';
+import { gameState } from '../game/GameState';
 
 /**
- * Port of Java's RandomSpawner: every tick it tries one random floor tile and
- * drops a mob spawner there if the surroundings are clear.
+ * Replenishes a bounded set of nests, checking one floor tile every second.
  */
 const EDGE_MARGIN = 8;
 const CLEAR_OF_PLAYERS_AND_SPAWNERS = 32 * 8;
 const CLEAR_OF_TURRETS = 32 * 4;
 const CLEAR_OF_BUILDINGS = 32 * 0.5;
-/** Nests made at level start, as in Java's GameModeVanilla. */
-const INITIAL_SPAWNERS = 11;
+/** Upper bound on opening placement attempts while seeding half the nest cap. */
+const INITIAL_ATTEMPTS = 500;
+const ATTEMPT_INTERVAL = 60;
+const nextAttempt = new WeakMap<Level, number>();
 
 /** Bats nest far more often than the tougher kinds, which stay rare. */
 const MOB_WEIGHTS: ReadonlyArray<readonly [string, number]> = [
@@ -57,26 +59,39 @@ function surroundingsClear(x: number, y: number): boolean {
   return true;
 }
 
+function liveSpawners(): number {
+  return [...world.with('spawner')].filter((s) => !s.removed && (s.health?.current ?? 1) > 0).length;
+}
+
 function tryPlaceSpawner(level: Level, tx: number, ty: number, mobType: string): void {
+  if (liveSpawners() >= gameState.difficulty.maxSpawners) return;
   const tile = level.getTile(tx, ty);
   if (!tile || tile.type !== TileType.Floor || !tile.buildable) return;
 
   const x = tx * TILE_WIDTH + TILE_WIDTH / 2;
   const y = ty * TILE_HEIGHT + TILE_HEIGHT / 2 - 4;
+  for (const team of [1, 2]) {
+    const spawn = level.getRandomSpawnPoint(team);
+    if (spawn && Math.hypot(spawn.x - x, spawn.y - y) < CLEAR_OF_PLAYERS_AND_SPAWNERS) return;
+  }
   if (!surroundingsClear(x, y)) return;
 
   createSpawner(x, y, mobType);
 }
 
 export function updateRandomSpawner(level: Level): void {
+  const ticks = (nextAttempt.get(level) ?? ATTEMPT_INTERVAL) - 1;
+  nextAttempt.set(level, ticks > 0 ? ticks : ATTEMPT_INTERVAL);
+  if (ticks > 0) return;
   const tx = Math.floor(Math.random() * (level.width - EDGE_MARGIN * 2)) + EDGE_MARGIN;
   const ty = Math.floor(Math.random() * (level.height - EDGE_MARGIN * 2)) + EDGE_MARGIN;
   tryPlaceSpawner(level, tx, ty, pickMobType());
 }
 
-/** Scatters the opening set of bat nests; each attempt is dropped if the spot is taken. */
+/** Scatters opening bat nests until half the nest cap is reached or no clear spot is found. */
 export function spawnInitialSpawners(level: Level): void {
-  for (let i = 0; i < INITIAL_SPAWNERS; i++) {
+  const target = Math.ceil(gameState.difficulty.maxSpawners / 2);
+  for (let i = 0; i < INITIAL_ATTEMPTS && liveSpawners() < target; i++) {
     tryPlaceSpawner(
       level,
       Math.floor(Math.random() * level.width),

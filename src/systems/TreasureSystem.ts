@@ -3,6 +3,7 @@ import type { Level } from '../level/Level';
 import { createMob } from '../entities/MobFactory';
 import { TileType, TILE_WIDTH } from '../level/TileType';
 import { gameState } from '../game/GameState';
+import { canSpawnMob } from './SpawnerSystem';
 
 /** Ticks between pharaohs rising from the treasure, before the difficulty's spawn modifier. */
 const PHARAOH_INTERVAL = 60 * 15;
@@ -33,6 +34,7 @@ function spawnGuard(level: Level, x: number, y: number): void {
     const r = 10;
     const bb = level.getClipBBs(sx, sy, r, r);
     if (bb.some((c) => c.x0 < sx + r && c.x1 > sx - r && c.y0 < sy + r && c.y1 > sy - r)) continue;
+    if (!canSpawnMob(level, 'pharao', sx, sy)) continue;
     createMob(level, 'pharao', sx, sy);
     return;
   }
