@@ -61,6 +61,9 @@ export type Settings = {
   musicVolume: number;
   showFps: boolean;
   fullscreen: boolean;
+  /** Last opponent picked on the difficulty screen; the computer by default. */
+  opponent: 'none' | 'ai';
+  aiDifficulty: string;
 };
 
 const STORAGE_KEY = 'catacomb-snatch-settings';
@@ -72,6 +75,8 @@ function load(): Settings {
     musicVolume: 0.35,
     showFps: false,
     fullscreen: false,
+    opponent: 'ai',
+    aiDifficulty: 'Normal',
   };
 
   try {
