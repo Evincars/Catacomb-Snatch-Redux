@@ -30,7 +30,12 @@ export type WorldState = {
   entities: Array<{ id: number; data: EntityState }>;
 };
 
-export function captureWorld(level: Level): WorldState {
+/** A world update without the bulky terrain and fog, which are sent separately. */
+export type NetWorldState = Omit<WorldState, 'level'>;
+
+export function captureWorld(level: Level): WorldState;
+export function captureWorld(level: Level, withLevel: false): NetWorldState;
+export function captureWorld(level: Level, withLevel = true): WorldState | NetWorldState {
   const entities = world.entities.filter(e => !e.wallTile && !e.removed).map(entity => {
     const data: EntityState = {};
     for (const key of Object.keys(entity) as Array<keyof Entity>) {
@@ -39,7 +44,7 @@ export function captureWorld(level: Level): WorldState {
     return { id: world.id(entity)!, data };
   });
   return structuredClone({
-    version: 1, level: level.snapshot(), entities,
+    version: 1, ...(withLevel ? { level: level.snapshot() } : {}), entities,
     settings: { character: gameState.selectedCharacter, difficulty: gameState.difficulty,
       map: gameState.selectedLevel, debug: gameState.debug, multiplayerMode: gameState.multiplayerMode,
       opponent: gameState.opponent, aiDifficulty: gameState.aiDifficulty.name, aiCharacter: gameState.aiCharacter },
@@ -187,9 +192,25 @@ function checkEntity(data: EntityState): void {
 /** Keeps display objects alive on the guest while remapping host entity references to local ECS ids. */
 export class WorldReplica {
   private entities = new Map<number, Entity>();
+  private glides = new Map<Entity, { fromX: number; fromY: number; toX: number; toY: number }>();
+  private arrivedAt = 0;
+  private interval = 50;
 
-  apply(state: WorldState): void {
+  /** Moves entities smoothly from where they were drawn to where the last update put them. */
+  glide(now: number): void {
+    const t = Math.min(1, (now - this.arrivedAt) / this.interval);
+    for (const [entity, g] of this.glides) {
+      if (!entity.position || !world.has(entity)) { this.glides.delete(entity); continue; }
+      entity.position.x = g.fromX + (g.toX - g.fromX) * t;
+      entity.position.y = g.fromY + (g.toY - g.fromY) * t;
+    }
+  }
+
+  apply(state: WorldState, now = performance.now()): void {
     validateWorld(state);
+    if (this.arrivedAt) this.interval = Math.min(150, Math.max(33, this.interval * 0.8 + (now - this.arrivedAt) * 0.2));
+    this.arrivedAt = now;
+    this.glides.clear();
     const present = new Set(state.entities.map(e => e.id));
     for (const [id, entity] of this.entities) {
       if (present.has(id)) continue;
@@ -211,6 +232,7 @@ export class WorldReplica {
     for (const { id, data } of state.entities) {
       const entity = this.entities.get(id)!;
       const next = structuredClone(data);
+      const before = entity.position ? { x: entity.position.x, y: entity.position.y } : undefined;
       next.carriedBy = reference(next.carriedBy);
       next.carryingId = reference(next.carryingId);
       next.targetId = reference(next.targetId);
@@ -230,6 +252,15 @@ export class WorldReplica {
           else Object.assign(entity, { [key]: value });
         }
         else if (key in entity) world.removeComponent(entity, key);
+      }
+      if (before && entity.position) {
+        const { x: toX, y: toY } = entity.position;
+        // Teleports (respawns, falls) and big corrections snap instead of sliding across the map.
+        if ((before.x !== toX || before.y !== toY) && Math.hypot(toX - before.x, toY - before.y) < 96) {
+          this.glides.set(entity, { fromX: before.x, fromY: before.y, toX, toY });
+          entity.position.x = before.x;
+          entity.position.y = before.y;
+        }
       }
       if (entity.sprite && entity.visual && !entity.animation) {
         setVisualFrame(entity.sprite, entity.visual.sheet, entity.frame ?? entity.visual.col ?? 0, entity.visual.row ?? 0);

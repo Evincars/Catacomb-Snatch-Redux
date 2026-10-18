@@ -224,12 +224,16 @@ export class InGameScene implements Scene {
     coop.onState = () => {
       if (coop.role !== 'guest' || !coop.latest || this.disposed) return;
       try {
-        const { state, paused } = coop.latest;
+        const { state, paused, scores, levelChanged } = coop.latest;
         restoreSettings(state);
-        const terrain = JSON.stringify(state.level.tiles);
-        const dirty = terrain !== this.lastTerrain;
-        this.lastTerrain = terrain;
-        this.level = RestorableLevel.restore(state.level);
+        let dirty = false;
+        if (levelChanged) {
+          const terrain = JSON.stringify(state.level.tiles);
+          dirty = terrain !== this.lastTerrain;
+          this.lastTerrain = terrain;
+          this.level = RestorableLevel.restore(state.level);
+        }
+        if (scores) [this.level.player1Score, this.level.player2Score] = scores;
         this.hostPaused = paused;
         this.replica.apply(state);
         const guest = [...world.with('playerSlot')].find(e => e.playerSlot === 'guest');
@@ -259,7 +263,13 @@ export class InGameScene implements Scene {
     this.container.addChild(this.crosshair.graphics);
     (this.app.canvas as HTMLCanvasElement).style.cursor = 'none';
     this.centerCameraOn(this.player.position!.x, this.player.position!.y);
-    if (coop.role === 'host') coop.sendState(captureWorld(this.level), false);
+    if (coop.role === 'host') this.sendWorld(false, true);
+  }
+
+  private sendWorld(paused: boolean, withLevel: boolean): void {
+    if (!coop.canSendState()) return;
+    if (withLevel) coop.sendLevel(this.level.snapshot());
+    coop.sendState(captureWorld(this.level, false), paused, [this.level.player1Score, this.level.player2Score]);
   }
 
   /** Puts the computer opponent at the second base. */
@@ -470,8 +480,9 @@ export class InGameScene implements Scene {
     if (this.finished) return;
     if (coop.role === 'host' && this.wasConnected && !coop.connected && !this.paused) this.togglePause();
     this.wasConnected = coop.connected;
-    if (coop.role === 'host' && ++this.networkTick % 6 === 0 && coop.connected) {
-      coop.sendState(captureWorld(this.level), this.paused);
+    // 20 updates a second; the heavy terrain and fog snapshot only once a second.
+    if (coop.role === 'host' && ++this.networkTick % 3 === 0 && coop.connected) {
+      this.sendWorld(this.paused, this.networkTick % 60 === 0);
     }
     if (this.paused) {
       if (coop.role === 'guest') this.sendGuestInput(true);
@@ -489,6 +500,7 @@ export class InGameScene implements Scene {
       this.sendGuestInput(this.hostPaused || !coop.connected);
       updateTargeting();
       updateNotices();
+      this.replica.glide(performance.now());
     } else {
       // The console can run the game faster or slower; each step is a normal tick.
       this.stepBank += cheats.speed;
