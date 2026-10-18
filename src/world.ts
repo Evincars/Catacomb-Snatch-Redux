@@ -241,7 +241,11 @@ export type Entity = {
   spikeTrap?: { phase: number; ticks: number };
 
   /** A rail carriage: heading (0 N, 1 E, 2 S, 3 W, -1 stopped), last heading for its sprite, and its load of treasure. */
-  railDroid?: { dir: number; lastDir: number; full: boolean; swapTime: number };
+  railDroid?: {
+    dir: number; lastDir: number; full: boolean; swapTime: number;
+    /** Where the carriage stood when last checked for being wedged, and how many ticks ago. */
+    watch?: { x: number; y: number; age: number };
+  };
   /** The pot a carriage holds over its head, drawn separately from its body sprite. */
   cargoSprite?: Sprite;
   /** A blast in progress that keeps throwing out fireballs until `life` runs out. */

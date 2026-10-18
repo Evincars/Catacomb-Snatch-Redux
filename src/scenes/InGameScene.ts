@@ -22,6 +22,7 @@ import { takeNotices, clearNotices, updateNotices, noticeEvents, notify } from '
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
 import { gameState, isVersus } from '../game/GameState';
+import { openingCoins } from '../systems/AIPlayerSystem';
 import { cheats, resetCheats, runCommand } from '../game/Console';
 import { ConsoleView } from '../ui/ConsoleView';
 import type { CharacterType } from '../entities/PlayerFactory';
@@ -269,6 +270,8 @@ export class InGameScene implements Scene {
     world.addComponent(ai, 'aiPlayer', { character: gameState.aiCharacter, difficulty: gameState.aiDifficulty.name });
     world.addComponent(ai, 'remoteInput', true);
     ai.minimapColor = 0xff5040;
+    // A quiet head start, so the computer can afford a good gun from the first minute.
+    ai.playerStats!.score += openingCoins(gameState.aiDifficulty);
   }
 
   /** Redraws the floor texture and wall entities after bombs change the terrain. */

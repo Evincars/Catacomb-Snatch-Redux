@@ -34,6 +34,11 @@ export const TREASURE_REWARD = 100;
 /** Original versus treasury progress per delivery, independent of the coin reward. */
 const TREASURE_PROGRESS = 2;
 const HEALTH = 10;
+/** A carriage that has gone nowhere in this many ticks while meant to be rolling is wedged. */
+const WEDGE_TICKS = 90;
+/** Each carriage times its own window, so a jam is never broken by everyone turning at once. */
+const WEDGE_JITTER = 90;
+const WEDGE_DISTANCE = 6;
 
 export function canSpawnRailDroid(level: Level, x: number, y: number): boolean {
   const tx = Math.floor(x / TILE_WIDTH);
@@ -174,6 +179,33 @@ function handleTreasure(level: Level, droid: Entity): void {
 }
 
 /**
+ * Two carriages can end up pinned against each other on a bend, each waiting for
+ * the other to clear. A carriage that has not really moved for a while turns
+ * round, and one that is still pinned after that takes another way out.
+ */
+function breakWedge(level: Level, droid: Entity): void {
+  const rd = droid.railDroid!;
+  const pos = droid.position!;
+  if (rd.dir < 0 || (droid.freezeTime ?? 0) > 0) {
+    rd.watch = undefined;
+    return;
+  }
+  const watch = rd.watch;
+  if (!watch) {
+    rd.watch = { x: pos.x, y: pos.y, age: -Math.floor(Math.random() * WEDGE_JITTER) };
+    return;
+  }
+  if (++watch.age < WEDGE_TICKS) return;
+  const moved = Math.hypot(pos.x - watch.x, pos.y - watch.y);
+  rd.watch = { x: pos.x, y: pos.y, age: -Math.floor(Math.random() * WEDGE_JITTER) };
+  if (moved >= WEDGE_DISTANCE) return;
+  const tx = Math.floor(pos.x / TILE_WIDTH);
+  const ty = Math.floor(pos.y / TILE_HEIGHT);
+  const back = (rd.dir + 2) % 4;
+  rd.dir = Math.random() < 0.5 ? back : chooseDir(level, tx, ty, back);
+}
+
+/**
  * Carriages roll along the track from tile centre to tile centre, picking a
  * random onward branch at junctions and reversing at dead ends, on meeting
  * another carriage, or when a player pushes back against them.
@@ -224,6 +256,7 @@ export function updateRailDroids(level: Level): void {
   for (const droid of bumped) droid.railDroid!.dir = (droid.railDroid!.dir + 2) % 4;
 
   for (const droid of droids) {
+    breakWedge(level, droid);
     const rd = droid.railDroid!;
     const pos = droid.position!;
     const tx = Math.floor(pos.x / TILE_WIDTH);

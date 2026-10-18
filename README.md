@@ -46,8 +46,10 @@ Keep the server running while playing: map previews and levels are fetched when 
 
 - Mob populations are bounded, with mixed-species density checks across tile-region boundaries
   and fewer reinforcements while a player is surrounded. Normal and Hard use the same spawn
-  amounts (up to 95 mobs, with random nests capped at 15); Hard retains health regeneration.
-  Nightmare raises those limits only modestly to 115 mobs and 18 nests; Easy uses 60 and 10.
+  amounts (up to 170 mobs, with random nests capped at 26); Hard retains health regeneration.
+  Nightmare raises those limits only modestly to 210 mobs and 32 nests; Easy uses 110 and 17.
+  Each nest keeps at most 6 of its own mobs alive. Random nests cycle through bats, snakes,
+  mummies and scarabs so every kind turns up, bats being the most common. Mobs steer around pits.
   A new map opens with half the nest cap already placed (never near either base), and a
   random nest placement is attempted every second. Map-authored nests are preserved and still
   obey the mob limits. Nests produce every 5 seconds on Normal/Hard, 4 on Nightmare and 6 on Easy.

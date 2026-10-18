@@ -34,6 +34,10 @@ const GOAL_TIMEOUT = 60 * 25;
 const BLACKLIST_TICKS = 60 * 20;
 /** Ticks of no progress before trying to sidestep. */
 const STUCK_TICKS = 24;
+/** Walking this long without getting JAM_DISTANCE anywhere means the way is blocked. */
+const JAM_TICKS = 100;
+const JAM_DISTANCE = 24;
+const JAM_AVOID_TICKS = 60 * 15;
 /** Ticks between weapon swaps, so it does not flick through the inventory. */
 const SWAP_DELAY = 40;
 /** How far loot may lie, in walking pixels, for a detour to pick it up. */
@@ -51,6 +55,14 @@ const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const;
 const BLAST_STEP = 3;
 /** Tiles (on either axis) to keep between itself and a bomb it is about to set off. */
 const BLAST_CLEARANCE = 3;
+/** Laid track that earns it a stop to save for an upgrade, how long into the match, and how long it will save. */
+const RAILS_PER_UPGRADE = 5;
+const UPGRADE_AFTER = 60 * 45;
+const UPGRADE_SAVE_TICKS = 60 * 60;
+/** A walkable area this small, with nothing to hunt in it, means it has boxed itself in with its own buildings. */
+const TRAPPED_TILES = 80;
+/** So few tiles that it cannot be anything but its own buildings hemming it in, fight or no fight. */
+const WALLED_IN_TILES = 6;
 const BASE_DEFENSE_RANGE = 7 * TILE_WIDTH;
 /** Uncovered tiles of laid track that call for a turret of their own. */
 const GUARD_SPAN = 4;
@@ -64,6 +76,8 @@ type Goal = {
   /** Entity to reach and press `use` on (stall, harvester, chest). */
   useId?: number;
   upgradeId?: number;
+  /** Lift this building of its own (to get out from between them). */
+  pickupId?: number;
   /** Press build on this very tile (rail) or on a free base-track tile (carriage). */
   build?: 'rail' | 'carriage';
   /** Put down the building being carried here. */
@@ -100,6 +114,13 @@ type Brain = {
   lastX: number;
   lastY: number;
   stuck: number;
+  /** Where it stood when it last set out along a path, and for how many ticks it has been walking since. */
+  walkWatch: { x: number; y: number; ticks: number } | null;
+  /** Tiles that turned out to be blocked (a carriage in a tunnel, a crowd) and until what age to route around them. */
+  avoid: Map<number, number>;
+  /** Track laid since the last upgrade, and when it began saving up for the next one. */
+  railsSinceUpgrade: number;
+  upgradeSince: number | null;
   sidestep: { x: number; y: number; ticks: number } | null;
   /** Tiles of track to lay, from the base outward, and tiles reserved for it. */
   railPlan: number[];
@@ -125,7 +146,7 @@ function brainOf(entity: Entity): Brain {
     brain = {
       age: 0, think: 0, field: null, goal: null, path: [], reaction: 0, jitter: 0,
       trigger: false, triggerTicks: 0, swapTicks: 0,
-      lastX: entity.position!.x, lastY: entity.position!.y, stuck: 0, sidestep: null,
+      lastX: entity.position!.x, lastY: entity.position!.y, stuck: 0, sidestep: null, walkWatch: null, avoid: new Map(), railsSinceUpgrade: 0, upgradeSince: null,
       railPlan: [], railDone: false, lastCarriageAt: -CARRIAGE_DELAY, blacklist: new Map(),
     };
     brains.set(entity, brain);
@@ -209,11 +230,12 @@ class Heap {
   }
 }
 
-function walkField(level: Level, from: number): Field {
+function walkField(level: Level, from: number, avoid?: Set<number>): Field {
   const n = level.width * level.height;
   const distArr = new Float64Array(n).fill(INF);
   const parent = new Int32Array(n).fill(-1);
   const { blocked, risky } = obstacles(level);
+  if (avoid) for (const t of avoid) if (t !== from) blocked.add(t);
   const heap = new Heap();
   distArr[from] = 0;
   heap.push(0, from);
@@ -279,6 +301,22 @@ function approachTile(level: Level, field: Field, tile: number): number {
   return best;
 }
 
+/** The tile the AI can walk to that lies closest, in a straight line, to a point it cannot walk to. */
+function nearestReachableTo(level: Level, field: Field, at: { x: number; y: number }): number {
+  let best = -1;
+  let bestDist = INF;
+  for (let t = 0; t < field.dist.length; t++) {
+    if (!Number.isFinite(field.dist[t])) continue;
+    const d = Math.hypot(centreX(t % level.width) - at.x, centreY(Math.floor(t / level.width)) - at.y);
+    // Walking cost is a tie-break so equally close tiles do not send it on a long detour.
+    const score = d + field.dist[t] * 0.01;
+    if (score < bestDist) {
+      bestDist = score;
+      best = t;
+    }
+  }
+  return best;
+}
 function walkDistance(level: Level, field: Field, x: number, y: number): number {
   const t = approachTile(level, field, tileOf(level, x, y));
   return t < 0 ? INF : field.dist[t] * TILE_WIDTH;
@@ -472,11 +510,11 @@ function baseTurrets(level: Level, entity: Entity): Entity[] {
   return home ? ownBuildings(entity, 'defense').filter((b) => alive(b) && dist(b.position!, home) <= BASE_DEFENSE_RANGE) : [];
 }
 
-function baseDefenseSpot(level: Level, entity: Entity, brain: Brain): number {
+function baseDefenseSpot(level: Level, entity: Entity, brain: Brain, rejected: ReadonlySet<number> = new Set()): number {
   const home = level.getRandomSpawnPoint(entity.team ?? Team.Two);
   if (!home) return -1;
   const field = brain.field!;
-  const reserved = new Set(brain.railPlan);
+  const reserved = new Set([...brain.railPlan, ...rejected]);
   const { blocked } = obstacles(level);
   const turrets = baseTurrets(level, entity);
   let best = -1;
@@ -495,10 +533,48 @@ function baseDefenseSpot(level: Level, entity: Entity, brain: Brain): number {
   return best;
 }
 
-/** Where a carried building should go, judged by what it does. */
+/** How many tiles can be walked to from `from` when `extra` is also blocked. */
+function reachableCount(level: Level, from: number, extra: number): number {
+  const { blocked } = obstacles(level);
+  blocked.add(extra);
+  const seen = new Set<number>([from]);
+  const queue = [from];
+  for (let i = 0; i < queue.length; i++) {
+    const cur = queue[i];
+    const cx = cur % level.width;
+    const cy = (cur - cx) / level.width;
+    for (const [dx, dy] of DIRS) {
+      const tile = level.getTile(cx + dx, cy + dy);
+      if (!tile || !tile.passable || tile.type === TileType.Hole || tile.type === TileType.DropTrap) continue;
+      const next = cx + dx + (cy + dy) * level.width;
+      if (blocked.has(next) || seen.has(next)) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return seen.size;
+}
+
+/** Where a carried building should go: judged by what it does, and never on a tile that would wall the computer in. */
 function placementFor(level: Level, entity: Entity, brain: Brain, held: Entity): number {
   const field = brain.field!;
-  const reserved = new Set(brain.railPlan);
+  let open = 0;
+  for (const d of field.dist) if (Number.isFinite(d)) open++;
+  const rejected = new Set<number>();
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const t = placementCandidate(level, entity, brain, held, rejected);
+    if (t < 0) return -1;
+    // Closing off more than a tenth of the walkable area would shut the way out behind it.
+    if (reachableCount(level, field.origin, t) >= Math.min(open - 2, open * 0.9)) return t;
+    rejected.add(t);
+  }
+  return -1;
+}
+
+/** Candidate spot for a carried building, before checking that it leaves a way out. */
+function placementCandidate(level: Level, entity: Entity, brain: Brain, held: Entity, rejected: ReadonlySet<number>): number {
+  const field = brain.field!;
+  const reserved = new Set([...brain.railPlan, ...rejected]);
   const { blocked } = obstacles(level);
   const ok = (t: number) => Number.isFinite(field.dist[t]) && canPlaceOn(level, t, reserved, blocked);
 
@@ -538,7 +614,7 @@ function placementFor(level: Level, entity: Entity, brain: Brain, held: Entity):
     }
   }
   if (held.turret && baseTurrets(level, entity).length < Math.min(3, profileOf(entity).maxTurrets)) {
-    const t = baseDefenseSpot(level, entity, brain);
+    const t = baseDefenseSpot(level, entity, brain, rejected);
     if (t >= 0) return t;
   }
   if (held.turret && brain.front) {
@@ -621,7 +697,8 @@ function stallFor(entity: Entity, role: ShopRole, budget: number, wanted?: (kind
 
 function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): void {
   const pos = entity.position!;
-  brain.field = walkField(level, tileOf(level, pos.x, pos.y));
+  for (const [t, until] of brain.avoid) if (until <= brain.age) brain.avoid.delete(t);
+  brain.field = walkField(level, tileOf(level, pos.x, pos.y), new Set(brain.avoid.keys()));
   const field = brain.field;
   const money = entity.playerStats!.score;
   const held = entity.carryingId !== undefined ? world.entity(entity.carryingId) : undefined;
@@ -711,6 +788,21 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
     return;
   }
 
+  // 0b. Walled in by its own buildings with nothing to fight inside: lift the nearest one and walk out.
+  if (!held) {
+    let open = 0;
+    for (const d of field.dist) if (Number.isFinite(d) && ++open > TRAPPED_TILES) break;
+    if (open <= WALLED_IN_TILES || (open <= TRAPPED_TILES && !enemiesNear(entity, 160))) {
+      const hem = [...ownBuildings(entity, 'defense'), ...ownBuildings(entity, 'economy')]
+        .filter((b) => alive(b) && b.carriedBy === undefined && dist(b.position!, pos) < INTERACT_REACH + 8)
+        .sort((a, b) => dist(a.position!, pos) - dist(b.position!, pos));
+      if (hem[0]) {
+        setGoal(brain, level, { name: 'free self', tile: field.origin, pickupId: world.id(hem[0])! });
+        return;
+      }
+    }
+  }
+
   // 1b. A bomb of ours is set: get clear of it and shoot it.
   if (brain.blastId !== undefined) {
     const t = blastCover(level, field, world.entity(brain.blastId)!);
@@ -737,6 +829,14 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
       useGoal(level, brain, 'secure base', stall);
       return;
     }
+  }
+
+  // 1d. The best gun on offer comes before anything else is saved for.
+  const bestGun = stallFor(entity, 'weapon', money - profile.reserve, (kind) =>
+    !entity.weaponInventory!.weapons.includes(kind) && weaponGain(entity, kind) > 2);
+  if (bestGun && !needsBaseDefense && reachable(level, brain, bestGun) < INF) {
+    useGoal(level, brain, 'buy weapon', bestGun);
+    return;
   }
 
   if (wall >= 0 && brain.blastId === undefined && brain.looseBombId === undefined) {
@@ -787,6 +887,15 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   if (gun && reachable(level, brain, gun) < INF) {
     useGoal(level, brain, 'buy weapon', gun);
     return;
+  }
+
+  // 4a. A harvester once the home turrets stand, so their kills pay.
+  if (!needsBaseDefense && turrets.length > 0 && harvesters.length === 0) {
+    const stall = stallFor(entity, 'economy', spare);
+    if (stall && reachable(level, brain, stall) < INF) {
+      useGoal(level, brain, 'buy economy', stall);
+      return;
+    }
   }
 
   // 4c. Mobs holding the head of the track: a turret goes up there to clear the way.
@@ -841,6 +950,30 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
     return;
   }
 
+  // 4f. Every few tiles of track it stops to save for an upgrade, so turrets and harvesters keep up.
+  let savingForUpgrade = false;
+  if (!needsBaseDefense && brain.age >= UPGRADE_AFTER && brain.railsSinceUpgrade >= RAILS_PER_UPGRADE) {
+    const candidates = [...q.upgradables].filter((b) => !b.removed && b.team === entity.team && b.carriedBy === undefined
+      && b.upgradable!.level < profile.maxUpgrade && reachable(level, brain, b) < INF)
+      .sort((a, b) => (upgradeCostOf(a) ?? INF) - (upgradeCostOf(b) ?? INF));
+    const pick = candidates[0];
+    const cost = pick ? upgradeCostOf(pick) ?? INF : INF;
+    if (pick && Number.isFinite(cost)) {
+      brain.upgradeSince ??= brain.age;
+      if (money - profile.reserve >= cost) {
+        brain.railsSinceUpgrade = 0;
+        brain.upgradeSince = null;
+        useGoal(level, brain, 'upgrade', pick, 'upgradeId');
+        return;
+      }
+      if (brain.age - brain.upgradeSince < UPGRADE_SAVE_TICKS) savingForUpgrade = true;
+      else {
+        brain.railsSinceUpgrade = 0;
+        brain.upgradeSince = null;
+      }
+    } else brain.railsSinceUpgrade = 0;
+  }
+
   // Stage a small fleet as the connected line grows, not only after it reaches treasure.
   const desiredCarriages = carriageDemand(level, entity, profile);
   if (!needsBaseDefense && desiredCarriages > ownCarriages(entity) && money >= carriageCost()
@@ -853,7 +986,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   }
 
   // 5. Track to the treasure, once the base has its opening defenses.
-  if (!needsBaseDefense && !savingForGuard && brain.age >= profile.railDelay && plan && plan.length > 0 && money >= railCost()) {
+  if (!needsBaseDefense && !savingForGuard && !savingForUpgrade && brain.age >= profile.railDelay && plan && plan.length > 0 && money >= railCost()) {
     const next = plan[0];
     if (Number.isFinite(field.dist[next])) {
       setGoal(brain, level, { name: 'rail', tile: next, build: 'rail' });
@@ -902,12 +1035,23 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   }
 
   // 11. Otherwise hunt: rival players in versus, then nests and mobs; or wait by the treasure.
-  const prey = nearestOf(level, brain, [...world.with('position', 'health')].filter((e) =>
-    hostile(entity, e) && (e.playerInput !== undefined || e.spawner !== undefined || e.ai !== undefined)));
+  const preyList = [...world.with('position', 'health')].filter((e) =>
+    hostile(entity, e) && (e.playerInput !== undefined || e.spawner !== undefined || e.ai !== undefined));
+  const prey = nearestOf(level, brain, preyList);
   if (prey) {
     const t = approachTile(level, field, tileOf(level, prey.position!.x, prey.position!.y));
     setGoal(brain, level, { name: 'hunt', tile: t, huntId: world.id(prey)! });
     return;
+  }
+  // A rival walled off from here cannot be walked to; close in on the nearest spot instead of waiting for them.
+  const walled = [...world.with('position', 'health', 'playerInput')].filter((e) => hostile(entity, e));
+  if (walled.length > 0) {
+    const target = walled.reduce((best, e) => (dist(e.position!, pos) < dist(best.position!, pos) ? e : best));
+    const spot = nearestReachableTo(level, field, target.position!);
+    if (spot >= 0 && spot !== field.origin && dist({ x: centreX(spot % level.width), y: centreY(Math.floor(spot / level.width)) }, pos) > TILE_WIDTH) {
+      setGoal(brain, level, { name: 'stalk', tile: spot, walk: true });
+      return;
+    }
   }
   const treasure = treasureOf();
   if (treasure) {
@@ -972,7 +1116,12 @@ function besideTrack(level: Level, t: number): boolean {
 function stashGoal(level: Level, brain: Brain): void {
   const field = brain.field!;
   const planned = new Set(brain.railPlan);
-  const clear = (t: number) => tileAt(level, t)?.buildable === true && !besideTrack(level, t) && !planned.has(t);
+  let open = 0;
+  for (const d of field.dist) if (Number.isFinite(d)) open++;
+  // Setting it down must not wall the computer in, so a tile that cuts off the way out does not count.
+  const keepsOpen = (t: number) => reachableCount(level, field.origin, t) >= Math.min(open - 2, open * 0.9);
+  const clear = (t: number) => tileAt(level, t)?.buildable === true && !besideTrack(level, t) && !planned.has(t)
+    && keepsOpen(t);
   if (clear(field.origin)) {
     setGoal(brain, level, { name: 'stash', tile: field.origin, drop: true, stash: true });
     return;
@@ -994,6 +1143,10 @@ function onTrack(level: Level, t: number): boolean {
 function goalStillValid(level: Level, entity: Entity, brain: Brain, g: Goal): boolean {
   if (g.drop) return entity.carryingId !== undefined && !g.faceTile;
   if (entity.carryingId !== undefined) return false;
+  if (g.pickupId !== undefined) {
+    const target = world.entity(g.pickupId);
+    return !!target && !target.removed && target.carriedBy === undefined;
+  }
   const id = g.useId ?? g.upgradeId;
   if (id !== undefined) {
     const target = world.entity(id);
@@ -1290,6 +1443,16 @@ function aimAtNothing(entity: Entity): boolean {
 }
 
 /** Faces an entity and reports whether it is the one the aim line would act on. */
+/** Faces a building and reports whether what the aim line meets is one of its own that it may lift. */
+function liftsOwnBuilding(entity: Entity, target: Entity): boolean {
+  const pos = entity.position!;
+  const at = target.position!;
+  if (dist(pos, at) > INTERACT_REACH + (target.radius?.x ?? 10)) return false;
+  setAim(entity, at.x - pos.x, at.y - pos.y);
+  const hit = hitByAimLine(entity);
+  return hit !== null && hit.building !== undefined && hit.team === entity.team && !hit.bomb;
+}
+
 function reachFor(entity: Entity, target: Entity): boolean {
   const pos = entity.position!;
   const at = target.position!;
@@ -1317,17 +1480,25 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
 
   // --- the goal's action, once there
   if (goal) {
-    const targetId = goal.useId ?? goal.upgradeId;
+    const targetId = goal.useId ?? goal.upgradeId ?? goal.pickupId;
     const target = targetId !== undefined ? world.entity(targetId) : undefined;
     const tx = goal.tile % level.width;
     const ty = Math.floor(goal.tile / level.width);
     const onTile = tileOf(level, pos.x, pos.y) === goal.tile;
     const centred = Math.abs(pos.x - centreX(tx)) <= 6 && Math.abs(pos.y - centreY(ty)) <= 6;
 
-    if (target && reachFor(entity, target)) {
+    if (goal.pickupId !== undefined && target && liftsOwnBuilding(entity, target)) {
+      // Any building of its own in the way will do to get out from between them.
+      aimed = true;
+      brain.path = [];
+      pi.intents.build = true;
+      brain.goal = null;
+      brain.think = Math.min(brain.think, 4);
+    } else if (target && goal.pickupId === undefined && reachFor(entity, target)) {
       aimed = true;
       brain.path = [];
       if (goal.upgradeId !== undefined) pi.intents.upgrade = true;
+      else if (goal.pickupId !== undefined) pi.intents.build = true;
       else pi.intents.use = true;
       brain.goal = null;
       brain.think = Math.min(brain.think, 4);
@@ -1370,6 +1541,7 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
         aimed = true;
         pi.intents.build = true;
         if (goal.build === 'carriage') brain.lastCarriageAt = brain.age;
+        else brain.railsSinceUpgrade++;
       }
       brain.goal = null;
       brain.think = Math.min(brain.think, 6);
@@ -1404,6 +1576,24 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
     const tx = goal.tile % level.width;
     steerTo(entity, centreX(tx), centreY(Math.floor(goal.tile / level.width)), 1.5, out);
   }
+
+  // --- giving up on a route that goes nowhere (a carriage jammed in a tunnel, a crowd in a corridor)
+  if (brain.path.length > 0 && !goal?.detonate) {
+    const watch = brain.walkWatch ?? (brain.walkWatch = { x: pos.x, y: pos.y, ticks: 0 });
+    if (++watch.ticks >= JAM_TICKS) {
+      if (Math.hypot(pos.x - watch.x, pos.y - watch.y) < JAM_DISTANCE) {
+        const here = tileOf(level, pos.x, pos.y);
+        // Route around the next few tiles for a while; it re-plans at once and picks another way or another goal.
+        for (const t of brain.path.slice(0, 3)) if (t !== here) brain.avoid.set(t, brain.age + JAM_AVOID_TICKS);
+        const id = goal?.useId ?? goal?.upgradeId ?? goal?.huntId;
+        if (id !== undefined) brain.blacklist.set(id, brain.age + BLACKLIST_TICKS);
+        brain.goal = null;
+        brain.path = [];
+        brain.think = 0;
+      }
+      brain.walkWatch = null;
+    }
+  } else brain.walkWatch = null;
 
   // --- unsticking
   const moving = out.up || out.down || out.left || out.right;
@@ -1526,6 +1716,28 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
  * depends on its difficulty), then steers, aims and presses keys each tick.
  * Runs right after keyboard input, before targeting and interaction read it.
  */
+/**
+ * Coins the computer starts a match with: its opening defence, a harvester, a bomb for the
+ * first wall and the best gun on its side's stalls, so it is never the underdog for lack of a start.
+ * The player is not told.
+ */
+export function openingCoins(profile: AIDifficulty): number {
+  let gun = 0;
+  let turret = 0;
+  let harvester = 0;
+  let bomb = 0;
+  for (const stall of q.shopItems) {
+    if (stall.team !== Team.Two || stall.removed) continue;
+    const { kind, cost } = stall.shopItem!;
+    const role = SHOP_DEFS[kind].role;
+    if (role === 'weapon') gun = Math.max(gun, cost);
+    else if (role === 'defense') turret = turret === 0 ? cost : Math.min(turret, cost);
+    else if (role === 'economy') harvester = harvester === 0 ? cost : Math.min(harvester, cost);
+    else if (role === 'explosive') bomb = bomb === 0 ? cost : Math.min(bomb, cost);
+  }
+  return gun + harvester + bomb + turret * Math.min(3, profile.maxTurrets) + profile.reserve + 25;
+}
+
 export function updateAIPlayers(level: Level): void {
   for (const entity of world.with('aiPlayer', 'playerInput', 'position', 'playerStats', 'weaponInventory', 'health')) {
     if (entity.removed) continue;

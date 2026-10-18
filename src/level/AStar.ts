@@ -1,5 +1,5 @@
 import type { Level } from './Level';
-import { TILE_WIDTH, TILE_HEIGHT } from './TileType';
+import { TILE_WIDTH, TILE_HEIGHT, TileType } from './TileType';
 
 type GridPos = { x: number; y: number };
 
@@ -48,7 +48,8 @@ export function findPath(
 
   const canWalk = (p: GridPos) => {
     const tile = level.getTile(p.x, p.y);
-    return tile !== null && tile.passable;
+    // Mobs plan around pits: a route over one would only walk them to their death.
+    return tile !== null && tile.passable && tile.type !== TileType.Hole;
   };
 
   if (!canWalk(start)) return { success: false, nodes: [] };

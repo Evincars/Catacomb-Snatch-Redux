@@ -3,6 +3,7 @@ import type { Level } from '../level/Level';
 import { BB } from '../math/BB';
 import { Mth } from '../math/Mth';
 import { screenToWorld } from '../render/Camera';
+import { TileType } from '../level/TileType';
 
 const angleToFacing = (x: number, y: number) => Mth.angleToFacing(x, y);
 
@@ -141,7 +142,20 @@ export function updateMovement(level: Level, _dt: number): void {
 
     const bbs = level.getClipBBs(position.x, position.y, radius.x, radius.y);
     if (entity.playerInput) bbs.push(...structureBBs(position.x, position.y, radius.x, radius.y));
+    const fromX = position.x;
+    const fromY = position.y;
     move(position, radius, xa, ya, bbs, entity.physicsSlide !== undefined);
+    // Walking mobs never step into a pit, whatever pushed them (knockback, a crowd, a bad route).
+    if (entity.ai && entity.mobType !== 'bat' && level.getTileAt(position.x, position.y)?.type === TileType.Hole) {
+      if (level.getTileAt(position.x, fromY)?.type !== TileType.Hole) position.y = fromY;
+      else if (level.getTileAt(fromX, position.y)?.type !== TileType.Hole) position.x = fromX;
+      else {
+        position.x = fromX;
+        position.y = fromY;
+      }
+      velocity.x = velocity.y = 0;
+      if (bump) bump.x = bump.y = 0;
+    }
 
     const friction = entity.friction ?? 0.4;
     velocity.x *= friction;

@@ -3,6 +3,7 @@ import type { Entity } from '../world';
 import { screenToWorld } from '../render/Camera';
 import { sheetInfo } from '../render/Sheets';
 import { TILE_HEIGHT } from '../level/TileType';
+import { isVersus } from '../game/GameState';
 
 /** How far ahead of the player their aim line reaches. */
 export const INTERACT_REACH = 36;
@@ -25,6 +26,9 @@ function usableBy(player: Entity, candidate: Entity): boolean {
   if (candidate.removed || candidate.chest?.opened) return false;
   if (candidate.carriedBy !== undefined) return false;
   if (candidate.shopItem) return candidate.team === player.team;
+  // The rival's turrets and harvesters cannot be used, so they are not offered or marked either.
+  if (isVersus() && candidate.building && !candidate.bomb && candidate.team
+    && candidate.team !== player.team) return false;
   return candidate.building !== undefined || candidate.spawner !== undefined;
 }
 

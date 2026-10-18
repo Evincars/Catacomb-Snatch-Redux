@@ -16,21 +16,30 @@ const INITIAL_ATTEMPTS = 500;
 const ATTEMPT_INTERVAL = 60;
 const nextAttempt = new WeakMap<Level, number>();
 
-/** Bats nest far more often than the tougher kinds, which stay rare. */
+/** Every kind nests regularly; bats are simply the most common. */
 const MOB_WEIGHTS: ReadonlyArray<readonly [string, number]> = [
-  ['bat', 10],
-  ['snake', 2],
-  ['mummy', 2],
-  ['scarab', 1],
+  ['bat', 4],
+  ['snake', 3],
+  ['mummy', 3],
+  ['scarab', 3],
 ];
-const WEIGHT_TOTAL = MOB_WEIGHTS.reduce((sum, [, w]) => sum + w, 0);
-
+/** Picks the kind furthest below its share of the live nests, so every kind keeps turning up. */
 function pickMobType(): string {
-  let roll = Math.random() * WEIGHT_TOTAL;
-  for (const [type, weight] of MOB_WEIGHTS) {
-    if ((roll -= weight) < 0) return type;
+  const counts = new Map<string, number>();
+  for (const nest of world.with('spawner')) {
+    if (nest.removed || (nest.health?.current ?? 1) <= 0) continue;
+    counts.set(nest.spawner!.mobType, (counts.get(nest.spawner!.mobType) ?? 0) + 1);
   }
-  return 'bat';
+  let best: string[] = [];
+  let bestFill = Infinity;
+  for (const [type, weight] of MOB_WEIGHTS) {
+    const fill = (counts.get(type) ?? 0) / weight;
+    if (fill < bestFill - 1e-9) {
+      bestFill = fill;
+      best = [type];
+    } else if (Math.abs(fill - bestFill) < 1e-9) best.push(type);
+  }
+  return best[Math.floor(Math.random() * best.length)];
 }
 
 /** Java checks an axis-aligned box of radius `r` against each entity's own box. */
@@ -88,7 +97,7 @@ export function updateRandomSpawner(level: Level): void {
   tryPlaceSpawner(level, tx, ty, pickMobType());
 }
 
-/** Scatters opening bat nests until half the nest cap is reached or no clear spot is found. */
+/** Scatters opening nests of every kind until half the nest cap is reached or no clear spot is found. */
 export function spawnInitialSpawners(level: Level): void {
   const target = Math.ceil(gameState.difficulty.maxSpawners / 2);
   for (let i = 0; i < INITIAL_ATTEMPTS && liveSpawners() < target; i++) {
@@ -96,7 +105,7 @@ export function spawnInitialSpawners(level: Level): void {
       level,
       Math.floor(Math.random() * level.width),
       Math.floor(Math.random() * level.height),
-      'bat',
+      pickMobType(),
     );
   }
 }

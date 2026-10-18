@@ -2,7 +2,7 @@ import { world } from '../world';
 import type { Entity } from '../world';
 import { findPath } from '../level/AStar';
 import type { Level } from '../level/Level';
-import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
+import { TILE_WIDTH, TILE_HEIGHT, TileType } from '../level/TileType';
 
 const WALK_SPEED = 0.8;
 /** Java's ATTACK_RADIUS: mummies notice a player 128px away, pharaohs 5 tiles away. */
@@ -37,6 +37,28 @@ function nearestPlayer(from: { x: number; y: number }): Entity | null {
   }
   return nearest;
 }
+
+/** How far ahead of its feet a mob checks for a pit before stepping. */
+const PIT_LOOKAHEAD = 16;
+
+/** Pushes the mob along (dx, dy) unless a pit lies just ahead; returns whether it moved. */
+function walkTowards(level: Level, entity: Entity, dx: number, dy: number): boolean {
+  const pos = entity.position!;
+  const vel = entity.velocity!;
+  const speed = entity.speed ?? WALK_SPEED;
+  // Bats fly over pits.
+  if (entity.mobType !== 'bat') {
+    const len = Math.hypot(dx, dy) || 1;
+    const ahead = level.getTileAt(pos.x + (dx / len) * PIT_LOOKAHEAD, pos.y + (dy / len) * PIT_LOOKAHEAD);
+    if (ahead?.type === TileType.Hole) return false;
+  }
+  const len = Math.hypot(dx, dy) || 1;
+  vel.x += (dx / len) * speed;
+  vel.y += (dy / len) * speed;
+  return true;
+}
+
+const FACING_STEPS: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 function chaseRange(entity: Entity): number {
   return CHASE_RANGE_BY_TYPE[entity.mobType ?? ''] ?? CHASE_RANGE;
@@ -92,11 +114,12 @@ export function updateAI(level: Level, _dt: number): void {
         entity.facing = Math.floor(Math.random() * 4);
       }
 
-      switch (entity.facing) {
-        case 0: vel.y -= speed; break;
-        case 1: vel.x += speed; break;
-        case 2: vel.y += speed; break;
-        case 3: vel.x -= speed; break;
+      const facing = entity.facing ?? 0;
+      if (!walkTowards(level, entity, FACING_STEPS[facing][0], FACING_STEPS[facing][1])) {
+        // A pit ahead: turn to a direction that is clear.
+        const clear = [0, 1, 2, 3].filter((f) => f !== facing
+          && walkTowards(level, entity, FACING_STEPS[f][0], FACING_STEPS[f][1]));
+        if (clear.length > 0) entity.facing = clear[Math.floor(Math.random() * clear.length)];
       }
 
       ai.retargetIn = (ai.retargetIn ?? 0) - 1;
@@ -154,17 +177,14 @@ export function updateAI(level: Level, _dt: number): void {
       if (len < 4) {
         path.shift();
       } else {
-        vel.x += (dx / len) * speed;
-        vel.y += (dy / len) * speed;
+        if (!walkTowards(level, entity, dx, dy)) ai.repathIn = 0;
         entity.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
       }
     } else {
       // No route available — close in directly so mobs still threaten.
       const dx = target.position.x - pos.x;
       const dy = target.position.y - pos.y;
-      const len = Math.hypot(dx, dy) || 1;
-      vel.x += (dx / len) * speed;
-      vel.y += (dy / len) * speed;
+      walkTowards(level, entity, dx, dy);
       entity.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
     }
   }

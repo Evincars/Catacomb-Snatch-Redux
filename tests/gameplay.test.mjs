@@ -13,7 +13,7 @@ const { createRailDroid, canSpawnRailDroid, updateRailDroids } = await load('sys
 const { createBuilding } = await load('entities/BuildingFactory');
 const { createPlayer } = await load('entities/PlayerFactory');
 const { createShopItem } = await load('entities/ShopItemFactory');
-const { updateAIPlayers } = await load('systems/AIPlayerSystem');
+const { updateAIPlayers, openingCoins } = await load('systems/AIPlayerSystem');
 const { updateAI, MAX_CHASERS } = await load('systems/AISystem');
 const { updateTargeting } = await load('systems/TargetingSystem');
 const { updateInteraction, updateCarried } = await load('systems/InteractionSystem');
@@ -164,6 +164,91 @@ test('carriages stay on centres and connected track through corners and end reve
     }
   }
   assert.equal(visited.size, tiles.length);
+});
+
+test('opening nests include every kind of mob, bats the most', () => {
+  for (const difficulty of DIFFICULTIES) {
+    gameState.difficulty = difficulty;
+    const level = new Level(96, 96);
+    level.setSpawnPoints(Team.One, [{ x: centre(48), y: centre(85) }]);
+    level.setSpawnPoints(Team.Two, [{ x: centre(48), y: centre(10) }]);
+    spawnInitialSpawners(level);
+    const kinds = {};
+    for (const nest of world.with('spawner')) kinds[nest.spawner.mobType] = (kinds[nest.spawner.mobType] ?? 0) + 1;
+    for (const kind of ['bat', 'snake', 'mummy', 'scarab']) assert.ok(kinds[kind] >= 1, `${difficulty.name} has no ${kind} nests: ${JSON.stringify(kinds)}`);
+    assert.ok(kinds.bat >= Math.max(kinds.snake, kinds.mummy, kinds.scarab), JSON.stringify(kinds));
+    for (const e of [...world]) world.remove(e);
+  }
+});
+
+test('mobs never walk into a pit, whether wandering or chasing', () => {
+  const level = new Level(24, 12);
+  for (let y = 2; y <= 9; y++) put(level, 12, y, TileType.Hole);
+  const p = createPlayer(centre(20), centre(5), Team.One);
+  p.health.immortal = true;
+  const mobs = ['mummy', 'snake', 'scarab'].flatMap((kind, i) => [
+    createMob(level, kind, centre(8), centre(3 + i * 2)),
+    createMob(level, kind, centre(14), centre(4 + i * 2)),
+  ]);
+  for (let tick = 0; tick < 3000; tick++) {
+    updateAI(level, 1);
+    updateMovement(level, 1);
+    for (const m of mobs) {
+      assert.notEqual(level.getTileAt(m.position.x, m.position.y)?.type, TileType.Hole, `${m.mobType} stepped into the pit at tick ${tick}`);
+    }
+  }
+});
+
+test('rival turrets, harvesters and stalls are not offered or marked to a player in versus', () => {
+  const level = new Level(14, 8);
+  const p = createPlayer(centre(5), centre(4), Team.One);
+  p.aimVector = { x: 1, y: 0 };
+  const rival = createBuilding(centre(6), centre(4), 'turret', Team.Two);
+  updateTargeting();
+  assert.equal(p.targetId, undefined, 'targeted a rival turret');
+  assert.equal(rival.targeted, undefined);
+  rival.team = Team.One;
+  updateTargeting();
+  assert.equal(p.targetId, world.id(rival));
+  void level;
+});
+
+test('the computer opens with enough coins for its best gun, and its first buildings', () => {
+  createShopItem(centre(4), centre(4), 'raygun', Team.Two);
+  createShopItem(centre(6), centre(4), 'turret', Team.Two);
+  createShopItem(centre(8), centre(4), 'harvester', Team.Two);
+  const coins = openingCoins(AI_DIFFICULTIES[1]);
+  assert.ok(coins >= 800 + 75 * 3 + 300, `only ${coins} coins`);
+});
+
+test('AI walled in by its own buildings lifts one to get out', () => {
+  const level = new Level(20, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(10), y: centre(5) }]);
+  const ai = computer(10, 5, 0);
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) createBuilding(centre(10 + dx), centre(5 + dy), 'turret', Team.Two);
+  const before = [...world.with('turret')].filter((t) => t.carriedBy === undefined).length;
+  let freed = false;
+  for (let tick = 0; tick < 1200 && !freed; tick++) {
+    aiTick(level);
+    freed = ai.carryingId !== undefined || [...world.with('turret')].filter((t) => t.carriedBy === undefined).length < before;
+  }
+  assert.ok(freed, 'stayed boxed in');
+});
+
+test('a carriage wedged behind another turns round instead of waiting forever', () => {
+  const level = new Level(14, 8);
+  for (let x = 2; x <= 11; x++) track(level, x, 4);
+  const front = createRailDroid(centre(7), centre(4), Team.Two);
+  front.railDroid.dir = 1;
+  front.freezeTime = 1e9;
+  const back = createRailDroid(centre(3), centre(4), Team.Two);
+  back.railDroid.dir = 1;
+  let farthestBack = Infinity;
+  for (let t = 0; t < 600; t++) {
+    updateRailDroids(level);
+    if (t > 120) farthestBack = Math.min(farthestBack, back.position.x);
+  }
+  assert.ok(farthestBack < centre(4), `stayed jammed at ${back.position.x}`);
 });
 
 test('head-on carriages hand over one treasure pot and both reverse', () => {
@@ -590,6 +675,27 @@ test('AI stands a turret beside laid track far from home', () => {
     && Math.hypot(e.position.x - centre(14), e.position.y - centre(5)) > 8 * 32);
   assert.ok(far.length >= 1, 'no turret was stood along the track');
   assert.ok(far.every((e) => Math.abs(e.position.x - centre(14)) <= 4 * 32), 'turret not beside the track');
+});
+
+test('AI carrying a turret gives up on a tunnel blocked by a stuck carriage', () => {
+  const level = new Level(30, 12);
+  for (let y = 0; y < 12; y++) for (let x = 0; x < 30; x++) put(level, x, y, TileType.Wall);
+  for (let x = 2; x <= 25; x++) put(level, x, 5, TileType.Floor);
+  for (let y = 2; y <= 8; y++) for (let x = 19; x <= 25; x++) put(level, x, y, TileType.Floor);
+  for (let x = 9; x <= 11; x++) track(level, x, 5);
+  level.setSpawnPoints(Team.Two, [{ x: centre(3), y: centre(5) }]);
+  const blocker = createRailDroid(centre(10), centre(5), Team.Two);
+  blocker.railDroid.dir = 1;
+  blocker.freezeTime = 1e9;
+  const ai = computer(4, 5, 0);
+  const turret = createBuilding(centre(4), centre(5), 'turret', Team.Two);
+  world.addComponent(turret, 'carriedBy', world.id(ai));
+  world.addComponent(ai, 'carryingId', world.id(turret));
+  for (let tick = 0; tick < 2400 && ai.carryingId !== undefined; tick++) {
+    aiTick(level);
+    updateRailDroids(level);
+  }
+  assert.equal(ai.carryingId, undefined, 'still holding the turret, jammed against the carriage');
 });
 
 test('an unfinished long line gets only two staggered carriages, not a purchase burst', () => {

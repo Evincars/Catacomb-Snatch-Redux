@@ -19,10 +19,10 @@ export type Difficulty = {
 };
 
 export const DIFFICULTIES: Difficulty[] = [
-  { name: 'Easy',      healthMod: 0.5, strengthMod: 0.5, spawnMod: 1.5,  shopCostMod: 0.5, mobRegen: false, regenInterval: 25, mobDensity: 5, maxMobs: 90, maxSpawners: 14, pharaohs: 1, coinLifespan: 30 },
-  { name: 'Normal',    healthMod: 1.0, strengthMod: 1.0, spawnMod: 1.25, shopCostMod: 1.0, mobRegen: false, regenInterval: 25, mobDensity: 8, maxMobs: 140, maxSpawners: 22, pharaohs: 2, coinLifespan: 20 },
-  { name: 'Hard',      healthMod: 3.0, strengthMod: 3.0, spawnMod: 1.25, shopCostMod: 1.5, mobRegen: true,  regenInterval: 25, mobDensity: 8, maxMobs: 140, maxSpawners: 22, pharaohs: 3, coinLifespan: 15 },
-  { name: 'Nightmare', healthMod: 6.0, strengthMod: 5.0, spawnMod: 1.0,  shopCostMod: 2.5, mobRegen: true,  regenInterval: 15, mobDensity: 9, maxMobs: 170, maxSpawners: 26, pharaohs: 4, coinLifespan: 10 },
+  { name: 'Easy',      healthMod: 0.5, strengthMod: 0.5, spawnMod: 1.5,  shopCostMod: 0.5, mobRegen: false, regenInterval: 25, mobDensity: 6, maxMobs: 110, maxSpawners: 17, pharaohs: 1, coinLifespan: 30 },
+  { name: 'Normal',    healthMod: 1.0, strengthMod: 1.0, spawnMod: 1.25, shopCostMod: 1.0, mobRegen: false, regenInterval: 25, mobDensity: 9, maxMobs: 170, maxSpawners: 26, pharaohs: 2, coinLifespan: 20 },
+  { name: 'Hard',      healthMod: 3.0, strengthMod: 3.0, spawnMod: 1.25, shopCostMod: 1.5, mobRegen: true,  regenInterval: 25, mobDensity: 9, maxMobs: 170, maxSpawners: 26, pharaohs: 3, coinLifespan: 15 },
+  { name: 'Nightmare', healthMod: 6.0, strengthMod: 5.0, spawnMod: 1.0,  shopCostMod: 2.5, mobRegen: true,  regenInterval: 15, mobDensity: 11, maxMobs: 210, maxSpawners: 32, pharaohs: 4, coinLifespan: 10 },
 ];
 
 export type LevelInfo = {
