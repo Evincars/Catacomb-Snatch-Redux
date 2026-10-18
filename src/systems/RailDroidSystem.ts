@@ -9,7 +9,6 @@ import { frameTexture } from '../render/Sheets';
 import { BB } from '../math/BB';
 import { move } from './MovementSystem';
 import { sound } from '../audio/SoundPlayer';
-import { createLoot } from '../entities/LootFactory';
 import { gameState, isVersus } from '../game/GameState';
 
 /** Steady speed of Java's RailDroid (0.7 px of thrust against 0.4 drag). */
@@ -30,7 +29,7 @@ const POT_RAISE = 15;
 const TREASURE_REACH = 32;
 /** Ticks between filling and emptying, Java's swapTime. */
 const SWAP_TIME = 30;
-/** Worth of the emerald a carriage drops for each pot of treasure brought home. */
+/** Coins credited to the team for each pot of treasure brought home in a co-operative game. */
 export const TREASURE_REWARD = 100;
 /** Original versus treasury progress per delivery, independent of the coin reward. */
 const TREASURE_PROGRESS = 2;
@@ -163,14 +162,15 @@ function handleTreasure(level: Level, droid: Entity): void {
     || isVersus() && tile.team !== droid.team) return;
   rd.full = false;
   rd.swapTime = SWAP_TIME;
+  // A delivery only empties the pot and moves the score; nothing drops and nothing sounds.
   if (isVersus()) {
     if (droid.team === 1) level.player1Score += TREASURE_PROGRESS;
     else if (droid.team === 2) level.player2Score += TREASURE_PROGRESS;
+  } else {
+    for (const player of world.with('playerStats', 'playerInput')) {
+      if (player.team === droid.team) player.playerStats!.score += TREASURE_REWARD;
+    }
   }
-  // The haul tumbles out as an emerald that has to be picked up before it fades.
-  const angle = Math.random() * Math.PI * 2;
-  createLoot(pos.x, pos.y, Math.cos(angle) * 0.5, Math.sin(angle) * 0.5, TREASURE_REWARD, true);
-  sound.playSound('bigCoin', pos.x, pos.y);
 }
 
 /**

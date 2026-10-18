@@ -10,7 +10,7 @@ const PLAYER_PRESSURE_RADIUS = 6 * TILE_WIDTH;
 /** No mob of the same kind may already stand this close to a new one. */
 const SAME_KIND_CLEARANCE = 8;
 /** A nest stops producing while this many of its own mobs are alive, wherever they have wandered to. */
-export const MAX_PER_NEST = 3;
+export const MAX_PER_NEST = 6;
 /** Mobs appear within a couple of pixels of their nest. */
 const SPAWN_JITTER = 5;
 

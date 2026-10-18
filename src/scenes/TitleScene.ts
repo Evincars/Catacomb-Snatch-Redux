@@ -46,7 +46,6 @@ export class TitleScene implements Scene {
     ];
 
     const BTN_W = 248;
-    const debugLabel = () => `Debug: ${gameState.debug ? 'On' : 'Off'}`;
     const startY = 174;
     menuItems.forEach(({ label, action }, i) => {
       const btn = new PixelButton(label, BTN_W, 24);
@@ -56,17 +55,6 @@ export class TitleScene implements Scene {
       this.buttons.push(btn);
       this.container.addChild(btn);
     });
-
-    // Testing aid: start every game with a pile of coins.
-    const debug = new PixelButton(debugLabel(), BTN_W, 24);
-    debug.x = (GW - BTN_W) / 2;
-    debug.y = startY + menuItems.length * 27;
-    debug.onPress = () => {
-      gameState.debug = !gameState.debug;
-      debug.setText(debugLabel());
-    };
-    this.buttons.push(debug);
-    this.container.addChild(debug);
 
     const ver = makeText(`v${__APP_VERSION__}`, 0xaaaaaa, 8, 'right');
     ver.x = GW - 4;

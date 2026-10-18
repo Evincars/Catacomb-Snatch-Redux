@@ -24,6 +24,7 @@ import { upgradeCostOf } from '../entities/BuildingFactory';
 import { hitByAimLine, INTERACT_REACH } from './TargetingSystem';
 import { railCost, carriageCost } from './InteractionSystem';
 import { canSpawnRailDroid } from './RailDroidSystem';
+import { blastHitTiles } from './BuildingSystem';
 
 /** Distances, in pixels, at which guns are compared. */
 const RANGE_BANDS = [32, 80, 140, 200, 260];
@@ -1108,8 +1109,8 @@ function clearOfBlast(entity: Entity, bomb: Entity): boolean {
   const by = tileY(bomb.position!.y - (bomb.yOffset ?? 0));
   const reach = bomb.bomb!.blastTiles;
   const r = entity.radius ?? { x: 10, y: 10 };
-  return Math.abs(entity.position!.x - centreX(bx)) >= (reach + 0.5) * TILE_WIDTH + r.x
-    || Math.abs(entity.position!.y - centreY(by)) >= (reach + 0.5) * TILE_HEIGHT + r.y;
+  return Math.abs(entity.position!.x - centreX(bx)) >= blastHitTiles(reach) * TILE_WIDTH + r.x
+    || Math.abs(entity.position!.y - centreY(by)) >= blastHitTiles(reach) * TILE_HEIGHT + r.y;
 }
 
 /** A reachable tile outside the actual blast, preferably with extra clearance. */
@@ -1117,7 +1118,7 @@ function blastCover(level: Level, field: Field, bomb: Entity, needsShot = true):
   const bp = bomb.position!;
   const bx = tileX(bp.x);
   const by = tileY(bp.y - (bomb.yOffset ?? 0));
-  const reach = bomb.bomb!.blastTiles;
+  const reach = Math.ceil(blastHitTiles(bomb.bomb!.blastTiles) - 0.5);
   let best = -1;
   let bestScore = INF;
   for (let ty = by - reach - 6; ty <= by + reach + 6; ty++) {

@@ -8,7 +8,7 @@ import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { loadTmxLevel } from '../level/TmxLoader';
 import { buildLevelView } from '../level/TileRenderer';
 import { createPlayer } from '../entities/PlayerFactory';
-import { initInput, resetInput } from '../systems/InputSystem';
+import { initInput, resetInput, setInputCaptured } from '../systems/InputSystem';
 import { runSystems, SIMULATION, PRESENTATION } from '../systems/Simulation';
 import type { FrameContext } from '../systems/Simulation';
 import { clearSprites, updateSprites } from '../systems/SpriteSystem';
@@ -21,7 +21,9 @@ import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { takeNotices, clearNotices, updateNotices, noticeEvents, notify } from '../game/Notices';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
-import { gameState, DEBUG_COINS, isVersus } from '../game/GameState';
+import { gameState, isVersus } from '../game/GameState';
+import { cheats, resetCheats, runCommand } from '../game/Console';
+import { ConsoleView } from '../ui/ConsoleView';
 import type { CharacterType } from '../entities/PlayerFactory';
 import { sound } from '../audio/SoundPlayer';
 import { camera, GAME_WIDTH, GAME_HEIGHT, VIEW_HEIGHT } from '../render/Camera';
@@ -74,6 +76,9 @@ export class InGameScene implements Scene {
   private disposed = false;
   private finished = false;
   private respawnLabel = makeText('', 0xffdd88, 18, 'center');
+  private console = new ConsoleView((line) => runCommand(line, { player: this.player }));
+  /** Fraction of a simulation step carried over while the game runs slower than normal. */
+  private stepBank = 0;
   private manager: SceneManager;
   private app: Application;
   private onKeyDown: (e: KeyboardEvent) => void;
@@ -91,7 +96,18 @@ export class InGameScene implements Scene {
     initInput(this.app.canvas as HTMLCanvasElement);
 
     this.onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Escape' || this.finished) return;
+      if (this.finished) return;
+      if (e.code === 'Tab') {
+        e.preventDefault();
+        this.toggleConsole();
+        return;
+      }
+      if (this.console.visible) {
+        if (e.code === 'Escape') this.toggleConsole();
+        else this.console.handleKey(e);
+        return;
+      }
+      if (e.code !== 'Escape') return;
       // Escape backs out of a sub-screen first, and only then closes the pause menu.
       if (this.mainConfirmation) this.closeMainConfirmation();
       else if (this.manager.hasOverlay) this.manager.escapeOverlay();
@@ -123,6 +139,7 @@ export class InGameScene implements Scene {
     clearSprites();
     resetWalls();
     clearNotices();
+    resetCheats();
     for (const entity of world.entities.slice()) world.remove(entity);
 
     const pending = savedRun.pending;
@@ -184,7 +201,6 @@ export class InGameScene implements Scene {
     this.player = existing ?? createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
     world.addComponent(this.player, 'playerSlot', slot);
     world.removeComponent(this.player, 'remoteInput');
-    if (!snapshot && gameState.debug) this.player.playerStats!.score = DEBUG_COINS;
     if (coop.role === 'host') {
       const guestTeam = gameState.multiplayerMode === 'enemy' ? Team.Two : Team.One;
       const guestSpawn = guestTeam === Team.One ? spawn : this.level.getRandomSpawnPoint(guestTeam);
@@ -194,7 +210,6 @@ export class InGameScene implements Scene {
       world.addComponent(guest, 'playerSlot', 'guest');
       world.addComponent(guest, 'remoteInput', true);
       guest.minimapColor = 0x80dfff;
-      if (!snapshot && gameState.debug) guest.playerStats!.score = DEBUG_COINS;
     } else if (!coop.role) {
       // A restored single-player run only has a local host character.
       for (const entity of world.with('playerSlot')) {
@@ -294,6 +309,7 @@ export class InGameScene implements Scene {
     this.hudLayer.addChild(this.hud.container);
     this.hudLayer.addChild(this.weaponBar.container);
     this.hudLayer.addChild(this.tooltip.container);
+    this.hudLayer.addChild(this.console.container);
   }
 
   /** Shows what the player is standing next to, or what they are carrying. */
@@ -331,6 +347,7 @@ export class InGameScene implements Scene {
   }
 
   private togglePause(): void {
+    if (this.console.visible) this.toggleConsole();
     this.paused = !this.paused;
     this.mainConfirmation = null;
     this.overlay.removeChildren().forEach((c) => c.destroy({ children: true }));
@@ -364,7 +381,6 @@ export class InGameScene implements Scene {
           this.manager.pushOverlay('save_game');
         },
       }] : []),
-      ...(coop.role !== 'guest' ? [{ label: 'Debug', action: () => this.enableDebug() }] : []),
       { label: 'Main', action: () => this.confirmMainMenu() },
       { label: 'Exit Game', action: () => this.exitGame() },
     ];
@@ -419,11 +435,16 @@ export class InGameScene implements Scene {
     this.overlay.addChild(dialog);
   }
 
-  /** Testing aid: fills the purse and stops the coin target from ending the run. */
-  private enableDebug(): void {
-    gameState.debug = true;
-    this.player.playerStats!.score = DEBUG_COINS;
-    this.togglePause();
+  private toggleConsole(): void {
+    if (this.paused || !this.player) return;
+    if (coop.role) {
+      notify('The console is not available in multiplayer');
+      return;
+    }
+    const open = !this.console.visible;
+    if (open) this.console.open();
+    else this.console.close();
+    setInputCaptured(open);
   }
 
   /** Browsers only allow closing tabs a script opened, so fall back to the main menu. */
@@ -466,8 +487,14 @@ export class InGameScene implements Scene {
       updateTargeting();
       updateNotices();
     } else {
-      this.applyGuestInput();
-      runSystems(SIMULATION, ctx);
+      // The console can run the game faster or slower; each step is a normal tick.
+      this.stepBank += cheats.speed;
+      const steps = Math.floor(this.stepBank);
+      this.stepBank -= steps;
+      for (let i = 0; i < steps && !this.finished; i++) {
+        this.applyGuestInput();
+        runSystems(SIMULATION, ctx);
+      }
     }
     runSystems(PRESENTATION, ctx);
     if (coop.role === 'guest') flushRemoved();
@@ -501,6 +528,7 @@ export class InGameScene implements Scene {
     this.weaponBar.update(this.player);
     this.tooltip.update(this.player);
     this.crosshair.update();
+    this.console.update();
     this.updatePrompt();
     if (coop.role && (!coop.connected || this.hostPaused)) {
       this.hud.setPrompt(this.hostPaused ? 'Host paused the game' : coop.status);
@@ -514,13 +542,11 @@ export class InGameScene implements Scene {
       this.end(0);
     } else if (isVersus()) {
       // Versus play goes on through deaths; the first side to fill its treasury wins.
-      if (!gameState.debug) {
-        if (this.level.player1Score >= this.level.targetScore) this.end(Team.One);
-        else if (this.level.player2Score >= this.level.targetScore) this.end(Team.Two);
-      }
+      if (this.level.player1Score >= this.level.targetScore) this.end(Team.One);
+      else if (this.level.player2Score >= this.level.targetScore) this.end(Team.Two);
     } else if (!health || health.current <= 0 || this.player.removed) {
       this.end(0);
-    } else if (!gameState.debug && stats
+    } else if (stats
       && [...world.with('playerSlot', 'playerStats')].reduce((sum, p) => sum + p.playerStats!.score, 0) >= this.level.targetScore) {
       this.end(Team.One);
     }
@@ -572,6 +598,7 @@ export class InGameScene implements Scene {
     coop.onState = null; coop.onEnd = null;
     sound.onEffect = null; noticeEvents.onNotice = null;
     window.removeEventListener('keydown', this.onKeyDown);
+    setInputCaptured(false);
     this.ticker.stop();
     this.ticker.destroy();
     this.darkness.destroy();

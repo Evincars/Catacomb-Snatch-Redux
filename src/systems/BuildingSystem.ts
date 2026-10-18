@@ -145,6 +145,14 @@ export function updateHarvesters(_dt: number): void {
  * player caught in the blast. Runs before DeathSystem so the bomb still exists
  * when it goes off.
  */
+/** A blast hurts a little farther out than the tiles it clears, in tiles beyond the bomb's own. */
+export const BLAST_HIT_MARGIN = 0.5;
+
+/** Half-width, in tiles from the centre of the bomb's tile, within which a blast hurts. */
+export function blastHitTiles(blastTiles: number): number {
+  return blastTiles + 0.5 + BLAST_HIT_MARGIN;
+}
+
 export function updateBombs(level: Level, _dt: number): void {
   for (const bombEntity of world.with('position', 'bomb', 'health')) {
     if (bombEntity.removed) continue;
@@ -162,8 +170,8 @@ export function updateBombs(level: Level, _dt: number): void {
     const reach = data.blastTiles;
     const centerX = bx * TILE_WIDTH + TILE_WIDTH / 2;
     const centerY = by * TILE_HEIGHT + TILE_HEIGHT / 2;
-    const halfW = (reach + 0.5) * TILE_WIDTH;
-    const halfH = (reach + 0.5) * TILE_HEIGHT;
+    const halfW = blastHitTiles(reach) * TILE_WIDTH;
+    const halfH = blastHitTiles(reach) * TILE_HEIGHT;
     const inBlast = (x: number, y: number) => Math.abs(x - centerX) < halfW && Math.abs(y - centerY) < halfH;
 
     for (const mob of world.with('position', 'health', 'ai')) {

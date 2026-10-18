@@ -14,6 +14,14 @@ let mouseDown = false;
 let mouseRight = false;
 let rightPending = false;
 let bound = false;
+let captured = false;
+
+/** While the console is open, typing must not move, shoot or buy anything. */
+export function setInputCaptured(on: boolean): void {
+  captured = on;
+  keys.clear();
+  resetInput();
+}
 
 /** Logical (unscaled) pointer position within the 512x384 surface. */
 export function pointer(): { x: number; y: number } {
@@ -49,10 +57,11 @@ export function initInput(canvas: HTMLCanvasElement): void {
   bound = true;
 
   window.addEventListener('keydown', (e) => {
-    keys.add(e.code);
-    if (!e.repeat) pending.add(e.code);
     // Stop the page from scrolling under the canvas.
     if (e.code.startsWith('Arrow') || e.code === 'Space' || e.code === 'Tab') e.preventDefault();
+    if (captured) return;
+    keys.add(e.code);
+    if (!e.repeat) pending.add(e.code);
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
   window.addEventListener('blur', () => keys.clear());
@@ -97,9 +106,9 @@ export function updateInput(_dt: number): void {
   pressed = new Set(pending);
   pending.clear();
 
-  const rightClick = rightPending;
+  const rightClick = rightPending && !captured;
   rightPending = false;
-  const step = Math.sign(wheel);
+  const step = captured ? 0 : Math.sign(wheel);
   wheel = 0;
 
   let aimX = 0;
@@ -121,8 +130,8 @@ export function updateInput(_dt: number): void {
     pi.right = isActionDown('right');
     pi.sprint = isActionDown('sprint');
     pi.keyAim = keyAimed ? { x: aimX / aimLen, y: aimY / aimLen } : null;
-    pi.shoot = mouseDown || isActionDown('fire') || keyAimed;
-    pi.use   = mouseRight || isActionDown('use');
+    pi.shoot = !captured && (mouseDown || isActionDown('fire') || keyAimed);
+    pi.use   = !captured && (mouseRight || isActionDown('use'));
     pi.mouseX = mouseX;
     pi.mouseY = mouseY;
     pi.mouseAiming = true;

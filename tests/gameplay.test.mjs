@@ -29,6 +29,7 @@ const { spawnTreasureGuards } = await load('systems/TreasureSystem');
 const { createSpawner } = await load('entities/SpawnerFactory');
 const { createMob } = await load('entities/MobFactory');
 const { gameState, DIFFICULTIES, AI_DIFFICULTIES } = await load('game/GameState');
+const { runCommand, cheats } = await load('game/Console');
 const { captureWorld, validateWorld, restoreSettings } = await load('game/WorldState');
 
 const centre = (t) => t * 32 + 16;
@@ -91,6 +92,40 @@ test('a player standing inside a carriage is eased out, not thrown across the ti
   const startX = p.position.x;
   updateRailDroids(level);
   assert.ok(Math.abs(p.position.x - startX) <= 3, `shoved ${p.position.x - startX}px in one tick`);
+});
+
+test('console commands give money, toggle god mode and change the game speed', () => {
+  const p = createPlayer(centre(5), centre(4), Team.One);
+  const ctx = { player: p };
+  const before = p.playerStats.score;
+  runCommand('/money 250', ctx);
+  assert.equal(p.playerStats.score, before + 250);
+  runCommand('/give money 50', ctx);
+  assert.equal(p.playerStats.score, before + 300);
+  assert.match(runCommand('/money lots', ctx)[0], /Usage/);
+  runCommand('/god', ctx);
+  assert.equal(p.health.immortal, true);
+  runCommand('/god off', ctx);
+  assert.equal(p.health.immortal, false);
+  runCommand('/speed 4', ctx);
+  assert.equal(cheats.speed, 4);
+  runCommand('/speed 99', ctx);
+  assert.equal(cheats.speed, 4, 'out-of-range speed must be refused');
+  runCommand('/speed normal', ctx);
+  assert.equal(cheats.speed, 1);
+  assert.match(runCommand('help', ctx)[0], /slash/);
+  assert.match(runCommand('/nope', ctx)[0], /Unknown/);
+});
+
+test('delivering treasure empties the carriage silently and only moves the score', () => {
+  const level = new Level(12, 8);
+  track(level, 5, 4, TileType.PlayerRail);
+  const droid = createRailDroid(centre(5), centre(4), Team.Two);
+  droid.railDroid.full = true;
+  updateRailDroids(level);
+  assert.equal(droid.railDroid.full, false);
+  assert.equal([...world.with('loot')].length, 0, 'delivery must not drop an emerald');
+  assert.equal(level.player2Score, 2);
 });
 
 test('a player carrying a building cannot shoot', () => {

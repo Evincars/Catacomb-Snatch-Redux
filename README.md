@@ -117,9 +117,11 @@ actors, pointer coordinates and collision tiles all share the same world coordin
   Players inside their own base area are protected from opponent damage, but can fire
   outward. Leaving that area immediately removes this protection.
 - Enemy victory depends on **delivered treasure**, not coins carried or spent.
-  Each full carriage delivery adds **2%**, matching the original versus game, and still
-  drops its 100-coin emerald reward. The bottom HUD shows both teams' delivered percentages.
+  Each full carriage delivery adds **2%**, matching the original versus game; the carriage
+  just empties, with no emerald and no sound. The bottom HUD shows both teams' delivered percentages.
   The first team to reach 100% wins. Companions retain combined-carried-coin victory.
+- **Tab opens a console** (single-player only) for testing: `/money <amount>`, `/god [on|off]`,
+  `/speed <0.25-10>` and `/speed normal`; `/help` lists them and Tab or Esc closes it.
 - The host's pause menu pauses the world; the guest's pause menu only stops their own controls.
   A lost connection pauses the host's run, where it can still be saved. Return to the main menu
   and reload that save to reconnect with a new invite.
