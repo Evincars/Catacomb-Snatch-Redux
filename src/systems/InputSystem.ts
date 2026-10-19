@@ -57,6 +57,8 @@ export function initInput(canvas: HTMLCanvasElement): void {
   bound = true;
 
   window.addEventListener('keydown', (e) => {
+    // Typing in a text box (a player name) is not a game key.
+    if (e.target instanceof HTMLInputElement) return;
     // Stop the page from scrolling under the canvas.
     if (e.code.startsWith('Arrow') || e.code === 'Space' || e.code === 'Tab') e.preventDefault();
     if (captured) return;

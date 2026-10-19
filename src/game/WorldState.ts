@@ -1,8 +1,9 @@
-import { world } from '../world';
-import type { Entity } from '../world';
+import { world, PLAYER_SLOTS, MAX_PLAYERS } from '../world';
+import type { Entity, PlayerSlot } from '../world';
 import { Level } from '../level/Level';
 import type { LevelState } from '../level/Level';
 import { gameState } from './GameState';
+import { cleanName } from './Settings';
 import type { CharacterType } from '../entities/PlayerFactory';
 import type { Difficulty, LevelInfo, MultiplayerMode, OpponentMode } from './GameState';
 import { AI_DIFFICULTIES, DIFFICULTIES, LEVELS } from './GameState';
@@ -84,9 +85,11 @@ export function validateWorld(value: unknown): asserts value is WorldState {
     ids.add(entry.id);
     checkEntity(entry.data);
     if (entry.data.playerSlot) {
-      if (!['host', 'guest'].includes(entry.data.playerSlot) || slots.has(entry.data.playerSlot)
+      const enemyMode = s.settings.multiplayerMode === 'enemy';
+      if (!PLAYER_SLOTS.includes(entry.data.playerSlot) || slots.has(entry.data.playerSlot)
+        || enemyMode && !['host', 'guest'].includes(entry.data.playerSlot)
         || !entry.data.playerInput || !entry.data.playerStats || !entry.data.health
-        || entry.data.team !== (entry.data.playerSlot === 'guest' && s.settings.multiplayerMode === 'enemy' ? 2 : 1)) {
+        || entry.data.team !== (entry.data.playerSlot !== 'host' && enemyMode ? 2 : 1)) {
         throw new Error('Invalid multiplayer team state');
       }
       slots.add(entry.data.playerSlot);
@@ -94,6 +97,7 @@ export function validateWorld(value: unknown): asserts value is WorldState {
     if (entry.data.aiPlayer) {
       if (s.settings.opponent !== 'ai' || entry.data.playerSlot || entry.data.team !== 2 || !entry.data.playerInput
         || !CHARACTERS.includes(entry.data.aiPlayer.character)
+        || entry.data.aiPlayer.role !== undefined && !['all', 'builder', 'saboteur'].includes(entry.data.aiPlayer.role)
         || !AI_DIFFICULTIES.some(d => d.name === entry.data.aiPlayer!.difficulty)) throw new Error('Invalid computer opponent');
       computers++;
     }
@@ -107,14 +111,14 @@ export function validateWorld(value: unknown): asserts value is WorldState {
       || t.collapseTicks !== undefined && (!Number.isInteger(t.collapseTicks) || t.collapseTicks < 0 || t.collapseTicks > 5))) throw new Error('Invalid terrain state');
   }
   if (!slots.has('host')) throw new Error('Save has no host player');
-  if (computers > 1) throw new Error('Save has more than one computer opponent');
+  if (computers > MAX_PLAYERS) throw new Error('Save has too many computer opponents');
   for (const points of s.level.spawns) {
     if (!Array.isArray(points) || points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('Invalid spawn state');
   }
 }
 
 const COMPONENTS = new Set([
-  'playerSlot', 'remoteInput', 'aiPlayer', 'aimWorld', 'respawnTicks', 'spawnProtected', 'position', 'velocity', 'radius', 'blocking', 'physicsSlide', 'team',
+  'playerSlot', 'playerName', 'remoteInput', 'aiPlayer', 'aimWorld', 'respawnTicks', 'spawnProtected', 'position', 'velocity', 'radius', 'blocking', 'physicsSlide', 'team',
   'health', 'hurtTime', 'freezeTime', 'bounceWallTime', 'regenInterval', 'regenAmount', 'regenTimer', 'deathPoints',
   'facing', 'speed', 'friction', 'strength', 'aimVector', 'walkTime', 'stepTime', 'limp', 'bump', 'slide', 'chasing',
   'visual', 'frame', 'yOffset', 'flashTime', 'highlight', 'mobType', 'healthBarOffset', 'coinBarOffset', 'fx',
@@ -175,6 +179,9 @@ function checkEntity(data: EntityState): void {
     }
   }
   if (!data.position) throw new Error('Entity has no position');
+  if (data.playerName !== undefined && (typeof data.playerName !== 'string' || cleanName(data.playerName) !== data.playerName)) {
+    throw new Error('Invalid player name');
+  }
   if (data.playerInput) {
     const i = data.playerInput.intents;
     if (!i || typeof i.use !== 'boolean' || typeof i.build !== 'boolean' || typeof i.upgrade !== 'boolean'
@@ -192,6 +199,8 @@ function checkEntity(data: EntityState): void {
 /** Keeps display objects alive on the guest while remapping host entity references to local ECS ids. */
 export class WorldReplica {
   private entities = new Map<number, Entity>();
+  /** The player this screen controls; everyone else's character takes remote input. */
+  localSlot: PlayerSlot | null = null;
   private glides = new Map<Entity, { fromX: number; fromY: number; toX: number; toY: number }>();
   private arrivedAt = 0;
   private interval = 50;
@@ -266,7 +275,7 @@ export class WorldReplica {
         setVisualFrame(entity.sprite, entity.visual.sheet, entity.frame ?? entity.visual.col ?? 0, entity.visual.row ?? 0);
       }
       if (entity.playerSlot) {
-        if (entity.playerSlot === 'guest') world.addComponent(entity, 'remoteInput', true);
+        if (entity.playerSlot !== this.localSlot) world.addComponent(entity, 'remoteInput', true);
         else world.removeComponent(entity, 'remoteInput');
       }
     }

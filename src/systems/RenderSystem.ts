@@ -75,7 +75,7 @@ export function updateRender(_dt: number, level: Level): void {
     const sprite = entity.sprite!;
     const carrier = entity.carriedBy === undefined ? undefined : world.entity(entity.carriedBy);
     if (entity.playerInput || carrier?.playerInput) sprite.visible = entity.respawnTicks === undefined && carrier?.respawnTicks === undefined;
-    sprite.tint = entity.playerSlot === 'guest' ? 0x80dfff : 0xffffff;
+    sprite.tint = 0xffffff;
     const yOff = entity.yOffset ?? 0;
 
     sprite.x = Math.round(pos.x);

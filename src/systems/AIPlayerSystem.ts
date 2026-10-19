@@ -10,7 +10,7 @@
  * `upgradable`). New items of an existing role are picked up automatically.
  */
 import { world, q, Team } from '../world';
-import type { Entity } from '../world';
+import type { Entity, AIRole } from '../world';
 import type { Level } from '../level/Level';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { railJoins } from '../level/RailLayout';
@@ -25,6 +25,8 @@ import { hitByAimLine, INTERACT_REACH } from './TargetingSystem';
 import { railCost, carriageCost } from './InteractionSystem';
 import { canSpawnRailDroid } from './RailDroidSystem';
 import { blastHitTiles } from './BuildingSystem';
+import { solveRicochet } from './Ricochet';
+import type { BankShot } from './Ricochet';
 
 /** Distances, in pixels, at which guns are compared. */
 const RANGE_BANDS = [32, 80, 140, 200, 260];
@@ -133,6 +135,12 @@ type Brain = {
   /** Head of the track while mobs hold it: the next turret goes there. */
   front?: { x: number; y: number };
   blacklist: Map<number, number>;
+  /** A building put down to fight, to be picked up and put to use once the fight is over; and until when to try. */
+  retrieveId?: number;
+  retrieveUntil: number;
+  /** A ricochet that reaches an enemy it cannot see, worked out at tick `at`. */
+  bank: { targetId: number; shot: BankShot; at: number } | null;
+  bankCool: number;
 };
 
 const brains = new WeakMap<Entity, Brain>();
@@ -148,10 +156,15 @@ function brainOf(entity: Entity): Brain {
       trigger: false, triggerTicks: 0, swapTicks: 0,
       lastX: entity.position!.x, lastY: entity.position!.y, stuck: 0, sidestep: null, walkWatch: null, avoid: new Map(), railsSinceUpgrade: 0, upgradeSince: null,
       railPlan: [], railDone: false, lastCarriageAt: -CARRIAGE_DELAY, blacklist: new Map(),
+      retrieveUntil: 0, bank: null, bankCool: 0,
     };
     brains.set(entity, brain);
   }
   return brain;
+}
+
+function roleOf(entity: Entity): AIRole {
+  return entity.aiPlayer?.role ?? 'all';
 }
 
 function profileOf(entity: Entity): AIDifficulty {
@@ -325,34 +338,46 @@ function walkDistance(level: Level, field: Field, x: number, y: number): number 
 // ---------------------------------------------------------------------------
 // Rating guns from their data.
 
+/** What the target does that decides which gun suits: how fast it moves, and whether the shot must bank off a wall. */
+type Aim = { speed: number; bank: boolean };
+const STRAIGHT: Aim = { speed: 0, bank: false };
+
 /** Expected damage per second against a target `d` pixels away; 0 when out of reach. */
-function weaponValue(kind: string, d: number): number {
+function weaponValue(kind: string, d: number, aim: Aim = STRAIGHT): number {
   const stats = WEAPON_STATS[kind];
   const bullet = stats ? BULLET_CONFIGS[stats.bullet] : undefined;
-  if (!stats || !bullet || d > bullet.range) return 0;
+  if (!stats || !bullet) return 0;
+  // Round a corner only a bouncing shot arrives, and it travels further than the straight line.
+  if (aim.bank ? !bullet.bounces : d > bullet.range) return 0;
   const flight = d / bullet.speed;
   const damage = Math.max(0.5, bullet.damage - (bullet.damageFalloff ?? 0) * flight);
   // Pellets spread over `accuracy` radians; the share that hits a body ~16px wide.
   const spread = Math.max(1, d * stats.accuracy * 2);
   const hitShare = Math.min(1, 16 / spread);
   const bounce = 1 + (bullet.bounces ?? 0) * 0.08;
-  return damage * stats.pellets * hitShare * bounce * 60 / Math.max(1, stats.cooldown);
+  // A slow shot at something on the move is mostly dodged; a fast one, or one at a standing target, is not.
+  const dodge = 1 / (1 + (flight * aim.speed) / 16);
+  return damage * stats.pellets * hitShare * bounce * dodge * 60 / Math.max(1, stats.cooldown);
 }
 
-/** Best owned weapon slot for a fight at distance `d`. */
-/** Best gun for the distance; `safe` rules out guns whose kick would be dangerous. */
-function bestSlot(entity: Entity, d: number, safe: (weapon: string) => boolean = () => true): number {
+/** Best gun for the distance and the target; `safe` rules out guns whose kick would be dangerous. */
+function bestSlot(entity: Entity, d: number, safe: (weapon: string) => boolean = () => true, aim: Aim = STRAIGHT): number {
   const inv = entity.weaponInventory!;
   let best = inv.current;
-  let bestValue = safe(inv.weapons[inv.current]) ? weaponValue(inv.weapons[inv.current], d) : 0;
+  let bestValue = safe(inv.weapons[inv.current]) ? weaponValue(inv.weapons[inv.current], d, aim) : 0;
   inv.weapons.forEach((w, i) => {
-    const v = safe(w) ? weaponValue(w, d) : 0;
+    const v = safe(w) ? weaponValue(w, d, aim) : 0;
     if (v > bestValue * 1.1) {
       best = i;
       bestValue = v;
     }
   });
   return best;
+}
+
+/** Slot of the first owned gun whose shots bounce, or -1. */
+function bouncingSlot(entity: Entity): number {
+  return entity.weaponInventory!.weapons.findIndex((w) => (BULLET_CONFIGS[WEAPON_STATS[w]?.bullet]?.bounces ?? 0) > 0);
 }
 
 /** How much a weapon would add to the arsenal, as the summed gain over the range bands. */
@@ -703,7 +728,10 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   const money = entity.playerStats!.score;
   const held = entity.carryingId !== undefined ? world.entity(entity.carryingId) : undefined;
 
-  const plan = planRails(level, entity.team ?? Team.Two);
+  // A saboteur leaves the track and the treasure to its partner and goes after the rival's.
+  const saboteur = roleOf(entity) === 'saboteur';
+  const sabotage = saboteur ? findSabotage(level, entity, field) : null;
+  const plan = saboteur ? null : planRails(level, entity.team ?? Team.Two);
   brain.railPlan = plan ?? [];
   brain.railDone = plan !== null && plan.length === 0;
   // Opening a reachable barrier is exploration, not rail construction. Do it
@@ -716,7 +744,8 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   // Hands full and something biting within reach: put it down here and fight.
   // A bomb is never let go of in a fight: on the floor any stray shot sets it off, and it
   // stays in hand across a respawn anyway.
-  const threatened = held !== undefined && !held.bomb && mobsNear(level, entity, 72) > 0;
+  const engaged = mobsNear(level, entity, 72) > 0 || rivalsInSight(level, entity, profile.engageRange) > 0;
+  const threatened = held !== undefined && !held.bomb && engaged;
   const explosive = cheapestStall(entity, 'explosive');
   // Money is put by for the bomb, rather than spent on extras.
   const saving = wall >= 0 && brain.blastId === undefined && brain.looseBombId === undefined && !held?.bomb && explosive ? explosive.shopItem!.cost : 0;
@@ -751,6 +780,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   // Keep going with an interaction that is under way.
   const g = brain.goal;
   if (g && brain.age - g.since < GOAL_TIMEOUT && !g.walk && !g.huntId && !(threatened && !g.stash)
+    && !(engaged && g.name === 'retrieve')
     && !(needsBaseDefense && g.build)
     && goalStillValid(level, entity, brain, g)) {
     brain.path = pathTo(field, g.tile);
@@ -762,10 +792,25 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   }
   brain.goal = null;
 
-  // 0. Hands full and something biting: put it down here and fight.
+  // 0. Hands full and something biting, or a rival in sight: put it down here and fight.
   if (threatened) {
-    stashGoal(level, brain);
+    stashGoal(level, brain, true);
     return;
+  }
+
+  // 0a. The fight is over: pick up what was put down for it, to be set where it belongs.
+  if (brain.retrieveId !== undefined) {
+    const lost = world.entity(brain.retrieveId);
+    if (!lost || lost.removed || lost.team !== entity.team || lost.carriedBy !== undefined || held
+      || brain.age > brain.retrieveUntil) brain.retrieveId = undefined;
+    else if (!engaged) {
+      const t = approachTile(level, field, tileOf(level, lost.position!.x, lost.position!.y));
+      if (t >= 0 && Number.isFinite(field.dist[t])) {
+        setGoal(brain, level, { name: 'retrieve', tile: t, pickupId: world.id(lost)! });
+        return;
+      }
+      brain.retrieveId = undefined;
+    }
   }
 
   // 1. Whatever is in hand goes where it is useful; a bomb goes against the wall in the way.
@@ -775,6 +820,11 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
       setGoal(brain, level, { name: 'place bomb', tile: t, drop: true, faceTile: wall });
       return;
     }
+  }
+  if (held?.bomb && sabotage) {
+    // The bomb goes beside what is to be wrecked; once it is down the AI backs off and shoots it.
+    setGoal(brain, level, { name: 'place bomb', tile: sabotage.stand, drop: true, faceTile: sabotage.tile });
+    return;
   }
   if (held?.bomb) {
     // No wall to open from here: set it down out of harm's way and keep it.
@@ -837,6 +887,14 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   if (bestGun && !needsBaseDefense && reachable(level, brain, bestGun) < INF) {
     useGoal(level, brain, 'buy weapon', bestGun);
     return;
+  }
+
+  if (sabotage && brain.blastId === undefined && brain.looseBombId === undefined) {
+    const stall = stallFor(entity, 'explosive', money);
+    if (stall && reachable(level, brain, stall) < INF) {
+      useGoal(level, brain, 'buy explosive', stall);
+      return;
+    }
   }
 
   if (wall >= 0 && brain.blastId === undefined && brain.looseBombId === undefined) {
@@ -975,7 +1033,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   }
 
   // Stage a small fleet as the connected line grows, not only after it reaches treasure.
-  const desiredCarriages = carriageDemand(level, entity, profile);
+  const desiredCarriages = saboteur ? 0 : carriageDemand(level, entity, profile);
   if (!needsBaseDefense && desiredCarriages > ownCarriages(entity) && money >= carriageCost()
     && brain.age - brain.lastCarriageAt >= CARRIAGE_DELAY) {
     const spot = carriageSpot(level, entity, field);
@@ -1032,6 +1090,17 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   if (chest) {
     useGoal(level, brain, 'chest', chest);
     return;
+  }
+
+  // 10b. With no bomb to spend, a saboteur shoots the rival's turrets, harvesters and carriages down.
+  if (saboteur) {
+    const wreck = nearestOf(level, brain, [...world.with('position', 'health')].filter((e) =>
+      hostile(entity, e) && (e.turret !== undefined || e.harvester !== undefined || e.railDroid !== undefined)));
+    if (wreck) {
+      const t = approachTile(level, field, tileOf(level, wreck.position!.x, wreck.position!.y));
+      setGoal(brain, level, { name: 'wreck', tile: t, huntId: world.id(wreck)! });
+      return;
+    }
   }
 
   // 11. Otherwise hunt: rival players in versus, then nests and mobs; or wait by the treasure.
@@ -1113,8 +1182,13 @@ function besideTrack(level: Level, t: number): boolean {
 }
 
 /** Puts the load down right here, unless here is on or against the track (or its planned route); then the nearest clear tile. */
-function stashGoal(level: Level, brain: Brain): void {
+function stashGoal(level: Level, brain: Brain, fight = false): void {
   const field = brain.field!;
+  if (fight) {
+    // Fists are no use against a gun: down it goes right here, to be picked up again afterwards.
+    setGoal(brain, level, { name: 'stash fight', tile: field.origin, drop: true, stash: true });
+    return;
+  }
   const planned = new Set(brain.railPlan);
   let open = 0;
   for (const d of field.dist) if (Number.isFinite(d)) open++;
@@ -1170,6 +1244,52 @@ function enemiesNear(entity: Entity, range: number): boolean {
     if ((e.ai || e.playerInput) && hostile(entity, e) && dist(e.position!, entity.position!) < range) return true;
   }
   return false;
+}
+
+/** Rival players within range that have a clear line to the entity. */
+function rivalsInSight(level: Level, entity: Entity, range: number): number {
+  const pos = entity.position!;
+  let count = 0;
+  for (const e of world.with('position', 'health', 'playerInput')) {
+    if (hostile(entity, e) && dist(e.position!, pos) < range
+      && level.checkLineOfSight(pos.x, pos.y, e.position!.x, e.position!.y)) count++;
+  }
+  return count;
+}
+
+/**
+ * What a saboteur should blow up next: the spot, in tiles, with the most of the rival's track and
+ * machines within reach of one bomb, weighed against the walk, and where to stand to set it.
+ */
+function findSabotage(level: Level, entity: Entity, field: Field): { tile: number; stand: number } | null {
+  const rivalTeam = entity.team === Team.One ? Team.Two : Team.One;
+  const spots: Array<{ x: number; y: number }> = [];
+  for (let ty = 0; ty < level.height; ty++) {
+    for (let tx = 0; tx < level.width; tx++) {
+      const tile = level.getTile(tx, ty);
+      if (tile?.type === TileType.Rail && tile.team === rivalTeam) spots.push({ x: tx, y: ty });
+    }
+  }
+  const machines = [...world.with('position', 'health')].filter((e) => !e.removed && e.carriedBy === undefined
+    && e.team === rivalTeam && (e.turret !== undefined || e.harvester !== undefined || e.railDroid !== undefined));
+  const machineTiles = machines.map((m) => ({ x: tileX(m.position!.x), y: tileY(m.position!.y) }));
+  // One bomb wrecks what lies within about a tile and a half of it.
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1;
+  let best: { tile: number; stand: number } | null = null;
+  let bestScore = -INF;
+  for (const spot of [...spots, ...machineTiles]) {
+    const tile = spot.x + spot.y * level.width;
+    const stand = besideWall(level, field, tile);
+    if (stand < 0) continue;
+    const value = spots.filter((r) => near(r, spot)).length + 4 * machineTiles.filter((m) => near(m, spot)).length;
+    // Worth a walk of a few tiles per piece wrecked, but never an expedition for a single rail.
+    const score = value * 5 - field.dist[stand];
+    if (score > bestScore) {
+      bestScore = score;
+      best = { tile, stand };
+    }
+  }
+  return best;
 }
 
 /** Mobs within range that can actually get at the entity (not shut in behind a wall). */
@@ -1380,6 +1500,52 @@ function pickEnemy(level: Level, entity: Entity, profile: AIDifficulty, focusId?
   return best;
 }
 
+/**
+ * A rival that cannot be seen but can be hit: with a bouncing gun in hand it rehearses shots off the
+ * walls and, when one reaches the rival, remembers its direction in `brain.bank`.
+ */
+function pickHidden(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): Entity | null {
+  const slot = profile.ricochet && entity.carryingId === undefined ? bouncingSlot(entity) : -1;
+  if (slot < 0) {
+    brain.bank = null;
+    return null;
+  }
+  const pos = entity.position!;
+  const stats = WEAPON_STATS[entity.weaponInventory!.weapons[slot]];
+  const gun = BULLET_CONFIGS[stats.bullet];
+  // A shot that has bounced keeps flying a while longer, so rivals a little beyond plain range are worth trying.
+  const reach = Math.min(profile.engageRange * 1.4, gun.range + 60);
+  let target: Entity | null = null;
+  let nearest = INF;
+  for (const e of world.with('position', 'health', 'playerInput')) {
+    if (!hostile(entity, e)) continue;
+    const d = dist(e.position!, pos);
+    if (d < nearest && d <= reach && !level.checkLineOfSight(pos.x, pos.y, e.position!.x, e.position!.y)) {
+      nearest = d;
+      target = e;
+    }
+  }
+  if (!target) {
+    brain.bank = null;
+    return null;
+  }
+  const id = world.id(target)!;
+  const fresh = brain.bank?.targetId === id && brain.age - brain.bank.at < 8;
+  // Working a shot out is the costly part, so it is not repeated every glance.
+  if (!fresh && brain.bankCool <= 0) {
+    const rad = target.radius ?? { x: 10, y: 10 };
+    const yOff = target.yOffset ?? 0;
+    const shot = solveRicochet(level, pos, { speed: gun.speed, range: gun.range, bounces: gun.bounces ?? 0, radius: gun.radius }, {
+      x: target.position!.x, y: target.position!.y - yOff, hw: rad.x, hh: rad.y + yOff / 2,
+      vx: target.velocity?.x, vy: target.velocity?.y,
+    });
+    brain.bank = shot ? { targetId: id, shot, at: brain.age } : null;
+    brain.bankCool = shot ? 0 : 12;
+  }
+  if (brain.bankCool > 0) brain.bankCool--;
+  return brain.bank?.targetId === id ? target : null;
+}
+
 /** Whether firing a gun along the current aim would shove the shooter into a pit. */
 function kickedIntoPit(level: Level, entity: Entity, weapon: string): boolean {
   const aim = entity.aimVector;
@@ -1520,6 +1686,10 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
         else brain.looseBombId = world.id(held);
       }
       if (held?.turret) brain.front = undefined;
+      if (held && !held.bomb && goal.name === 'stash fight') {
+        brain.retrieveId = world.id(held);
+        brain.retrieveUntil = brain.age + 60 * 40;
+      }
       brain.goal = null;
       brain.think = Math.min(brain.think, 8);
     } else if (goal.detonate && (onTile || brain.path.length === 0)) {
@@ -1620,31 +1790,49 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
   if (alive(enemy) && !aimed && entity.carryingId === undefined && goal?.name !== 'escape blast') {
     const at = enemy.position!;
     const d = dist(at, pos);
-    if (brain.reaction > 0) brain.reaction--;
-    if (--brain.triggerTicks <= 0) {
-      brain.trigger = Math.random() < profile.fireRate;
-      brain.triggerTicks = 8 + Math.floor(Math.random() * 10);
-      brain.jitter = (Math.random() * 2 - 1) * profile.aimError;
-    }
-    // Lead moving targets a little on the higher difficulties.
-    const lead = profile.aimError < 0.1 && enemy.velocity ? d / 8 : 0;
-    const ax = at.x + (enemy.velocity?.x ?? 0) * lead - pos.x;
-    const ay = at.y - (enemy.yOffset ?? 0) / 2 + (enemy.velocity?.y ?? 0) * lead - pos.y;
-    const angle = Math.atan2(ay, ax) + brain.jitter;
-    setAim(entity, Math.cos(angle), Math.sin(angle));
-    aimed = true;
-    shooting = brain.reaction <= 0 && brain.trigger && !bombInLine(entity, Math.atan2(ay, ax), d);
+    const inv = entity.weaponInventory!;
+    // Out of sight, the only way to reach it is a shot that banks off the walls.
+    const seen = level.checkLineOfSight(pos.x, pos.y, at.x, at.y);
+    const bank = !seen && brain.bank?.targetId === brain.enemyId ? brain.bank : null;
+    if (seen || bank) {
+      if (brain.reaction > 0) brain.reaction--;
+      if (--brain.triggerTicks <= 0) {
+        brain.trigger = Math.random() < profile.fireRate;
+        brain.triggerTicks = 8 + Math.floor(Math.random() * 10);
+        brain.jitter = (Math.random() * 2 - 1) * profile.aimError;
+      }
+      const speed = Math.hypot(enemy.velocity?.x ?? 0, enemy.velocity?.y ?? 0);
+      const aim: Aim = { speed, bank: bank !== null };
 
-    // Switch to whichever gun suits the distance.
-    if (brain.swapTicks > 0) brain.swapTicks--;
-    const slot = bestSlot(entity, d, (w) => !kickedIntoPit(level, entity, w));
-    if (slot !== entity.weaponInventory!.current && brain.swapTicks <= 0) {
-      pi.intents.weaponSlot = slot;
-      brain.swapTicks = SWAP_DELAY;
-    }
+      // Switch to whichever gun suits the distance and what the target is doing.
+      if (brain.swapTicks > 0) brain.swapTicks--;
+      const slot = bank ? bouncingSlot(entity) : bestSlot(entity, d, (w) => !kickedIntoPit(level, entity, w), aim);
+      if (slot >= 0 && slot !== inv.current && (brain.swapTicks <= 0 || bank)) {
+        pi.intents.weaponSlot = slot;
+        brain.swapTicks = SWAP_DELAY;
+      }
+      const gun = BULLET_CONFIGS[WEAPON_STATS[inv.weapons[inv.current]]?.bullet];
 
-    // Keep some distance from things that bite, when not walking anywhere in particular.
-    if (!moving && enemy.ai && d < 40) steerTo(entity, pos.x * 2 - at.x, pos.y * 2 - at.y, 0, out);
+      if (bank) {
+        // Stand still while the shot is lined up: it was worked out for this very spot.
+        const angle = bank.shot.angle + brain.jitter * 0.3;
+        setAim(entity, Math.cos(angle), Math.sin(angle));
+        shooting = brain.reaction <= 0 && brain.trigger && (gun?.bounces ?? 0) > 0 && brain.age - bank.at < 8;
+        out.up = out.down = out.left = out.right = out.sprint = false;
+        brain.sidestep = null;
+      } else {
+        // Lead moving targets, by the time this gun's shot takes to arrive, on the better difficulties.
+        const lead = profile.aimError < 0.2 && enemy.velocity ? Math.min(30, d / (gun?.speed ?? 8)) : 0;
+        const ax = at.x + (enemy.velocity?.x ?? 0) * lead - pos.x;
+        const ay = at.y - (enemy.yOffset ?? 0) / 2 + (enemy.velocity?.y ?? 0) * lead - pos.y;
+        const angle = Math.atan2(ay, ax) + brain.jitter;
+        setAim(entity, Math.cos(angle), Math.sin(angle));
+        shooting = brain.reaction <= 0 && brain.trigger && !bombInLine(entity, Math.atan2(ay, ax), d);
+        // Keep some distance from things that bite, when not walking anywhere in particular.
+        if (!moving && enemy.ai && d < 40) steerTo(entity, pos.x * 2 - at.x, pos.y * 2 - at.y, 0, out);
+      }
+      aimed = true;
+    }
   }
 
   // Backpedal out of a pack of mobs rather than walking through it; the gun keeps working.
@@ -1762,6 +1950,10 @@ export function updateAIPlayers(level: Level): void {
     if (blastDanger && brain.goal?.name !== 'escape blast') brain.think = 0;
     if (entity.carryingId === undefined && entity.health!.current < entity.health!.max * profile.retreatHealth
       && enemiesNear(entity, 160) && brain.goal?.name !== 'retreat') brain.think = 0;
+    // Carrying something when a rival or a mob closes in: down it goes at once, rather than at the next plan.
+    if (entity.carryingId !== undefined && brain.age % 4 === 0 && brain.goal?.name !== 'stash fight'
+      && world.entity(entity.carryingId)?.bomb === undefined
+      && (mobsNear(level, entity, 72) > 0 || rivalsInSight(level, entity, profile.engageRange) > 0)) brain.think = 0;
     if (--brain.think <= 0) {
       think(level, entity, brain, profile);
       brain.think = profile.thinkTicks;
@@ -1769,7 +1961,12 @@ export function updateAIPlayers(level: Level): void {
 
     // Spotting enemies happens more often than planning, but still with a reaction delay.
     if (brain.age % 4 === 0 || (brain.enemyId !== undefined && !alive(world.entity(brain.enemyId)))) {
-      const enemy = pickEnemy(level, entity, profile, brain.goal?.huntId);
+      let enemy = pickEnemy(level, entity, profile, brain.goal?.huntId);
+      if (enemy) brain.bank = null;
+      else {
+        const hidden = pickHidden(level, entity, brain, profile);
+        enemy = hidden;
+      }
       const id = enemy ? world.id(enemy) : undefined;
       if (id !== brain.enemyId) {
         brain.enemyId = id;

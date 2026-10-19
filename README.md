@@ -97,16 +97,21 @@ actors, pointer coordinates and collision tiles all share the same world coordin
 
 ## Multiplayer and saves
 
-- Choose **Host multiplayer** from the main menu and select **Guest: Companion** or
-  **Guest: Enemy**, then copy the invite link and send it to one other player.
-  Once connected, the host chooses the map, difficulty and character, then starts the game.
-- The guest can open the link directly or paste it into **Join multiplayer**.
-  Companions fight the existing AI on Team One and start at the same spawn.
-  Enemies use opposing teams and their own spawn points. Both modes use the host's
-  character; the guest has a cyan tint so the two players remain distinguishable.
-- The host runs the authoritative simulation. The guest sends controls, not positions or money;
+- Choose **Host multiplayer** from the main menu and select **Guests: Companions** (up to three
+  guests, four players in all) or **Guests: Enemy** (one guest, one against one), then copy the
+  invite link and send it to the other players. Once at least one has connected, the host chooses
+  the map, difficulty and character, then starts the game. The room closes when the match starts.
+- Guests can open the link directly or paste it into **Join multiplayer**. In the lobby every player
+  types a name (or opens **Options** and sets **Multiplayer name** there); the lobby lists everyone
+  in the room. Names are unique within a room, at most 12 letters, digits, spaces, `_`, `.` or `-`.
+  Companions fight the existing AI on Team One and start side by side.
+  Enemies use opposing teams and their own spawn points. All players use the host's character
+  without any tint; a small translucent name plate floats above every *other* player's head, and
+  nobody sees their own. A guest who leaves is removed from the match; if every guest leaves the
+  host's game pauses.
+- The host runs the authoritative simulation. Guests send controls, not positions or money;
   compressed world snapshots synchronize players, enemies, buildings, loot, terrain and progression.
-  Positional sound effects and game notices are forwarded to the guest as well.
+  Positional sound effects and game notices are forwarded to the guests as well.
   Each player has their own controls, camera, inventory and purse. Combined carried coins count
   toward victory. A player killed in co-op respawns at the base with full health and brief protection;
   the teammate's game continues. Single-player death behavior is unchanged.
@@ -132,7 +137,8 @@ actors, pointer coordinates and collision tiles all share the same world coordin
   Replacement and deletion ask for confirmation. Saves include the complete world and both
   players' progression, multiplayer mode, delivered treasure and pending respawn countdowns,
   but not the old network connection. Loading a multiplayer save creates a fresh
-  host lobby and invite, with the saved mode locked. The guest reconnects into their saved state.
+  host lobby and invite, with the saved mode locked; the match starts once as many guests as the
+  save had have reconnected, and they take their saved characters in joining order.
 - Saves use this browser's local storage for this site/origin. Clearing site data removes them,
   and a different browser or device will not have them. Storage and connection errors are shown
   explicitly rather than treated as successful saves or joins.
@@ -146,14 +152,25 @@ Invite links grant access to the session, so share them only with the intended p
 ## Computer opponent
 
 - On the difficulty screen, toggle **Opponent: AI** and cycle **AI: Easy / Normal / Hard / Insane**.
-  This works in single-player and with a companion guest (not with an enemy guest). The AI takes the
-  second base and races the player (or both companions, who share one score line) to 100% delivered
+  This works in single-player and with companion guests (not with an enemy guest). The AI takes the
+  second base and races the player (or all companions, who share one score line) to 100% delivered
   treasure, using the enemy-mode rules above. It picks a random character different from the host's.
+- There is **one computer opponent per human player**: two players face two computers, four face
+  four. A lone computer does everything. With several, they alternate roles: the **builder** (first,
+  third) lays track, runs carriages and fetches the treasure; the **saboteur** (second, fourth) buys
+  bombs and blows up the people's laid rails, turrets, harvesters and carriages, shooting the
+  machines it cannot bomb.
 - The bottom HUD shows each side's name and delivered percentage in the original style.
 - The AI is an ordinary player entity driven by synthetic controls, so it follows every game rule.
   It fights mobs and opposing players, collects coins, builds turrets and puts harvesters near them,
   empties harvesters, buys better guns, plans and lays track to the treasure, blows open cracked
   walls in the way with bombs, buys carriages and upgrades its equipment.
+- When it is carrying a building and a rival or a mob comes into sight it puts the load down on the
+  spot to fight (it cannot shoot with full hands), then goes back for it and sets it where it belongs.
+- It picks the gun for the situation: distance, how fast the target moves (slow shots at runners are
+  discounted) and whether the target is standing still. On Normal and above, when a rival hides behind
+  a wall it rehearses the plasma gun's ricochets (the same bounce, speed-up and range rules as the real
+  shot), and if a line of fire exists that comes round the corner it stands still and fires it.
 - Its choices are read from the shop stalls, weapon stats and building definitions (cost, role,
   range, damage), so new guns, turrets or harvesters are used without changes to the AI.
 - Difficulty changes reaction time, aim error, fire rate, engagement range, how many turrets and

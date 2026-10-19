@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite, Ticker } from 'pixi.js';
 import type { Application } from 'pixi.js';
 import type { Scene, SceneManager } from '../game/SceneManager';
 import { world, Team } from '../world';
-import type { Entity } from '../world';
+import type { Entity, PlayerSlot, AIRole } from '../world';
 import type { Level } from '../level/Level';
 import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { loadTmxLevel } from '../level/TmxLoader';
@@ -42,6 +42,7 @@ import { Level as RestorableLevel } from '../level/Level';
 import { updateInput } from '../systems/InputSystem';
 import { screenToWorld } from '../render/Camera';
 import { flushRemoved } from '../systems/DeathSystem';
+import { resetNameTags, updateNameTags } from '../systems/NameTagSystem';
 import { Mth } from '../math/Mth';
 
 /** Tiles of sight around the player, as in Java's Player.tick(). */
@@ -74,6 +75,9 @@ export class InGameScene implements Scene {
   private networkTick = 0;
   private inputSequence = 0;
   private lastTerrain = '';
+  private slot: PlayerSlot = 'host';
+  /** Guests whose connection ended since the last tick. */
+  private departed: PlayerSlot[] = [];
   private disposed = false;
   private finished = false;
   private respawnLabel = makeText('', 0xffdd88, 18, 'center');
@@ -143,8 +147,13 @@ export class InGameScene implements Scene {
     resetCheats();
     for (const entity of world.entities.slice()) world.remove(entity);
 
+    resetNameTags();
     const pending = savedRun.pending;
     const snapshot = coop.role === 'guest' ? coop.latest?.state : pending?.state;
+    this.slot = coop.role === 'guest' ? coop.slot ?? 'guest' : 'host';
+    this.replica.localSlot = coop.role ? this.slot : null;
+    // Nobody else can join once the match is under way.
+    if (coop.role === 'host') coop.lock();
     if (snapshot) {
       restoreSettings(snapshot);
       this.hostPaused = coop.role === 'guest' && !!coop.latest?.paused;
@@ -197,27 +206,34 @@ export class InGameScene implements Scene {
     const spawn =
       this.level.getRandomSpawnPoint(Team.One) ??
       { x: 2 * TILE_WIDTH, y: 2 * TILE_HEIGHT };
-    const slot = coop.role === 'guest' ? 'guest' : 'host';
+    const slot = this.slot;
     const existing = [...world.with('playerSlot')].find(e => e.playerSlot === slot);
     this.player = existing ?? createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
     world.addComponent(this.player, 'playerSlot', slot);
     world.removeComponent(this.player, 'remoteInput');
     if (coop.role === 'host') {
+      this.setName(this.player, coop.nameOf('host') ?? coop.hostName);
       const guestTeam = gameState.multiplayerMode === 'enemy' ? Team.Two : Team.One;
-      const guestSpawn = guestTeam === Team.One ? spawn : this.level.getRandomSpawnPoint(guestTeam);
-      if (!guestSpawn) throw new Error('This map has no second-player spawn point');
-      const guest = [...world.with('playerSlot')].find(e => e.playerSlot === 'guest')
-        ?? createPlayer(guestSpawn.x, guestSpawn.y, guestTeam, gameState.selectedCharacter);
-      world.addComponent(guest, 'playerSlot', 'guest');
-      world.addComponent(guest, 'remoteInput', true);
-      guest.minimapColor = 0x80dfff;
+      coop.guestSlots().forEach((guestSlot, index) => {
+        const base = guestTeam === Team.One ? spawn : this.level.getRandomSpawnPoint(guestTeam);
+        if (!base) throw new Error('This map has no second-player spawn point');
+        // Teammates start side by side rather than inside each other.
+        const dx = [0, 16, -16, 0][index + 1] ?? 0;
+        const dy = [0, 0, 0, 16][index + 1] ?? 0;
+        const guest = [...world.with('playerSlot')].find(e => e.playerSlot === guestSlot)
+          ?? createPlayer(base.x + dx, base.y + dy, guestTeam, gameState.selectedCharacter);
+        world.addComponent(guest, 'playerSlot', guestSlot);
+        world.addComponent(guest, 'remoteInput', true);
+        this.setName(guest, coop.nameOf(guestSlot) ?? guestSlot);
+        guest.minimapColor = 0x80dfff;
+      });
     } else if (!coop.role) {
       // A restored single-player run only has a local host character.
       for (const entity of world.with('playerSlot')) {
         if (entity !== this.player && entity.playerInput) world.addComponent(entity, 'remoteInput', true);
       }
     }
-    if (!snapshot && coop.role !== 'guest' && gameState.opponent === 'ai') this.addComputerOpponent();
+    if (!snapshot && coop.role !== 'guest' && gameState.opponent === 'ai') this.addComputerOpponents();
     // Placed after the player so no nest lands within sight of the start.
     if (!snapshot) spawnInitialSpawners(this.level);
 
@@ -236,13 +252,9 @@ export class InGameScene implements Scene {
         if (scores) [this.level.player1Score, this.level.player2Score] = scores;
         this.hostPaused = paused;
         this.replica.apply(state);
-        const guest = [...world.with('playerSlot')].find(e => e.playerSlot === 'guest');
-        if (!guest) throw new Error('Host state has no guest character');
-        this.player = guest;
-        world.removeComponent(guest, 'remoteInput');
-        for (const host of world.with('playerSlot')) {
-          if (host !== guest) world.addComponent(host, 'remoteInput', true);
-        }
+        const mine = [...world.with('playerSlot')].find(e => e.playerSlot === this.slot);
+        if (!mine) throw new Error('Host state has no character for this player');
+        this.player = mine;
         if (dirty) this.rebuildTerrain();
       } catch (error) {
         console.error('Applying co-op state:', error);
@@ -252,6 +264,7 @@ export class InGameScene implements Scene {
     };
     coop.onEnd = winner => this.end(winner);
     if (coop.role === 'host') {
+      coop.onLeave = slot => this.departed.push(slot);
       sound.onEffect = (name, x, y) => coop.sendSound(name, x, y);
       noticeEvents.onNotice = text => coop.sendNotice(text);
     }
@@ -272,16 +285,30 @@ export class InGameScene implements Scene {
     coop.sendState(captureWorld(this.level, false), paused, [this.level.player1Score, this.level.player2Score]);
   }
 
-  /** Puts the computer opponent at the second base. */
-  private addComputerOpponent(): void {
-    const spawn = this.level.getRandomSpawnPoint(Team.Two);
-    if (!spawn) return;
-    const ai = createPlayer(spawn.x, spawn.y, Team.Two, gameState.aiCharacter);
-    world.addComponent(ai, 'aiPlayer', { character: gameState.aiCharacter, difficulty: gameState.aiDifficulty.name });
-    world.addComponent(ai, 'remoteInput', true);
-    ai.minimapColor = 0xff5040;
-    // A quiet head start, so the computer can afford a good gun from the first minute.
-    ai.playerStats!.score += openingCoins(gameState.aiDifficulty);
+  /** Names a player's character in a multiplayer match; the others see the plate above its head. */
+  private setName(entity: Entity, name: string): void {
+    if (entity.playerName === undefined) world.addComponent(entity, 'playerName', name);
+    else entity.playerName = name;
+  }
+
+  /**
+   * Puts the computer opponents at the second base, one for each person playing. A lone
+   * computer does everything; with several, they split the work between building track and
+   * sabotaging the people's.
+   */
+  private addComputerOpponents(): void {
+    const count = 1 + (coop.role === 'host' ? coop.guestSlots().length : 0);
+    for (let i = 0; i < count; i++) {
+      const spawn = this.level.getRandomSpawnPoint(Team.Two);
+      if (!spawn) break;
+      const role: AIRole = count === 1 ? 'all' : i % 2 === 0 ? 'builder' : 'saboteur';
+      const ai = createPlayer(spawn.x + (i % 2 ? 12 : 0), spawn.y + (i > 1 ? 12 : 0), Team.Two, gameState.aiCharacter);
+      world.addComponent(ai, 'aiPlayer', { character: gameState.aiCharacter, difficulty: gameState.aiDifficulty.name, role });
+      world.addComponent(ai, 'remoteInput', true);
+      ai.minimapColor = 0xff5040;
+      // A quiet head start, so the computer can afford a good gun from the first minute.
+      ai.playerStats!.score += openingCoins(gameState.aiDifficulty);
+    }
   }
 
   /** Redraws the floor texture and wall entities after bombs change the terrain. */
@@ -478,6 +505,7 @@ export class InGameScene implements Scene {
 
   private tick(dt: number): void {
     if (this.finished) return;
+    if (coop.role === 'host') this.removeDeparted();
     if (coop.role === 'host' && this.wasConnected && !coop.connected && !this.paused) this.togglePause();
     this.wasConnected = coop.connected;
     // 20 updates a second; the heavy terrain and fog snapshot only once a second.
@@ -486,7 +514,7 @@ export class InGameScene implements Scene {
     }
     if (this.paused) {
       if (coop.role === 'guest') this.sendGuestInput(true);
-      if (coop.role === 'host') coop.input = null;
+      if (coop.role === 'host') coop.clearInputs();
       return;
     }
 
@@ -512,6 +540,7 @@ export class InGameScene implements Scene {
       }
     }
     runSystems(PRESENTATION, ctx);
+    if (coop.role) updateNameTags(this.gameLayer, this.player);
     if (coop.role === 'guest') flushRemoved();
 
     const pos = this.player.position;
@@ -585,19 +614,34 @@ export class InGameScene implements Scene {
   }
 
   private applyGuestInput(): void {
-    const guest = [...world.with('playerSlot')].find(e => e.playerSlot === 'guest');
-    if (!guest?.playerInput) return;
-    const frame = coop.input;
-    if (!coop.connected || performance.now() - coop.lastInputAt > 500 || !frame) {
-      guest.playerInput.up = guest.playerInput.down = guest.playerInput.left = guest.playerInput.right = false;
-      guest.playerInput.shoot = guest.playerInput.use = guest.playerInput.sprint = false;
-      guest.playerInput.keyAim = null;
-      guest.playerInput.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
-      return;
+    for (const slot of coop.guestSlots()) {
+      const guest = [...world.with('playerSlot')].find(e => e.playerSlot === slot);
+      if (!guest?.playerInput) continue;
+      const { frame, at } = coop.inputOf(slot);
+      if (!frame || performance.now() - at > 500) {
+        guest.playerInput.up = guest.playerInput.down = guest.playerInput.left = guest.playerInput.right = false;
+        guest.playerInput.shoot = guest.playerInput.use = guest.playerInput.sprint = false;
+        guest.playerInput.keyAim = null;
+        guest.playerInput.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
+        continue;
+      }
+      guest.playerInput = structuredClone(frame.input);
+      guest.aimWorld = frame.aim;
+      frame.input.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
     }
-    guest.playerInput = structuredClone(frame.input);
-    guest.aimWorld = frame.aim;
-    frame.input.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
+  }
+
+  /** A guest who left takes their character with them; what they carried is left on the floor. */
+  private removeDeparted(): void {
+    for (const slot of this.departed.splice(0)) {
+      const leaver = [...world.with('playerSlot')].find(e => e.playerSlot === slot);
+      if (!leaver) continue;
+      notify(`${leaver.playerName ?? 'A player'} left the game`);
+      const held = leaver.carryingId !== undefined ? world.entity(leaver.carryingId) : undefined;
+      if (held) world.removeComponent(held, 'carriedBy');
+      world.addComponent(leaver, 'removed', true);
+    }
+    flushRemoved();
   }
 
   private end(winner: number): void {
@@ -610,7 +654,7 @@ export class InGameScene implements Scene {
 
   destroy(): void {
     this.disposed = true;
-    coop.onState = null; coop.onEnd = null;
+    coop.onState = null; coop.onEnd = null; coop.onLeave = null;
     sound.onEffect = null; noticeEvents.onNotice = null;
     window.removeEventListener('keydown', this.onKeyDown);
     setInputCaptured(false);

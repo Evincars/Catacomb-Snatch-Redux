@@ -4,7 +4,8 @@ import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { PixelCheckbox } from '../ui/PixelCheckbox';
 import { PixelSlider } from '../ui/PixelSlider';
-import { makeTitle } from '../ui/PixelText';
+import { makeText, makeTitle } from '../ui/PixelText';
+import { NameField } from '../ui/NameField';
 import { getTexture } from '../assets/AssetLoader';
 import { settings, saveSettings } from '../game/Settings';
 import { sound } from '../audio/SoundPlayer';
@@ -14,6 +15,7 @@ const ROW_H = 38;
 
 export class OptionsScene implements Scene {
   container: Container;
+  private nameField: NameField;
 
   constructor(manager: SceneManager) {
     this.container = new Container();
@@ -80,7 +82,14 @@ export class OptionsScene implements Scene {
       saveSettings();
     };
     this.container.addChild(music);
-    y += ROW_H + 10;
+    y += ROW_H - 4;
+
+    // The name other players see above this character in multiplayer.
+    const nameLabel = makeText('Multiplayer name', 0xffdd88, 8, 'center');
+    nameLabel.x = GAME_WIDTH / 2;
+    nameLabel.y = y;
+    this.container.addChild(nameLabel);
+    this.nameField = new NameField(manager.application.canvas as HTMLCanvasElement, COL_X, y + 12, 240, 22);
 
     const back = new PixelButton('Back', 240, 26);
     back.x = COL_X;
@@ -90,6 +99,7 @@ export class OptionsScene implements Scene {
   }
 
   destroy(): void {
+    this.nameField.destroy();
     this.container.destroy({ children: true });
   }
 }

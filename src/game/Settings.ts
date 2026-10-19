@@ -64,7 +64,17 @@ export type Settings = {
   /** Last opponent picked on the difficulty screen; the computer by default. */
   opponent: 'none' | 'ai';
   aiDifficulty: string;
+  /** Name other players see above this character in multiplayer. */
+  playerName: string;
 };
+
+export const NAME_MAX = 12;
+
+/** Trims and strips anything but letters, digits, spaces and a few separators. */
+export function cleanName(text: unknown): string {
+  return typeof text === 'string'
+    ? text.replace(/[^\p{L}\p{N} _.-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX) : '';
+}
 
 const STORAGE_KEY = 'catacomb-snatch-settings';
 
@@ -77,6 +87,7 @@ function load(): Settings {
     fullscreen: false,
     opponent: 'ai',
     aiDifficulty: 'Normal',
+    playerName: '',
   };
 
   try {
@@ -87,6 +98,7 @@ function load(): Settings {
       ...base,
       ...saved,
       bindings: { ...base.bindings, ...(saved.bindings ?? {}) },
+      playerName: cleanName(saved.playerName),
     };
   } catch {
     // Corrupt or unavailable storage must not stop the game from starting.

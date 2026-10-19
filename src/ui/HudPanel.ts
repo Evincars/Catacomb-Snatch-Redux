@@ -197,11 +197,8 @@ export class HudPanel {
     if (!versus) return;
     this.rivalFace.texture = frameTexture(`${rivalCharacter()}_sheet`, 0, 6);
     this.teamFace.texture = frameTexture(`${gameState.selectedCharacter}_sheet`, 0, 2);
-    // Host and enemy guest share a character; the guest's portrait wears its tint.
-    const guestTint = 0x80dfff;
-    const enemyGuest = gameState.multiplayerMode === 'enemy';
-    this.rivalFace.tint = enemyGuest && player.team !== 2 ? guestTint : 0xffffff;
-    this.teamFace.tint = enemyGuest && player.team === 2 ? guestTint : 0xffffff;
+    this.rivalFace.tint = 0xffffff;
+    this.teamFace.tint = 0xffffff;
   }
 
   private drawMinimap(level: Level): void {

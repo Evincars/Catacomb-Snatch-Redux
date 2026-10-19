@@ -31,6 +31,9 @@ const { createMob } = await load('entities/MobFactory');
 const { gameState, DIFFICULTIES, AI_DIFFICULTIES } = await load('game/GameState');
 const { runCommand, cheats } = await load('game/Console');
 const { captureWorld, validateWorld, restoreSettings } = await load('game/WorldState');
+const { solveRicochet } = await load('systems/Ricochet');
+const { createBullet, BULLET_CONFIGS } = await load('entities/BulletFactory');
+const { cleanName } = await load('game/Settings');
 
 const centre = (t) => t * 32 + 16;
 const put = (level, x, y, type, extra = {}) => level.setTile(x, y, { ...createTile(type), ...extra });
@@ -736,4 +739,164 @@ test('isolated rails do not inflate the AI fleet for a short connected line', ()
   ai.aiPlayer.difficulty = 'Normal';
   for (let tick = 0; tick < 300; tick++) aiTick(level);
   assert.equal([...world.with('railDroid')].length, 0);
+});
+
+/** A room with a tall wall between two spots; the ceiling (the map edge) is the only way to bank a shot over it. */
+function wallRoom() {
+  const level = new Level(20, 8);
+  for (let y = 1; y <= 7; y++) put(level, 10, y, TileType.Wall);
+  return level;
+}
+const RAY = BULLET_CONFIGS.ray;
+const rayShot = { speed: RAY.speed, range: RAY.range, bounces: RAY.bounces, radius: RAY.radius };
+
+test('a plasma ricochet worked out round a wall really hits when fired', () => {
+  const level = wallRoom();
+  const shooter = createPlayer(centre(8), centre(2), Team.Two);
+  const victim = createPlayer(centre(12), centre(2), Team.One);
+  assert.equal(level.checkLineOfSight(shooter.position.x, shooter.position.y, victim.position.x, victim.position.y), false);
+  const rad = victim.radius;
+  const shot = solveRicochet(level, shooter.position, rayShot, {
+    x: victim.position.x, y: victim.position.y - victim.yOffset, hw: rad.x, hh: rad.y + victim.yOffset / 2,
+  });
+  assert.ok(shot, 'found no way round the wall');
+  assert.ok(shot.bounces >= 1);
+  createBullet(shooter, 'ray', Math.cos(shot.angle), Math.sin(shot.angle));
+  for (let tick = 0; tick < 300 && victim.health.current === victim.health.max; tick++) {
+    updateBullets(level, 1);
+    updateBulletCollision(1);
+    for (const e of [...world]) if (e.removed) world.remove(e);
+  }
+  assert.ok(victim.health.current < victim.health.max, 'the bank shot missed');
+});
+
+test('there is no ricochet when no wall can bounce a shot to the target', () => {
+  const level = new Level(40, 40);
+  const shooter = createPlayer(centre(20), centre(20), Team.Two);
+  const victim = createPlayer(centre(32), centre(20), Team.One);
+  const shot = solveRicochet(level, shooter.position, rayShot, {
+    x: victim.position.x, y: victim.position.y - victim.yOffset, hw: 10, hh: 14,
+  });
+  assert.equal(shot, null);
+});
+
+test('Hard AI with a plasma gun shoots a rival hiding behind a wall by banking the shot', () => {
+  const level = wallRoom();
+  level.setSpawnPoints(Team.Two, [{ x: centre(8), y: centre(2) }]);
+  const ai = computer(8, 2, 0);
+  ai.aiPlayer.difficulty = 'Hard';
+  ai.weaponInventory.weapons.push('raygun');
+  const human = createPlayer(centre(12), centre(2), Team.One);
+  world.addComponent(human, 'playerSlot', 'host');
+  world.addComponent(human, 'remoteInput', true);
+  for (let tick = 0; tick < 900 && human.health.current === human.health.max; tick++) aiTick(level);
+  assert.ok(human.health.current < human.health.max, 'never hit the hidden rival');
+  assert.equal(ai.weaponInventory.weapons[ai.weaponInventory.current], 'raygun');
+});
+
+test('weapon choice follows the range: the shotgun comes out up close', () => {
+  const level = new Level(24, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(3), y: centre(5) }]);
+  const ai = computer(3, 5, 0);
+  ai.aiPlayer.difficulty = 'Hard';
+  ai.weaponInventory.weapons.push('shotgun', 'raygun');
+  const rival = createPlayer(centre(5), centre(5), Team.One);
+  world.addComponent(rival, 'playerSlot', 'host');
+  world.addComponent(rival, 'remoteInput', true);
+  rival.health.immortal = true;
+  const closeUp = new Set();
+  for (let tick = 0; tick < 200; tick++) {
+    aiTick(level);
+    if (Math.hypot(ai.position.x - rival.position.x, ai.position.y - rival.position.y) < 80) {
+      closeUp.add(ai.weaponInventory.weapons[ai.weaponInventory.current]);
+    }
+  }
+  assert.ok(closeUp.has('shotgun'), `close range used ${[...closeUp]}`);
+});
+
+test('AI carrying a turret puts it down to fight a rival in sight, then goes back for it', () => {
+  const level = new Level(24, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(4), y: centre(5) }]);
+  const ai = computer(4, 5, 0);
+  ai.aiPlayer.difficulty = 'Normal';
+  const turret = createBuilding(centre(4), centre(5), 'turret', Team.Two);
+  world.addComponent(turret, 'carriedBy', world.id(ai));
+  world.addComponent(ai, 'carryingId', world.id(turret));
+  const rival = createPlayer(centre(10), centre(5), Team.One);
+  world.addComponent(rival, 'playerSlot', 'host');
+  world.addComponent(rival, 'remoteInput', true);
+  rival.health.immortal = true;
+  let dropped = false;
+  let firedAt = -1;
+  let retaken = false;
+  for (let tick = 0; tick < 1500 && !retaken; tick++) {
+    aiTick(level);
+    if (ai.carryingId === undefined && !dropped) dropped = true;
+    if (dropped && ai.playerInput.shoot && firedAt < 0) firedAt = tick;
+    // The rival gives up and leaves a while after the AI starts shooting.
+    if (firedAt >= 0 && tick > firedAt + 60 && world.has(rival)) world.remove(rival);
+    if (dropped && firedAt >= 0 && tick > firedAt + 60 && ai.carryingId !== undefined) retaken = true;
+  }
+  assert.ok(dropped, 'kept the turret in its hands');
+  assert.ok(firedAt >= 0, 'never fought back');
+  assert.ok(retaken, 'did not go back for the turret');
+});
+
+test('a saboteur buys a bomb and blows up the rival track', () => {
+  const level = new Level(30, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(3), y: centre(5) }]);
+  createShopItem(centre(3), centre(3), 'bomb', Team.Two);
+  for (let x = 18; x <= 21; x++) put(level, x, 5, TileType.Rail, { team: Team.One });
+  const ai = computer(3, 5, 500);
+  ai.aiPlayer.role = 'saboteur';
+  const rails = () => [18, 19, 20, 21].filter((x) => level.getTile(x, 5).type === TileType.Rail).length;
+  for (let tick = 0; tick < 3000 && rails() === 4; tick++) aiTick(level);
+  assert.ok(rails() < 4, 'the rival rails are untouched');
+  assert.equal(ai.health.current, ai.health.max, 'hurt itself with its bomb');
+});
+
+test('a builder never goes after the rival track, and a lone computer does both jobs', () => {
+  const level = new Level(30, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(3), y: centre(5) }]);
+  createShopItem(centre(3), centre(3), 'bomb', Team.Two);
+  for (let x = 18; x <= 21; x++) put(level, x, 5, TileType.Rail, { team: Team.One });
+  const ai = computer(3, 5, 500);
+  ai.aiPlayer.role = 'builder';
+  for (let tick = 0; tick < 1200; tick++) aiTick(level);
+  assert.equal([18, 19, 20, 21].filter((x) => level.getTile(x, 5).type === TileType.Rail).length, 4);
+  assert.equal([...world.with('bomb')].length, 0, 'a builder bought a bomb with nothing to open');
+});
+
+test('four players, three guests and several computers validate; bad slots, names and roles do not', () => {
+  const slots = ['host', 'guest', 'guest2', 'guest3'];
+  slots.forEach((slot, i) => {
+    const p = createPlayer(centre(3 + i), centre(5), Team.One);
+    world.addComponent(p, 'playerSlot', slot);
+    world.addComponent(p, 'playerName', `Player ${i + 1}`);
+  });
+  const roles = ['builder', 'saboteur'];
+  for (let i = 0; i < 2; i++) {
+    const ai = createPlayer(centre(3 + i), centre(9), Team.Two);
+    world.addComponent(ai, 'aiPlayer', { character: 'lord_lard', difficulty: 'Normal', role: roles[i] });
+  }
+  gameState.opponent = 'ai';
+  const state = captureWorld(new Level(12, 12));
+  validateWorld(state);
+
+  const tweak = (change) => {
+    const copy = structuredClone(state);
+    change(copy);
+    return copy;
+  };
+  assert.throws(() => validateWorld(tweak((c) => { c.entities.find((e) => e.data.playerSlot === 'guest3').data.playerSlot = 'guest'; })));
+  assert.throws(() => validateWorld(tweak((c) => { c.entities.find((e) => e.data.playerSlot === 'guest').data.playerName = '<b>'; })));
+  assert.throws(() => validateWorld(tweak((c) => { c.entities.find((e) => e.data.aiPlayer).data.aiPlayer.role = 'pirate'; })));
+  assert.throws(() => validateWorld(tweak((c) => { c.settings.multiplayerMode = 'enemy'; })), 'extra guests cannot play an enemy match');
+});
+
+test('player names are trimmed, limited and stripped of markup', () => {
+  assert.equal(cleanName('  Ann   Lee  '), 'Ann Lee');
+  assert.equal(cleanName('<script>alert(1)</script>'), 'scriptalert1');
+  assert.equal(cleanName('x'.repeat(40)).length, 12);
+  assert.equal(cleanName(42), '');
 });

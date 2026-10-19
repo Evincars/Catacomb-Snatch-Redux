@@ -111,7 +111,7 @@ export class DifficultySelectScene implements Scene {
       level.setEnabled(allowed);
       level.alpha = ai ? 1 : 0.6;
       desc.text = !allowed ? 'The enemy guest is your opponent'
-        : ai ? 'The computer races you to fill its treasury first' : 'Collect coins with no rival base';
+        : ai ? 'Computers (one per player) race you to fill their treasury' : 'Collect coins with no rival base';
     };
     opponent.onPress = () => {
       gameState.opponentChoice = gameState.opponentChoice === 'ai' ? 'none' : 'ai';

@@ -1,13 +1,16 @@
 import { validateWorld } from './WorldState';
 import type { WorldState } from './WorldState';
+import { PLAYER_SLOTS } from '../world';
 
 export type SavedGame = { id: string; name: string; updatedAt: string; coop: boolean; state: WorldState };
 const KEY = 'catacomb-redux-saves-v1';
 
 function validateMode(state: WorldState, coop: boolean): void {
   const players = state.entities.filter(entry => entry.data.playerSlot);
-  if (players.length !== (coop ? 2 : 1)
-    || coop && !players.some(entry => entry.data.playerSlot === 'guest')) {
+  const slots = players.map(entry => entry.data.playerSlot);
+  // Guests take the slots after the host in order, so a save never skips one.
+  const contiguous = PLAYER_SLOTS.slice(0, players.length).every(slot => slots.includes(slot));
+  if (!contiguous || (coop ? players.length < 2 : players.length !== 1)) {
     throw new Error('Save player count does not match its game mode');
   }
 }

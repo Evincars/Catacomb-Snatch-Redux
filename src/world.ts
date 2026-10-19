@@ -29,11 +29,21 @@ export type PlayerIntents = {
 
 export type ShopKind = 'turret' | 'harvester' | 'bomb' | 'rifle' | 'shotgun' | 'raygun';
 
+/** The host plus up to three guests; 'guest' is the first guest, as in older saves. */
+export type PlayerSlot = 'host' | 'guest' | 'guest2' | 'guest3';
+export const PLAYER_SLOTS: readonly PlayerSlot[] = ['host', 'guest', 'guest2', 'guest3'];
+export const MAX_PLAYERS = PLAYER_SLOTS.length;
+
+/** What a computer player concentrates on; with a single computer opponent it does everything. */
+export type AIRole = 'all' | 'builder' | 'saboteur';
+
 export type Entity = {
-  playerSlot?: 'host' | 'guest';
+  playerSlot?: PlayerSlot;
+  /** Name shown above the character of every other player. */
+  playerName?: string;
   remoteInput?: true;
   /** A computer-controlled player; its controls are written by AIPlayerSystem, not a keyboard. */
-  aiPlayer?: { character: CharacterType; difficulty: string };
+  aiPlayer?: { character: CharacterType; difficulty: string; role?: AIRole };
   aimWorld?: { x: number; y: number };
   respawnTicks?: number;
   spawnProtected?: boolean;

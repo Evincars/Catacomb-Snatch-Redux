@@ -1,6 +1,7 @@
 import Peer from 'peerjs';
 import type { DataConnection } from 'peerjs';
-import type { Entity } from '../world';
+import { PLAYER_SLOTS } from '../world';
+import type { Entity, PlayerSlot } from '../world';
 import type { WorldState, NetWorldState } from '../game/WorldState';
 import type { LevelState } from '../level/Level';
 import { validateWorld } from '../game/WorldState';
@@ -9,11 +10,16 @@ import type { SfxName } from '../audio/SoundPlayer';
 import { notify } from '../game/Notices';
 import { gameState } from '../game/GameState';
 import type { MultiplayerMode } from '../game/GameState';
+import { cleanName, settings } from '../game/Settings';
 
 export type InputFrame = { input: NonNullable<Entity['playerInput']>; aim: { x: number; y: number }; sequence: number };
+export type RosterEntry = { slot: PlayerSlot; name: string };
 type Message =
-  | { type: 'hello'; version: 2; mode: MultiplayerMode }
-  | { type: 'mode'; mode: MultiplayerMode }
+  | { type: 'hello'; version: 3; name: string }
+  | { type: 'welcome'; slot: PlayerSlot; mode: MultiplayerMode }
+  | { type: 'refused'; reason: string }
+  | { type: 'roster'; players: RosterEntry[]; mode: MultiplayerMode }
+  | { type: 'name'; name: string }
   | { type: 'state'; seq: number; compressed: ArrayBuffer | Uint8Array }
   | { type: 'level'; compressed: ArrayBuffer | Uint8Array }
   | { type: 'input'; frame: InputFrame }
@@ -21,6 +27,10 @@ type Message =
   | { type: 'sound'; name: SfxName; x?: number; y?: number }
   | { type: 'notice'; text: string }
   | { type: 'ping' };
+
+/** The most guests a room takes: the host plus three others make four players. */
+export const MAX_GUESTS = PLAYER_SLOTS.length - 1;
+const VERSION = 3;
 
 type Intents = InputFrame['input']['intents'];
 /** Folds a source's one-shot button presses into the target so none is lost. */
@@ -75,52 +85,106 @@ function validInput(value: unknown): value is InputFrame {
       && Math.abs(i.keyAim.x) <= 1 && Math.abs(i.keyAim.y) <= 1));
 }
 
+function validRoster(value: unknown): value is RosterEntry[] {
+  return Array.isArray(value) && value.length >= 1 && value.length <= PLAYER_SLOTS.length
+    && value.every(p => !!p && PLAYER_SLOTS.includes(p.slot) && typeof p.name === 'string' && cleanName(p.name) === p.name)
+    && new Set(value.map(p => p.slot)).size === value.length;
+}
+
+/** One peer on the other end of the line: the host for a guest, each guest for the host. */
+class Link {
+  name = '';
+  ready = false;
+  fast: RTCDataChannel | null = null;
+  sequence = -1;
+  input: InputFrame | null = null;
+  lastInputAt = 0;
+  lastMessageAt = performance.now();
+  timeout?: ReturnType<typeof setTimeout>;
+  receiving: Promise<void> = Promise.resolve();
+  constructor(readonly connection: DataConnection, public slot: PlayerSlot | null) {}
+}
+
 export class CoopSession {
   role: 'host' | 'guest' | null = null;
   status = '';
   invite = '';
+  /** Host: at least one guest has joined. Guest: the host accepted this player. */
   connected = false;
+  /** Which player this browser controls; the host is always 'host'. */
+  slot: PlayerSlot | null = null;
+  /** Everyone in the room, host first; kept current on every browser. */
+  roster: RosterEntry[] = [];
+  /** Set once the match begins, so nobody else can join half-way. */
+  locked = false;
+  /** Guests a loaded save has room for; null for a fresh game. */
+  guestLimit: number | null = null;
   /** `levelChanged` is set when the terrain/fog snapshot was replaced since the previous update. */
   latest: { state: WorldState; paused: boolean; scores: [number, number] | null; levelChanged: boolean } | null = null;
-  input: InputFrame | null = null;
-  lastInputAt = 0;
   onChange: (() => void) | null = null;
   onState: (() => void) | null = null;
   onEnd: ((winner: number) => void) | null = null;
+  /** Host only: a guest's connection ended. */
+  onLeave: ((slot: PlayerSlot, name: string) => void) | null = null;
   private peer: Peer | null = null;
-  private connection: DataConnection | null = null;
+  private links = new Map<PlayerSlot, Link>();
+  private uplink: Link | null = null;
   private timeout?: ReturnType<typeof setTimeout>;
-  private sequence = -1;
   private sending = false;
-  private fast: RTCDataChannel | null = null;
   private stateSeqOut = 0;
   private stateSeqIn = -1;
   private level: LevelState | null = null;
   private levelChanged = false;
   private decoding = false;
   private pendingState: { seq: number; bytes: Uint8Array } | null = null;
-  private receiving = Promise.resolve();
   private heartbeat?: ReturnType<typeof setInterval>;
-  private lastMessageAt = 0;
 
   constructor() {
     window.addEventListener('beforeunload', () => this.close());
   }
 
+  get hostName(): string { return cleanName(settings.playerName) || 'Host'; }
+
+  /** Guests that have finished joining, in slot order. */
+  guestSlots(): PlayerSlot[] {
+    return PLAYER_SLOTS.filter(slot => this.links.get(slot)?.ready);
+  }
+
+  nameOf(slot: PlayerSlot): string | undefined {
+    return this.roster.find(p => p.slot === slot)?.name;
+  }
+
+  /** The latest controls of a guest, as the host knows them. */
+  inputOf(slot: PlayerSlot): { frame: InputFrame | null; at: number } {
+    const link = this.links.get(slot);
+    return { frame: link?.input ?? null, at: link?.lastInputAt ?? 0 };
+  }
+
+  clearInputs(): void {
+    for (const link of this.links.values()) link.input = null;
+  }
+
   async open(role: 'host' | 'guest', destination?: string): Promise<void> {
     this.close();
     this.role = role;
+    this.slot = role === 'host' ? 'host' : null;
     this.setStatus('Connecting to PeerJS...');
     const peer = new Peer();
     this.peer = peer;
     peer.on('error', error => this.fail(error.message));
     peer.on('disconnected', () => this.fail('Signaling disconnected. Return to the menu and reconnect.'));
     peer.on('connection', connection => {
-      if (role !== 'host' || this.connection) {
-        connection.on('open', () => connection.close());
+      if (role !== 'host') return connection.close();
+      const refusal = this.refusal();
+      const slot = PLAYER_SLOTS.find(s => s !== 'host' && !this.links.has(s));
+      if (refusal || !slot) {
+        connection.on('open', () => {
+          connection.send({ type: 'refused', reason: refusal ?? 'The room is full.' } satisfies Message);
+          setTimeout(() => connection.close(), 500);
+        });
         return;
       }
-      this.attach(connection);
+      this.attach(new Link(connection, slot));
     });
     this.timeout = setTimeout(() => this.fail('Connection timed out. Check the invite and network.'), 30000);
     peer.on('open', id => {
@@ -132,126 +196,230 @@ export class CoopSession {
         url.hash = '';
         url.searchParams.set('join', id);
         this.invite = url.href;
-        this.setStatus('Invite ready. Waiting for the other player.');
+        this.refreshRoster();
+        this.setStatus(this.waitingText());
       } else if (destination) {
-        this.attach(peer.connect(destination, { reliable: true, serialization: 'binary' }));
+        this.attach(new Link(peer.connect(destination, { reliable: true, serialization: 'binary' }), null));
       } else this.fail('Enter a host invite link or peer ID.');
     });
   }
 
-  private attach(connection: DataConnection): void {
+  /** Why the host cannot take another guest right now, if it cannot. */
+  private refusal(): string | null {
+    if (this.locked) return 'The match has already started.';
+    if (this.links.size >= this.maxGuests()) return 'The room is full.';
+    return null;
+  }
+
+  /** An enemy guest plays one against one; a loaded save only has room for the guests it had. */
+  maxGuests(): number {
+    const modeLimit = gameState.multiplayerMode === 'enemy' ? 1 : MAX_GUESTS;
+    return Math.min(modeLimit, this.guestLimit ?? MAX_GUESTS);
+  }
+
+  private waitingText(): string {
+    const guests = this.guestSlots().length;
+    return guests === 0 ? 'Invite ready. Waiting for the other players.'
+      : `${guests + 1} of ${this.maxGuests() + 1} players here. ${gameState.multiplayerMode === 'enemy' ? 'Opponent' : 'Companions'} connected.`;
+  }
+
+  private attach(link: Link): void {
+    const connection = link.connection;
+    // The signalling timeout is over once there is a line to the other side.
     clearTimeout(this.timeout);
-    this.connection = connection;
+    if (this.role === 'guest') this.uplink = link;
+    else this.links.set(link.slot!, link);
     this.resetStream();
-    this.input = null;
-    this.timeout = setTimeout(() => this.fail('Teammate handshake timed out.'), 15000);
+    link.timeout = setTimeout(() => this.dropLink(link, 'Teammate handshake timed out.'), 15000);
     connection.on('open', () => {
-      this.openFastChannel(connection);
-      connection.send({ type: 'hello', version: 2, mode: gameState.multiplayerMode } satisfies Message);
+      this.openFastChannel(link);
+      // The host waits to be greeted; a guest introduces itself.
+      if (this.role === 'guest') this.send(link, { type: 'hello', version: VERSION, name: cleanName(settings.playerName) });
     });
     connection.on('data', value => {
-      this.receiving = this.receiving.then(async () => {
-        if (this.connection !== connection) return;
+      link.receiving = link.receiving.then(async () => {
+        if (!this.owns(link)) return;
         if (!value || typeof value !== 'object' || !('type' in value)) throw new Error('Invalid co-op message');
-        const message = value as Message;
-        this.lastMessageAt = performance.now();
-        if (message.type === 'hello') {
-          if (message.version !== 2) throw new Error('Multiplayer version mismatch. Reload both browsers.');
-          if (!['companion', 'enemy'].includes(message.mode)) throw new Error('Invalid multiplayer mode');
-          if (this.role === 'guest') gameState.multiplayerMode = message.mode;
-          clearTimeout(this.timeout);
-          this.connected = true;
-          clearInterval(this.heartbeat);
-          this.heartbeat = setInterval(() => {
-            if (performance.now() - this.lastMessageAt > 10000) this.fail('Other player connection timed out.');
-            else this.send({ type: 'ping' });
-          }, 1000);
-          this.setStatus(gameState.multiplayerMode === 'enemy' ? 'Opponent connected.' : 'Companion connected.');
-        } else if (message.type === 'mode' && this.role === 'guest') {
-          if (!['companion', 'enemy'].includes(message.mode)) throw new Error('Invalid multiplayer mode');
-          gameState.multiplayerMode = message.mode;
-          this.setStatus(message.mode === 'enemy' ? 'Opponent connected.' : 'Companion connected.');
-        } else if (message.type === 'ping' && this.connected) {
-          return;
-        } else if (message.type === 'sound' && this.role === 'guest') {
-          if (!Object.prototype.hasOwnProperty.call(SFX, message.name) || message.x !== undefined && !Number.isFinite(message.x)
-            || message.y !== undefined && !Number.isFinite(message.y)) throw new Error('Invalid sound event');
-          sound.playSound(message.name, message.x, message.y);
-        } else if (message.type === 'notice' && this.role === 'guest') {
-          if (typeof message.text !== 'string' || message.text.length > 200) throw new Error('Invalid game notice');
-          notify(message.text);
-        } else if (message.type === 'state' && this.role === 'guest') {
-          if (!Number.isSafeInteger(message.seq) || !this.validPacket(message.compressed)) throw new Error('Invalid world packet encoding');
-          this.queueState(connection, message.seq, message.compressed instanceof ArrayBuffer
-            ? new Uint8Array(message.compressed) : Uint8Array.from(message.compressed));
-        } else if (message.type === 'level' && this.role === 'guest') {
-          if (!this.validPacket(message.compressed)) throw new Error('Invalid level packet encoding');
-          const level = await gunzip(message.compressed, 16000000);
-          if (this.connection !== connection) return;
-          if (!level || typeof level !== 'object') throw new Error('Invalid level update');
-          this.level = level as LevelState;
-          this.levelChanged = true;
-        } else if (message.type === 'input' && this.role === 'host') {
-          this.acceptInput(message.frame);
-        } else if (message.type === 'end' && this.role === 'guest') {
-          if (![0, 1, 2].includes(message.winner)) throw new Error('Invalid game result');
-          this.onEnd?.(message.winner);
-        } else throw new Error('Unexpected co-op message');
+        link.lastMessageAt = performance.now();
+        await this.handle(link, value as Message);
       }).catch(error => {
-        this.fail(error instanceof Error ? error.message : String(error));
+        this.dropLink(link, error instanceof Error ? error.message : String(error));
       });
     });
     connection.on('close', () => {
-      if (this.connection !== connection) return;
-      clearTimeout(this.timeout);
-      clearInterval(this.heartbeat);
-      this.connection = null;
-      this.closeFast();
-      this.input = null;
-      this.connected = false;
-      this.setStatus('Other player disconnected. Return to the menu to reconnect.');
+      if (!this.owns(link)) return;
+      this.dropLink(link, this.role === 'guest'
+        ? 'The host disconnected. Return to the menu to reconnect.' : `${link.name || 'A player'} disconnected.`);
     });
-    connection.on('error', error => this.fail(error.message));
+    connection.on('error', error => this.dropLink(link, error.message));
   }
 
-  /** A second, unordered, no-retransmit channel so a lost packet never stalls newer game data. */
-  private openFastChannel(connection: DataConnection): void {
-    try {
-      const fast = connection.peerConnection.createDataChannel('fast', {
-        negotiated: true, id: FAST_CHANNEL_ID, ordered: false, maxRetransmits: 0,
-      });
-      fast.binaryType = 'arraybuffer';
-      fast.onmessage = event => this.receiveFast(connection, event.data);
-      this.fast = fast;
-    } catch (error) {
-      console.warn('Co-op: unreliable channel unavailable, using the reliable one', error);
-      this.fast = null;
+  private owns(link: Link): boolean {
+    return this.role === 'guest' ? this.uplink === link : this.links.get(link.slot!) === link;
+  }
+
+  private async handle(link: Link, message: Message): Promise<void> {
+    if (message.type === 'hello' && this.role === 'host') {
+      if (link.ready) throw new Error('Unexpected co-op message');
+      if (message.version !== VERSION) throw new Error('Multiplayer version mismatch. Reload both browsers.');
+      link.name = this.uniqueName(cleanName(message.name), link.slot!);
+      link.ready = true;
+      clearTimeout(link.timeout);
+      this.connected = true;
+      this.startHeartbeat();
+      this.send(link, { type: 'welcome', slot: link.slot!, mode: gameState.multiplayerMode });
+      this.refreshRoster();
+      this.broadcastRoster();
+      this.setStatus(this.waitingText());
+    } else if (message.type === 'welcome' && this.role === 'guest') {
+      if (!PLAYER_SLOTS.includes(message.slot) || message.slot === 'host'
+        || !['companion', 'enemy'].includes(message.mode)) throw new Error('Invalid host greeting');
+      link.slot = message.slot;
+      link.ready = true;
+      this.slot = message.slot;
+      gameState.multiplayerMode = message.mode;
+      clearTimeout(link.timeout);
+      this.connected = true;
+      this.startHeartbeat();
+      this.setStatus('Connected. Waiting for the host to start.');
+    } else if (message.type === 'refused' && this.role === 'guest') {
+      throw new Error(typeof message.reason === 'string' ? message.reason.slice(0, 80) : 'The host refused the connection.');
+    } else if (message.type === 'roster' && this.role === 'guest' && link.ready) {
+      if (!validRoster(message.players) || !['companion', 'enemy'].includes(message.mode)) throw new Error('Invalid room roster');
+      this.roster = message.players;
+      gameState.multiplayerMode = message.mode;
+      this.setStatus(`${this.roster.length} players in the room. Waiting for the host to start.`);
+    } else if (message.type === 'name' && this.role === 'host' && link.ready) {
+      if (this.locked) return;
+      link.name = this.uniqueName(cleanName(message.name), link.slot!);
+      this.refreshRoster();
+      this.broadcastRoster();
+      this.onChange?.();
+    } else if (!link.ready) {
+      throw new Error('Unexpected co-op message');
+    } else if (message.type === 'ping') {
+      return;
+    } else if (message.type === 'sound' && this.role === 'guest') {
+      if (!Object.prototype.hasOwnProperty.call(SFX, message.name) || message.x !== undefined && !Number.isFinite(message.x)
+        || message.y !== undefined && !Number.isFinite(message.y)) throw new Error('Invalid sound event');
+      sound.playSound(message.name, message.x, message.y);
+    } else if (message.type === 'notice' && this.role === 'guest') {
+      if (typeof message.text !== 'string' || message.text.length > 200) throw new Error('Invalid game notice');
+      notify(message.text);
+    } else if (message.type === 'state' && this.role === 'guest') {
+      if (!Number.isSafeInteger(message.seq) || !this.validPacket(message.compressed)) throw new Error('Invalid world packet encoding');
+      this.queueState(link, message.seq, message.compressed instanceof ArrayBuffer
+        ? new Uint8Array(message.compressed) : Uint8Array.from(message.compressed));
+    } else if (message.type === 'level' && this.role === 'guest') {
+      if (!this.validPacket(message.compressed)) throw new Error('Invalid level packet encoding');
+      const level = await gunzip(message.compressed, 16000000);
+      if (this.uplink !== link) return;
+      if (!level || typeof level !== 'object') throw new Error('Invalid level update');
+      this.level = level as LevelState;
+      this.levelChanged = true;
+    } else if (message.type === 'input' && this.role === 'host') {
+      this.acceptInput(link, message.frame);
+    } else if (message.type === 'end' && this.role === 'guest') {
+      if (![0, 1, 2].includes(message.winner)) throw new Error('Invalid game result');
+      this.onEnd?.(message.winner);
+    } else throw new Error('Unexpected co-op message');
+  }
+
+  /** Names must be unique in the room so nobody is mistaken for somebody else. */
+  private uniqueName(wanted: string, slot: PlayerSlot): string {
+    const base = wanted || `Player ${PLAYER_SLOTS.indexOf(slot) + 1}`;
+    const taken = new Set([this.hostName, ...[...this.links.values()].filter(l => l.slot !== slot && l.ready).map(l => l.name)]
+      .map(n => n.toLowerCase()));
+    let name = base;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base.slice(0, 10)} ${n}`;
+    return name;
+  }
+
+  private refreshRoster(): void {
+    if (this.role !== 'host') return;
+    this.roster = [{ slot: 'host', name: this.hostName },
+      ...this.guestSlots().map(slot => ({ slot, name: this.links.get(slot)!.name }))];
+  }
+
+  private broadcastRoster(): void {
+    this.broadcast({ type: 'roster', players: this.roster, mode: gameState.multiplayerMode });
+  }
+
+  /** The host's own name changed (or a guest's, which the host then renames if needed). */
+  setName(name: string): void {
+    const clean = cleanName(name);
+    if (this.role === 'guest' && this.uplink?.ready) this.send(this.uplink, { type: 'name', name: clean });
+    else if (this.role === 'host' && !this.locked) {
+      this.refreshRoster();
+      this.broadcastRoster();
+      this.onChange?.();
     }
   }
 
-  private closeFast(): void {
-    if (this.fast) this.fast.onmessage = null;
-    try { this.fast?.close(); } catch { /* already closed */ }
-    this.fast = null;
+  sendMode(): void {
+    this.refreshRoster();
+    this.broadcastRoster();
+    if (this.role === 'host') this.setStatus(this.waitingText());
   }
 
-  private fastReady(limit = 262144): RTCDataChannel | null {
-    const fast = this.fast;
+  /** Once the match begins the room is closed to newcomers, and every roster name is final. */
+  lock(): void {
+    this.locked = true;
+  }
+
+  private startHeartbeat(): void {
+    if (this.heartbeat) return;
+    this.heartbeat = setInterval(() => {
+      for (const link of this.activeLinks()) {
+        if (performance.now() - link.lastMessageAt > 10000) {
+          this.dropLink(link, this.role === 'guest' ? 'Other player connection timed out.' : `${link.name} connection timed out.`);
+        } else this.send(link, { type: 'ping' });
+      }
+    }, 1000);
+  }
+
+  private activeLinks(): Link[] {
+    return this.role === 'guest' ? (this.uplink ? [this.uplink] : []) : [...this.links.values()].filter(l => l.ready);
+  }
+
+  /** A second, unordered, no-retransmit channel so a lost packet never stalls newer game data. */
+  private openFastChannel(link: Link): void {
+    try {
+      const fast = link.connection.peerConnection.createDataChannel('fast', {
+        negotiated: true, id: FAST_CHANNEL_ID, ordered: false, maxRetransmits: 0,
+      });
+      fast.binaryType = 'arraybuffer';
+      fast.onmessage = event => this.receiveFast(link, event.data);
+      link.fast = fast;
+    } catch (error) {
+      console.warn('Co-op: unreliable channel unavailable, using the reliable one', error);
+      link.fast = null;
+    }
+  }
+
+  private closeFast(link: Link): void {
+    if (link.fast) link.fast.onmessage = null;
+    try { link.fast?.close(); } catch { /* already closed */ }
+    link.fast = null;
+  }
+
+  private fastReady(link: Link, limit = 262144): RTCDataChannel | null {
+    const fast = link.fast;
     return fast && fast.readyState === 'open' && fast.bufferedAmount < limit ? fast : null;
   }
 
-  private receiveFast(connection: DataConnection, data: unknown): void {
-    if (this.connection !== connection || !this.connected) return;
-    this.lastMessageAt = performance.now();
+  private receiveFast(link: Link, data: unknown): void {
+    if (!this.owns(link) || !link.ready) return;
+    link.lastMessageAt = performance.now();
     try {
       if (typeof data === 'string' && this.role === 'host') {
         const message = JSON.parse(data) as Partial<Message>;
-        if (message.type === 'input') this.acceptInput(message.frame);
+        if (message.type === 'input') this.acceptInput(link, message.frame);
       } else if (data instanceof ArrayBuffer && this.role === 'guest' && data.byteLength > 4) {
-        this.queueState(connection, new DataView(data).getUint32(0), new Uint8Array(data, 4));
+        this.queueState(link, new DataView(data).getUint32(0), new Uint8Array(data, 4));
       }
     } catch (error) {
-      this.fail(error instanceof Error ? error.message : String(error));
+      this.dropLink(link, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -261,43 +429,43 @@ export class CoopSession {
     return true;
   }
 
-  private acceptInput(frame: unknown): void {
+  private acceptInput(link: Link, frame: unknown): void {
     if (!validInput(frame)) throw new Error('Invalid remote controls');
-    if (frame.sequence <= this.sequence) {
+    if (frame.sequence <= link.sequence) {
       // A late or reordered frame must not roll the controls back, but its button presses still count.
-      if (this.input) mergeIntents(this.input.input.intents, frame.input.intents);
+      if (link.input) mergeIntents(link.input.input.intents, frame.input.intents);
       return;
     }
-    this.sequence = frame.sequence;
-    if (this.input) mergeIntents(frame.input.intents, this.input.input.intents);
-    this.input = frame;
-    this.lastInputAt = performance.now();
+    link.sequence = frame.sequence;
+    if (link.input) mergeIntents(frame.input.intents, link.input.input.intents);
+    link.input = frame;
+    link.lastInputAt = performance.now();
   }
 
   /** Only the newest undecoded world update matters; older ones are dropped. */
-  private queueState(connection: DataConnection, seq: number, bytes: Uint8Array): void {
+  private queueState(link: Link, seq: number, bytes: Uint8Array): void {
     if (seq <= this.stateSeqIn) return;
     if (this.pendingState && this.pendingState.seq > seq) return;
     this.pendingState = { seq, bytes };
-    if (!this.decoding) void this.drainStates(connection);
+    if (!this.decoding) void this.drainStates(link);
   }
 
-  private async drainStates(connection: DataConnection): Promise<void> {
+  private async drainStates(link: Link): Promise<void> {
     this.decoding = true;
     try {
-      while (this.pendingState && this.connection === connection) {
+      while (this.pendingState && this.uplink === link) {
         const { seq, bytes } = this.pendingState;
         this.pendingState = null;
         if (seq <= this.stateSeqIn) continue;
         const decoded = await gunzip(bytes, 16000000);
-        if (this.connection !== connection || seq <= this.stateSeqIn) continue;
+        if (this.uplink !== link || seq <= this.stateSeqIn) continue;
         if (!decoded || typeof decoded !== 'object' || !('state' in decoded) || !('paused' in decoded)
           || typeof decoded.paused !== 'boolean') throw new Error('Invalid world update');
         // The terrain and fog arrive separately and less often.
-        if (!this.level) continue;
+        if (!this.level || !this.slot) continue;
         const state = { ...(decoded.state as NetWorldState), level: this.level };
         validateWorld(state);
-        if (!state.entities.some(e => e.data.playerSlot === 'guest')) throw new Error('Co-op world has no guest player');
+        if (!state.entities.some(e => e.data.playerSlot === this.slot)) throw new Error('Co-op world has no character for this player');
         const scores = 'scores' in decoded && Array.isArray(decoded.scores) && decoded.scores.length === 2
           && decoded.scores.every(Number.isFinite) ? decoded.scores as [number, number] : null;
         this.stateSeqIn = seq;
@@ -306,96 +474,151 @@ export class CoopSession {
         this.onState?.();
       }
     } catch (error) {
-      this.fail(error instanceof Error ? error.message : String(error));
+      this.dropLink(link, error instanceof Error ? error.message : String(error));
     } finally {
       this.decoding = false;
     }
   }
 
   canSendState(): boolean {
-    return this.connected && !!this.connection?.open && !this.sending
-      && this.connection.dataChannel.bufferedAmount <= 262144;
+    return this.role === 'host' && this.connected && !this.sending && this.guestSlots().length > 0;
   }
 
   /** Terrain, fog and base layout; large, so it goes on the reliable channel and is sent sparingly. */
   sendLevel(level: LevelState): void {
     if (!this.canSendState()) return;
-    const connection = this.connection;
     void gzip(JSON.stringify(level)).then(compressed => {
-      if (this.connection === connection && connection?.open) {
-        connection.send({ type: 'level', compressed } satisfies Message);
-      }
+      this.broadcast({ type: 'level', compressed });
     }).catch(error => this.fail(error instanceof Error ? error.message : String(error)));
   }
 
   sendState(state: NetWorldState, paused: boolean, scores: [number, number]): void {
     if (!this.canSendState()) return;
     this.sending = true;
-    const connection = this.connection;
     const seq = this.stateSeqOut++;
     void gzip(JSON.stringify({ state, paused, scores })).then(compressed => {
-      if (this.connection !== connection || !connection?.open) return;
-      const fast = compressed.byteLength + 4 <= Math.min(FAST_LIMIT, connection.peerConnection.sctp?.maxMessageSize ?? FAST_LIMIT)
-        ? this.fastReady() : null;
-      if (fast) {
-        const packet = new Uint8Array(compressed.byteLength + 4);
-        new DataView(packet.buffer).setUint32(0, seq);
-        packet.set(compressed, 4);
-        fast.send(packet);
-      } else connection.send({ type: 'state', seq, compressed } satisfies Message);
+      const packet = new Uint8Array(compressed.byteLength + 4);
+      new DataView(packet.buffer).setUint32(0, seq);
+      packet.set(compressed, 4);
+      for (const link of this.activeLinks()) {
+        if (!link.connection.open) continue;
+        const fits = packet.byteLength <= Math.min(FAST_LIMIT, link.connection.peerConnection.sctp?.maxMessageSize ?? FAST_LIMIT);
+        const fast = fits ? this.fastReady(link) : null;
+        try {
+          if (fast) fast.send(packet);
+          else if (link.connection.dataChannel.bufferedAmount <= 262144) {
+            link.connection.send({ type: 'state', seq, compressed } satisfies Message);
+          }
+        } catch (error) {
+          this.dropLink(link, error instanceof Error ? error.message : String(error));
+        }
+      }
     }).catch(error => this.fail(error instanceof Error ? error.message : String(error)))
       .finally(() => { this.sending = false; });
   }
 
   sendInput(frame: InputFrame): void {
+    const link = this.uplink;
+    if (!link?.ready) return;
     // One-shot presses must not be lost, so they take the reliable channel; held keys ride the fast one.
-    const fast = hasIntent(frame.input.intents) ? null : this.fastReady(65536);
-    if (this.connected && fast) {
+    const fast = hasIntent(frame.input.intents) ? null : this.fastReady(link, 65536);
+    if (fast) {
       try { fast.send(JSON.stringify({ type: 'input', frame } satisfies Message)); }
-      catch (error) { this.fail(error instanceof Error ? error.message : String(error)); }
-    } else this.send({ type: 'input', frame });
+      catch (error) { this.dropLink(link, error instanceof Error ? error.message : String(error)); }
+    } else this.send(link, { type: 'input', frame });
   }
 
-  sendMode(): void { this.send({ type: 'mode', mode: gameState.multiplayerMode }); }
   sendSound(name: SfxName, x?: number, y?: number): void {
-    this.send({ type: 'sound', name, ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y }) });
+    this.broadcast({ type: 'sound', name, ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y }) });
   }
-  sendNotice(text: string): void { this.send({ type: 'notice', text }); }
-  end(winner: number): void { this.send({ type: 'end', winner }); }
-  private send(message: Message): void {
-    if (!this.connected || !this.connection?.open) return;
-    try { this.connection.send(message); }
-    catch (error) { this.fail(error instanceof Error ? error.message : String(error)); }
+  sendNotice(text: string): void { this.broadcast({ type: 'notice', text }); }
+  end(winner: number): void { this.broadcast({ type: 'end', winner }); }
+
+  private broadcast(message: Message): void {
+    if (this.role !== 'host') return;
+    for (const link of this.activeLinks()) this.send(link, message);
   }
+
+  private send(link: Link, message: Message): void {
+    if (!link.connection.open) return;
+    try { link.connection.send(message); }
+    catch (error) { this.dropLink(link, error instanceof Error ? error.message : String(error)); }
+  }
+
   private setStatus(text: string): void { this.status = text; this.onChange?.(); }
+
+  /** Ends one line. A guest losing the host loses the match; the host only loses that guest. */
+  private dropLink(link: Link, text: string): void {
+    if (!this.owns(link)) return;
+    console.error('Co-op:', text);
+    clearTimeout(link.timeout);
+    this.closeFast(link);
+    link.connection.removeAllListeners();
+    link.connection.close();
+    if (this.role === 'guest') {
+      this.uplink = null;
+      this.connected = false;
+      clearTimeout(this.timeout);
+      clearInterval(this.heartbeat);
+      this.heartbeat = undefined;
+      this.setStatus(text);
+      return;
+    }
+    const slot = link.slot!;
+    this.links.delete(slot);
+    link.input = null;
+    const wasReady = link.ready;
+    this.connected = this.guestSlots().length > 0;
+    this.refreshRoster();
+    this.broadcastRoster();
+    this.setStatus(wasReady ? `${link.name} left. ${this.waitingText()}` : text);
+    if (wasReady) this.onLeave?.(slot, link.name);
+  }
+
+  /** A failure that affects the whole session (signalling, encoding): every line goes down. */
   private fail(text: string): void {
     console.error('Co-op:', text);
     this.connected = false;
     clearTimeout(this.timeout);
     clearInterval(this.heartbeat);
-    const connection = this.connection;
-    this.connection = null;
-    this.closeFast();
-    connection?.removeAllListeners();
-    connection?.close();
+    this.heartbeat = undefined;
+    for (const link of this.allLinks()) {
+      clearTimeout(link.timeout);
+      this.closeFast(link);
+      link.connection.removeAllListeners();
+      link.connection.close();
+    }
+    this.links.clear();
+    this.uplink = null;
     this.setStatus(text);
   }
+
+  private allLinks(): Link[] {
+    return [...this.links.values(), ...(this.uplink ? [this.uplink] : [])];
+  }
+
   close(): void {
     clearTimeout(this.timeout);
     clearInterval(this.heartbeat);
-    this.onChange = null; this.onState = null; this.onEnd = null;
-    this.closeFast();
-    this.connection?.removeAllListeners();
-    this.connection?.close();
+    this.heartbeat = undefined;
+    this.onChange = null; this.onState = null; this.onEnd = null; this.onLeave = null;
+    for (const link of this.allLinks()) {
+      clearTimeout(link.timeout);
+      this.closeFast(link);
+      link.connection.removeAllListeners();
+      link.connection.close();
+    }
+    this.links.clear();
+    this.uplink = null;
     this.peer?.removeAllListeners();
     this.peer?.destroy();
-    this.peer = null; this.connection = null; this.role = null;
-    this.connected = false; this.invite = ''; this.latest = null; this.input = null;
+    this.peer = null; this.role = null; this.slot = null;
+    this.connected = false; this.invite = ''; this.latest = null;
+    this.locked = false; this.guestLimit = null; this.roster = [];
     this.resetStream();
-    this.receiving = Promise.resolve();
   }
+
   private resetStream(): void {
-    this.sequence = -1;
     this.stateSeqOut = 0; this.stateSeqIn = -1;
     this.level = null; this.levelChanged = false;
     this.pendingState = null;
