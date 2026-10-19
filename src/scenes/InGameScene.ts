@@ -22,7 +22,7 @@ import { takeNotices, clearNotices, updateNotices, noticeEvents, notify } from '
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
 import { gameState, isVersus } from '../game/GameState';
-import { openingCoins } from '../systems/AIPlayerSystem';
+import { openingCoins } from '../ai';
 import { cheats, resetCheats, runCommand } from '../game/Console';
 import { ConsoleView } from '../ui/ConsoleView';
 import type { CharacterType } from '../entities/PlayerFactory';
@@ -34,7 +34,8 @@ import { TooltipView } from '../ui/Tooltip';
 import { WeaponBar } from '../ui/WeaponBar';
 import { DarknessRenderer } from '../level/DarknessRenderer';
 import { Crosshair } from '../ui/Crosshair';
-import { keyLabel } from '../game/Settings';
+import { bindingFor, keyLabel } from '../game/Settings';
+import { Scoreboard } from '../ui/Scoreboard';
 import { coop } from '../network/CoopSession';
 import { captureWorld, WorldReplica, restoreSettings } from '../game/WorldState';
 import { savedRun, saveMenu } from '../game/SaveStore';
@@ -87,6 +88,10 @@ export class InGameScene implements Scene {
   private manager: SceneManager;
   private app: Application;
   private onKeyDown: (e: KeyboardEvent) => void;
+  private onKeyUp: (e: KeyboardEvent) => void;
+  private onBlur = () => { this.scoreboardHeld = false; };
+  private scoreboard = new Scoreboard();
+  private scoreboardHeld = false;
 
   constructor(manager: SceneManager) {
     this.manager = manager;
@@ -102,9 +107,15 @@ export class InGameScene implements Scene {
 
     this.onKeyDown = (e: KeyboardEvent) => {
       if (this.finished) return;
-      if (e.code === 'Tab') {
+      if (e.code === bindingFor('console')) {
         e.preventDefault();
         this.toggleConsole();
+        return;
+      }
+      // Holding Tab lists the players' levels and coins.
+      if (e.code === 'Tab') {
+        e.preventDefault();
+        this.scoreboardHeld = true;
         return;
       }
       if (this.console.visible) {
@@ -119,6 +130,9 @@ export class InGameScene implements Scene {
       else this.togglePause();
     };
     window.addEventListener('keydown', this.onKeyDown);
+    this.onKeyUp = (e: KeyboardEvent) => { if (e.code === 'Tab') this.scoreboardHeld = false; };
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
 
     this.load()
       .then(() => {
@@ -349,6 +363,7 @@ export class InGameScene implements Scene {
     this.hudLayer.addChild(this.hud.container);
     this.hudLayer.addChild(this.weaponBar.container);
     this.hudLayer.addChild(this.tooltip.container);
+    this.hudLayer.addChild(this.scoreboard.container);
     this.hudLayer.addChild(this.console.container);
   }
 
@@ -565,6 +580,7 @@ export class InGameScene implements Scene {
     this.darkness.update(this.level);
 
     this.hud.update(this.player, this.level);
+    this.scoreboard.update(this.scoreboardHeld && !this.console.visible, this.player);
     // The other side's stalls are not for sale to this player, so their prices stay hidden.
     for (const stall of world.with('shopItem', 'priceLabel')) stall.priceLabel!.visible = stall.team === this.player.team;
     this.respawnLabel.text = this.player.respawnTicks !== undefined
@@ -657,6 +673,8 @@ export class InGameScene implements Scene {
     coop.onState = null; coop.onEnd = null; coop.onLeave = null;
     sound.onEffect = null; noticeEvents.onNotice = null;
     window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('blur', this.onBlur);
     setInputCaptured(false);
     this.ticker.stop();
     this.ticker.destroy();

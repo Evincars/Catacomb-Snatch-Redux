@@ -2,7 +2,7 @@ import type { Container } from 'pixi.js';
 import type { Level } from '../level/Level';
 import { updateInput } from './InputSystem';
 import { updateTargeting } from './TargetingSystem';
-import { updateAIPlayers } from './AIPlayerSystem';
+import { updateAIPlayers } from '../ai';
 import { updateInteraction, updateCarried } from './InteractionSystem';
 import { updateAI } from './AISystem';
 import { updateMobWeapons } from './MobWeaponSystem';

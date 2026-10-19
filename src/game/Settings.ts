@@ -51,7 +51,7 @@ const DEFAULT_BINDINGS: Record<ActionName, string> = {
   weapon_slot_3: 'Digit3',
   next_weapon: 'KeyZ',
   prev_weapon: 'KeyX',
-  console: 'Tab',
+  console: 'Backquote',
   chat: 'KeyT',
 };
 
@@ -97,7 +97,8 @@ function load(): Settings {
     return {
       ...base,
       ...saved,
-      bindings: { ...base.bindings, ...(saved.bindings ?? {}) },
+      // Tab now shows the scoreboard; the console moved to the classic ~ key.
+      bindings: { ...base.bindings, ...(saved.bindings ?? {}), ...(saved.bindings?.console === 'Tab' ? { console: 'Backquote' } : {}) },
       playerName: cleanName(saved.playerName),
     };
   } catch {
@@ -144,6 +145,7 @@ export function codeLabel(code: string): string {
     case 'AltRight': return 'R ALT';
     case 'Space': return 'SPACE';
     case 'Escape': return 'ESC';
+    case 'Backquote': return '~';
     default: return code.toUpperCase();
   }
 }

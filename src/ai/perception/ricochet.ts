@@ -1,4 +1,4 @@
-import type { Level } from '../level/Level';
+import type { Level } from '../../level/Level';
 
 /** The bounce rules of BulletSystem, repeated here so a shot can be rehearsed before it is fired. */
 const BOUNCE_SPEEDUP = 1.2;

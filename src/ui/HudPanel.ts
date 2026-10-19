@@ -170,11 +170,13 @@ export class HudPanel {
         const pct = (score: number) => Math.min(100, Math.floor(score * 100 / level.targetScore));
         const yours = player.team === 2 ? level.player2Score : level.player1Score;
         const rival = player.team === 2 ? level.player1Score : level.player2Score;
-        this.rivalText.text = `${characterName(rivalCharacter())}: ${pct(rival)}%`;
-        this.teamText.text = `${characterName(gameState.selectedCharacter)}: ${pct(yours)}%`;
+        // With company on your side the computers are a team too (one per person): "LORD LARD TEAM".
+        const suffix = [...world.with('playerSlot')].length > 1 ? ' TEAM' : '';
+        this.rivalText.text = `${characterName(rivalCharacter())}${suffix}: ${pct(rival)}%`;
+        this.teamText.text = `${characterName(gameState.selectedCharacter)}${suffix}: ${pct(yours)}%`;
       } else {
         const pct = Math.floor((stats.score * 100) / gameState.targetScore);
-        this.scoreText.text = `${characterLabel()}: ${pct}%`;
+        this.scoreText.text = `${characterLabel()}${[...world.with('playerSlot')].length > 1 ? ' TEAM' : ''}: ${pct}%`;
       }
       this.weaponName = player.weapon?.type ?? '';
       this.renderWeaponLabel();

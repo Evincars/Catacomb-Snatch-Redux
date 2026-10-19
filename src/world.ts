@@ -42,7 +42,7 @@ export type Entity = {
   /** Name shown above the character of every other player. */
   playerName?: string;
   remoteInput?: true;
-  /** A computer-controlled player; its controls are written by AIPlayerSystem, not a keyboard. */
+  /** A computer-controlled player; its controls are written by the AI (src/ai), not a keyboard. */
   aiPlayer?: { character: CharacterType; difficulty: string; role?: AIRole };
   aimWorld?: { x: number; y: number };
   respawnTicks?: number;

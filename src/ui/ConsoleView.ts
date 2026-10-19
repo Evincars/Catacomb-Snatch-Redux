@@ -12,7 +12,7 @@ const VISIBLE_LINES = 10;
 const MAX_INPUT = 80;
 const PANEL_HEIGHT = 150;
 
-/** The Tab console: a text box over the top of the game that reads one command line at a time. */
+/** The ~ console: a text box over the top of the game that reads one command line at a time. */
 export class ConsoleView {
   readonly container = new Container();
   private output: string[] = [];

@@ -81,17 +81,19 @@ export type AIDifficulty = {
   shopDiscount: number;
   /** Whether it works out shots that bounce off walls to hit a rival hiding behind them. */
   ricochet: boolean;
+  /** 0-1: how readily it hunts rivals, defends the track and wrecks the rival's, instead of only building. */
+  aggression: number;
 };
 
 export const AI_DIFFICULTIES: AIDifficulty[] = [
   { name: 'Easy',   thinkTicks: 45, reactionTicks: 40, aimError: 0.35, engageRange: 150, fireRate: 0.45, drainThreshold: 400,
-    maxCarriages: 1, maxTurrets: 2, trackTurrets: 1, maxUpgrade: 1, railDelay: 60 * 90, sprint: false, retreatHealth: 0.25, reserve: 100, shopDiscount: 1, ricochet: false },
+    maxCarriages: 1, maxTurrets: 2, trackTurrets: 1, maxUpgrade: 1, railDelay: 60 * 90, sprint: false, retreatHealth: 0.25, reserve: 100, shopDiscount: 1, ricochet: false, aggression: 0.25 },
   { name: 'Normal', thinkTicks: 25, reactionTicks: 22, aimError: 0.18, engageRange: 200, fireRate: 0.8,  drainThreshold: 250,
-    maxCarriages: 2, maxTurrets: 3, trackTurrets: 2, maxUpgrade: 2, railDelay: 60 * 40, sprint: true,  retreatHealth: 0.3,  reserve: 50,  shopDiscount: 1, ricochet: true },
+    maxCarriages: 3, maxTurrets: 5, trackTurrets: 4, maxUpgrade: 3, railDelay: 60 * 40, sprint: true,  retreatHealth: 0.3,  reserve: 50,  shopDiscount: 1, ricochet: true, aggression: 0.6 },
   { name: 'Hard',   thinkTicks: 12, reactionTicks: 10, aimError: 0.09, engageRange: 240, fireRate: 1,    drainThreshold: 150,
-    maxCarriages: 3, maxTurrets: 4, trackTurrets: 3, maxUpgrade: 3, railDelay: 60 * 15, sprint: true,  retreatHealth: 0.35, reserve: 25,  shopDiscount: 0.9, ricochet: true },
+    maxCarriages: 4, maxTurrets: 6, trackTurrets: 5, maxUpgrade: 3, railDelay: 60 * 15, sprint: true,  retreatHealth: 0.35, reserve: 25,  shopDiscount: 0.9, ricochet: true, aggression: 0.85 },
   { name: 'Insane', thinkTicks: 6,  reactionTicks: 4,  aimError: 0.04, engageRange: 280, fireRate: 1,    drainThreshold: 100,
-    maxCarriages: 4, maxTurrets: 5, trackTurrets: 4, maxUpgrade: 3, railDelay: 0,       sprint: true,  retreatHealth: 0.4,  reserve: 0,   shopDiscount: 0.8, ricochet: true },
+    maxCarriages: 5, maxTurrets: 7, trackTurrets: 6, maxUpgrade: 3, railDelay: 0,       sprint: true,  retreatHealth: 0.4,  reserve: 0,   shopDiscount: 0.8, ricochet: true, aggression: 1 },
 ];
 
 // Mutable singleton, carries choices across scenes
@@ -109,7 +111,7 @@ export const gameState = {
   difficulty: DIFFICULTIES[1],
   selectedLevel: LEVELS[0],
   winningTeam: 0,
-  /** Retired debug switch, kept only so saved games still validate. The Tab console replaced it. */
+  /** Retired debug switch, kept only so saved games still validate. The ~ console replaced it. */
   debug: false,
   // Solo/companion GoldRush counts carried coins. Enemy matches instead use
   // the original versus treasury target of 100, with two points per delivery.

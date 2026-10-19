@@ -133,8 +133,12 @@ actors, pointer coordinates and collision tiles all share the same world coordin
   Each full carriage delivery adds **2%**, matching the original versus game; the carriage
   just empties, with no emerald and no sound. The bottom HUD shows both teams' delivered percentages.
   The first team to reach 100% wins. Companions retain combined-carried-coin victory.
-- **Tab opens a console** (single-player only) for testing: `/money <amount>`, `/god [on|off]`,
-  `/speed <0.25-10>` and `/speed normal`; `/help` lists them and Tab or Esc closes it.
+- **~ opens a console** (single-player only; rebindable under Key Bindings) for testing:
+  `/money <amount>`, `/god [on|off]`, `/speed <0.25-10>` and `/speed normal`; `/help` lists them and
+  ~ or Esc closes it.
+- **Holding Tab** in a match with company shows the players' standings: name, level (star) and coins.
+  With at least one co-op player, the bottom HUD labels each side as a team ("LORD LARD TEAM"), the
+  computers' side included.
 - The host's pause menu pauses the world; the guest's pause menu only stops their own controls.
   A lost connection pauses the host's run, where it can still be saved. Return to the main menu
   and reload that save to reconnect with a new invite.
@@ -166,6 +170,7 @@ Invite links grant access to the session, so share them only with the intended p
   third) lays track, runs carriages and fetches the treasure; the **saboteur** (second, fourth) buys
   bombs and blows up the people's laid rails, turrets, harvesters and carriages, shooting the
   machines it cannot bomb.
+- Every computer player starts with **5000 coins** and spends them on the **plasma gun first**.
 - The bottom HUD shows each side's name and delivered percentage in the original style.
 - The AI is an ordinary player entity driven by synthetic controls, so it follows every game rule.
   It fights mobs and opposing players, collects coins, builds turrets and puts harvesters near them,
@@ -179,6 +184,11 @@ Invite links grant access to the session, so share them only with the intended p
   shot), and if a line of fire exists that comes round the corner it stands still and fires it.
 - Its choices are read from the shop stalls, weapon stats and building definitions (cost, role,
   range, damage), so new guns, turrets or harvesters are used without changes to the AI.
+- It is aggressive about winning: it defends its home, turrets and track against rivals and their
+  carriages, hunts rivals within reach, wrecks their machines, and bombs the rival's track whenever
+  it has joined to it or it simply lies in reach. Turrets go where one covers the most bare track in
+  clear sight (a bend beats a straight), spread apart, and are upgraded early when their longer circle
+  covers ground that matters. Higher difficulties are more aggressive and run more turrets.
 - It walks like a person: along a straight stretch it aims at the far end and holds its lane within a
   few pixels, and a movement key cannot flip to its opposite within a few ticks, so it no longer
   twitches left and right.
@@ -232,3 +242,20 @@ The game is automatically built and deployed to **GitHub Pages** on every new ve
    git tag v0.1.1
    git push origin v0.1.1
    ```
+
+## Computer player architecture
+
+The computer players live in `src/ai/`, split the way a game AI usually is:
+
+- **Perception** (`src/ai/perception/`) reads the world. Positions of people, mobs, nests, machines,
+  loot and bombs are kept in a spatial index (**rbush**, an R-tree, rebuilt once per tick);
+  walking distances come from a Dijkstra field over the tile grid and point-to-point routes from
+  **ngraph.path** (A* over an **ngraph.graph** of the floor, rebuilt only when the floor changes), using the same step costs so
+  both agree. Also here: track planning, turret placement and upgrade value, sabotage targets,
+  gun ratings and the ricochet solver.
+- **Decision** (`src/ai/decision/`) is Utility AI: perception builds one `Situation`; each `Option`
+  (survival, carrying, shopping and building, offence, errands) scores itself against it and the best
+  score becomes the goal. Options declare a score ceiling so those that cannot win are not evaluated.
+- **Execution** (`src/ai/execution/`) turns the goal into key presses: walking uses **yuka** steering
+  (follow-path towards the farthest point in clear sight, plus separation from people crowding it), with
+  keys that cannot flip instantly; fighting aims, leads targets, picks the gun and fires ricochets.

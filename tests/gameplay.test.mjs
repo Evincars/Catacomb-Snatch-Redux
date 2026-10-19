@@ -15,7 +15,7 @@ const { createRailDroid, canSpawnRailDroid, updateRailDroids } = await load('sys
 const { createBuilding } = await load('entities/BuildingFactory');
 const { createPlayer } = await load('entities/PlayerFactory');
 const { createShopItem } = await load('entities/ShopItemFactory');
-const { updateAIPlayers, openingCoins } = await load('systems/AIPlayerSystem');
+const { updateAIPlayers, openingCoins } = await load('ai/index');
 const { updateAI, MAX_CHASERS } = await load('systems/AISystem');
 const { updateTargeting } = await load('systems/TargetingSystem');
 const { updateInteraction, updateCarried } = await load('systems/InteractionSystem');
@@ -33,7 +33,10 @@ const { createMob } = await load('entities/MobFactory');
 const { gameState, DIFFICULTIES, AI_DIFFICULTIES } = await load('game/GameState');
 const { runCommand, cheats } = await load('game/Console');
 const { captureWorld, validateWorld, restoreSettings } = await load('game/WorldState');
-const { solveRicochet } = await load('systems/Ricochet');
+const { solveRicochet } = await load('ai/perception/ricochet');
+const { unguardedTrack } = await load('ai/perception/rails');
+const { walkField, routeFor } = await load('ai/perception/navigation');
+const { nearby, beginPerception } = await load('ai/perception/spatial');
 const { createBullet, BULLET_CONFIGS } = await load('entities/BulletFactory');
 const { cleanName } = await load('game/Settings');
 const { updateDeath } = await load('systems/DeathSystem');
@@ -226,7 +229,25 @@ test('the computer opens with enough coins for its best gun, and its first build
   createShopItem(centre(6), centre(4), 'turret', Team.Two);
   createShopItem(centre(8), centre(4), 'harvester', Team.Two);
   const coins = openingCoins(AI_DIFFICULTIES[1]);
-  assert.ok(coins >= 800 + 75 * 3 + 300, `only ${coins} coins`);
+  assert.ok(coins >= 5000, `only ${coins} coins`);
+  assert.ok(coins >= 800 + 75 * 3 + 300);
+});
+
+test('the computer spends its opening gold on the plasma gun before anything else', () => {
+  const level = new Level(24, 16);
+  level.setSpawnPoints(Team.Two, [{ x: centre(12), y: centre(4) }]);
+  createShopItem(centre(8), centre(3), 'raygun', Team.Two);
+  createShopItem(centre(10), centre(3), 'shotgun', Team.Two);
+  createShopItem(centre(14), centre(3), 'turret', Team.Two);
+  const ai = computer(12, 5, openingCoins(AI_DIFFICULTIES[1]));
+  ai.aiPlayer.difficulty = 'Normal';
+  let turretBeforeGun = false;
+  for (let tick = 0; tick < 1500 && !ai.weaponInventory.weapons.includes('raygun'); tick++) {
+    aiTick(level);
+    if ([...world.with('turret')].length > 0) turretBeforeGun = true;
+  }
+  assert.ok(ai.weaponInventory.weapons.includes('raygun'), 'never bought the plasma gun');
+  assert.equal(turretBeforeGun, false, 'bought a turret first');
 });
 
 test('AI walled in by its own buildings lifts one to get out', () => {
@@ -655,10 +676,11 @@ test('Normal AI places three spaced home turrets before rails, then stages one c
     if (firstRail >= 0 && firstCarriage >= 0) break;
   }
   const turrets = [...world.with('turret')].filter((e) => e.carriedBy === undefined);
-  assert.equal(turrets.length, 3);
-  assert.equal(turretsAtFirstTransport, 3, 'started transport before securing home');
+  const atHome = turrets.filter((t) => Math.hypot(t.position.x - centre(14), t.position.y - centre(5)) <= 224 + 26);
+  assert.ok(atHome.length >= 3, `only ${atHome.length} turrets at home`);
+  assert.ok(turretsAtFirstTransport >= 3, 'started transport before securing home');
+  // A well-off computer also adds turrets beyond the opening three, but never on top of each other.
   for (const turret of turrets) {
-    assert.ok(Math.hypot(turret.position.x - centre(14), turret.position.y - centre(5)) <= 224 + 26);
     for (const other of turrets) if (turret !== other) {
       assert.ok(Math.hypot(turret.position.x - other.position.x, turret.position.y - other.position.y) >= 54);
     }
@@ -1096,4 +1118,64 @@ test('the computer does not waste shots on a rival standing protected in their o
   }
   assert.equal(shots, 0);
   assert.equal([...world.with('bullet')].length, 0);
+});
+
+test('track behind a wall counts as unguarded even inside a turret circle', () => {
+  const level = new Level(24, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(2), y: centre(5) }]);
+  put(level, 12, 5, TileType.Rail, { team: Team.Two });
+  createBuilding(centre(10), centre(5), 'turret', Team.Two);
+  const ai = computer(2, 5);
+  const field = walkField(level, 2 + 5 * level.width);
+  assert.equal(unguardedTrack(level, ai, field), null, 'a turret with a clear line covers the track');
+  put(level, 11, 5, TileType.Wall);
+  assert.ok(unguardedTrack(level, ai, walkField(level, 2 + 5 * level.width)), 'a wall between turret and track leaves it bare');
+});
+
+test('a lone computer cuts the rival link home once its track is joined to theirs', () => {
+  const level = new Level(40, 14);
+  level.baseAreas.push({ x0: 2, y0: 2, x1: 7, y1: 6, team: Team.One });
+  level.setSpawnPoints(Team.Two, [{ x: centre(30), y: centre(11) }]);
+  put(level, 7, 4, TileType.PlayerRail, { team: Team.One });
+  for (let x = 8; x <= 30; x++) put(level, x, 4, TileType.Rail, { team: Team.One });
+  put(level, 30, 10, TileType.PlayerRail, { team: Team.Two });
+  for (let y = 5; y <= 9; y++) put(level, 30, y, TileType.Rail, { team: Team.Two });
+  createShopItem(centre(33), centre(11), 'bomb', Team.Two);
+  computer(30, 11, 5000);
+  for (let tick = 0; tick < 4500 && level.getTile(8, 4).type === TileType.Rail; tick++) aiTick(level);
+  assert.notEqual(level.getTile(8, 4).type, TileType.Rail, 'the link to the rival base is still there');
+});
+
+test('a lone computer also blows up rival track that nothing joins to its own', () => {
+  const level = new Level(30, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(3), y: centre(5) }]);
+  createShopItem(centre(3), centre(3), 'bomb', Team.Two);
+  for (let x = 18; x <= 21; x++) put(level, x, 5, TileType.Rail, { team: Team.One });
+  const ai = computer(3, 5, 5000);
+  const rails = () => [18, 19, 20, 21].filter((x) => level.getTile(x, 5).type === TileType.Rail).length;
+  for (let tick = 0; tick < 3500 && rails() === 4; tick++) aiTick(level);
+  assert.ok(rails() < 4, 'ignored the rival track');
+  assert.equal(ai.health.current, ai.health.max);
+});
+
+test('the spatial index finds entities by kind within a radius', () => {
+  const near = createMob(new Level(10, 10), 'bat', 100, 100);
+  createMob(new Level(10, 10), 'bat', 500, 500);
+  const p = createPlayer(110, 100, Team.One);
+  beginPerception();
+  const found = nearby(100, 100, 40, ['mob']);
+  assert.deepEqual(found, [near]);
+  assert.ok(nearby(100, 100, 40, ['player']).includes(p));
+});
+
+test('routes found with ngraph.path follow the cheapest tiles and go round walls', () => {
+  const level = new Level(16, 8);
+  for (let y = 0; y < 7; y++) put(level, 8, y, TileType.Wall);
+  const from = 2 + 3 * level.width;
+  const field = walkField(level, from);
+  const goal = 13 + 3 * level.width;
+  const route = routeFor(level, field, goal);
+  assert.equal(route.at(-1), goal);
+  assert.ok(route.some((t) => t % level.width === 8 && Math.floor(t / level.width) === 7), 'went through the wall');
+  assert.equal(route.length, field.dist[goal], 'the route costs what the distance field says');
 });
