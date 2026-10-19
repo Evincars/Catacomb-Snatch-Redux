@@ -13,14 +13,14 @@ import { world, q, Team } from '../world';
 import type { Entity, AIRole } from '../world';
 import type { Level } from '../level/Level';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
-import { railJoins } from '../level/RailLayout';
+import { railJoins, isRailTile } from '../level/RailLayout';
 import { AI_DIFFICULTIES, isVersus } from '../game/GameState';
 import type { AIDifficulty } from '../game/GameState';
 import { WEAPON_STATS } from '../entities/WeaponStats';
 import { BULLET_CONFIGS } from '../entities/BulletFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import type { ShopRole } from '../entities/ShopItemFactory';
-import { upgradeCostOf } from '../entities/BuildingFactory';
+import { upgradeCostOf, turretRadiusAt } from '../entities/BuildingFactory';
 import { hitByAimLine, INTERACT_REACH } from './TargetingSystem';
 import { railCost, carriageCost } from './InteractionSystem';
 import { canSpawnRailDroid } from './RailDroidSystem';
@@ -135,6 +135,10 @@ type Brain = {
   /** Head of the track while mobs hold it: the next turret goes there. */
   front?: { x: number; y: number };
   blacklist: Map<number, number>;
+  /** Which way each axis key was last held and for how many ticks, so a key never flips back and forth. */
+  held: { x: { dir: number; ticks: number }; y: { dir: number; ticks: number } };
+  /** Whether it is steering back to the middle of the lane it walks along. */
+  lane: boolean;
   /** A building put down to fight, to be picked up and put to use once the fight is over; and until when to try. */
   retrieveId?: number;
   retrieveUntil: number;
@@ -157,6 +161,7 @@ function brainOf(entity: Entity): Brain {
       lastX: entity.position!.x, lastY: entity.position!.y, stuck: 0, sidestep: null, walkWatch: null, avoid: new Map(), railsSinceUpgrade: 0, upgradeSince: null,
       railPlan: [], railDone: false, lastCarriageAt: -CARRIAGE_DELAY, blacklist: new Map(),
       retrieveUntil: 0, bank: null, bankCool: 0,
+      held: { x: { dir: 0, ticks: 0 }, y: { dir: 0, ticks: 0 } }, lane: false,
     };
     brains.set(entity, brain);
   }
@@ -392,6 +397,66 @@ function weaponGain(entity: Entity, kind: string): number {
 }
 
 // ---------------------------------------------------------------------------
+// Is an upgrade worth its price?
+
+/** Coins an upgrade may cost for each point of newly covered ground. */
+const COINS_PER_POINT = 40;
+const worthCache = new WeakMap<Entity, { at: number; level: number; gain: number }>();
+
+/** A walkable tile at a wall's corner, where someone rounding it steps into sight without warning. */
+function cornerExit(level: Level, tx: number, ty: number): boolean {
+  for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    if (level.getTile(tx + dx, ty + dy)?.passable === false
+      && level.getTile(tx + dx, ty)?.passable && level.getTile(tx, ty + dy)?.passable) return true;
+  }
+  return false;
+}
+
+/**
+ * What the extra reach of the next turret level would newly cover, counted in tiles that have a
+ * clear line from the turret: ordinary floor counts one, a corner someone steps out from three, the
+ * rival's laid track four and the ground around home or the treasure two. A turret in a dead-end
+ * corridor gains nothing from a bigger circle; one watching a junction or a corner gains a lot.
+ */
+function upgradeGain(level: Level, entity: Entity, brain: Brain, turret: Entity): number {
+  const cached = worthCache.get(turret);
+  const levelNow = turret.upgradable?.level ?? 1;
+  if (cached && cached.level === levelNow && brain.age - cached.at < 300) return cached.gain;
+  const p = turret.position!;
+  const from = turretRadiusAt(levelNow);
+  const to = turretRadiusAt(levelNow + 1);
+  const home = level.getRandomSpawnPoint(entity.team ?? Team.Two);
+  const treasure = treasureOf();
+  const rival = entity.team === Team.One ? Team.Two : Team.One;
+  let gain = 0;
+  for (let ty = tileY(p.y - to); ty <= tileY(p.y + to); ty++) {
+    for (let tx = tileX(p.x - to); tx <= tileX(p.x + to); tx++) {
+      const tile = level.getTile(tx, ty);
+      if (!tile?.passable) continue;
+      const cx = centreX(tx);
+      const cy = centreY(ty);
+      const d = Math.hypot(cx - p.x, cy - p.y);
+      if (d <= from || d > to || !level.checkLineOfSight(p.x, p.y, cx, cy)) continue;
+      let value = 1;
+      if (cornerExit(level, tx, ty)) value = 3;
+      if (tile.type === TileType.Rail && tile.team === rival) value = 4;
+      else if ((home && dist({ x: cx, y: cy }, home) < BASE_DEFENSE_RANGE + 2 * TILE_WIDTH)
+        || (treasure && dist({ x: cx, y: cy }, treasure.position!) < 6 * TILE_WIDTH)) value = Math.max(value, 2);
+      gain += value;
+    }
+  }
+  worthCache.set(turret, { at: brain.age, level: levelNow, gain });
+  return gain;
+}
+
+/** Harvesters are always worth their upgrade; a turret only when its longer reach covers enough new ground. */
+function worthUpgrading(level: Level, entity: Entity, brain: Brain, building: Entity): boolean {
+  if (!building.turret) return true;
+  const cost = upgradeCostOf(building);
+  return cost !== null && upgradeGain(level, entity, brain, building) * COINS_PER_POINT >= cost;
+}
+
+// ---------------------------------------------------------------------------
 // What is on the map.
 
 function roleOfBuilding(e: Entity): ShopRole | null {
@@ -466,8 +531,12 @@ function planRails(level: Level, team: Team): number[] | null {
     const tile = level.getTile(tx, ty);
     if (!tile) return INF;
     if (RAIL_TYPES.has(tile.type)) {
-      // Other teams' track would carry its carriages off towards their base.
-      if (tile.team !== undefined && tile.team !== team) return isVersus() ? 40 : 0;
+      if (tile.team !== undefined && tile.team !== team) {
+        // The rival's laid track already runs to the treasure: joining it is far cheaper than a line of
+        // our own, and our carriages then collect from it. Their base track is theirs and stays off limits.
+        if (!isVersus()) return 0;
+        return tile.type === TileType.Rail ? 0.4 : INF;
+      }
       return 0;
     }
     const t = tx + ty * level.width;
@@ -674,6 +743,8 @@ function placementCandidate(level: Level, entity: Entity, brain: Brain, held: En
 // Choosing what to do.
 
 function setGoal(brain: Brain, level: Level, goal: Omit<Goal, 'since'>): void {
+  // A change of plan may turn it right round at once; only the twitching of one plan is smoothed away.
+  if (brain.goal?.name !== goal.name) brain.held.x.ticks = brain.held.y.ticks = FLIP_TICKS;
   brain.goal = { ...goal, since: brain.age };
   brain.path = brain.field ? pathTo(brain.field, goal.tile) : [];
   void level;
@@ -730,7 +801,8 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
 
   // A saboteur leaves the track and the treasure to its partner and goes after the rival's.
   const saboteur = roleOf(entity) === 'saboteur';
-  const sabotage = saboteur ? findSabotage(level, entity, field) : null;
+  // A lone computer only cuts the rival's link home once it has joined their track; a saboteur wrecks freely.
+  const sabotage = saboteur ? findSabotage(level, entity, field) : roleOf(entity) === 'all' ? findSabotage(level, entity, field, true) : null;
   const plan = saboteur ? null : planRails(level, entity.team ?? Team.Two);
   brain.railPlan = plan ?? [];
   brain.railDone = plan !== null && plan.length === 0;
@@ -1002,7 +1074,7 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   }
   const rich = nearestOf(level, brain, [...q.upgradables].filter((b) => !b.removed && b.team === entity.team
     && b.carriedBy === undefined && b.upgradable!.level < profile.maxUpgrade
-    && (upgradeCostOf(b) ?? INF) <= surplus));
+    && (upgradeCostOf(b) ?? INF) <= surplus && worthUpgrading(level, entity, brain, b)));
   if (rich) {
     useGoal(level, brain, 'upgrade', rich, 'upgradeId');
     return;
@@ -1012,7 +1084,8 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   let savingForUpgrade = false;
   if (!needsBaseDefense && brain.age >= UPGRADE_AFTER && brain.railsSinceUpgrade >= RAILS_PER_UPGRADE) {
     const candidates = [...q.upgradables].filter((b) => !b.removed && b.team === entity.team && b.carriedBy === undefined
-      && b.upgradable!.level < profile.maxUpgrade && reachable(level, brain, b) < INF)
+      && b.upgradable!.level < profile.maxUpgrade && reachable(level, brain, b) < INF
+      && worthUpgrading(level, entity, brain, b))
       .sort((a, b) => (upgradeCostOf(a) ?? INF) - (upgradeCostOf(b) ?? INF));
     const pick = candidates[0];
     const cost = pick ? upgradeCostOf(pick) ?? INF : INF;
@@ -1073,7 +1146,8 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
 
   // 9. Upgrades.
   const upgradable = [...q.upgradables].filter((b) => !b.removed && b.team === entity.team && b.carriedBy === undefined
-    && b.upgradable!.level < profile.maxUpgrade && (upgradeCostOf(b) ?? INF) <= spare);
+    && b.upgradable!.level < profile.maxUpgrade && (upgradeCostOf(b) ?? INF) <= spare
+    && worthUpgrading(level, entity, brain, b));
   const up = nearestOf(level, brain, upgradable);
   if (up) {
     useGoal(level, brain, 'upgrade', up, 'upgradeId');
@@ -1081,6 +1155,13 @@ function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   }
 
   // 10. With nothing affordable to do, loot lying about: close coins, or rich drops further away; chests are opened.
+  // A gun a fallen player left lying about, if it would improve the arsenal.
+  const dropped = nearestOf(level, brain, [...world.with('position', 'weaponPickup')].filter((g) => !g.removed
+    && !entity.weaponInventory!.weapons.includes(g.weaponPickup!.kind) && weaponGain(entity, g.weaponPickup!.kind) > 2), LOOT_DETOUR * 2);
+  if (dropped) {
+    setGoal(brain, level, { name: 'pick up gun', tile: tileOf(level, dropped.position!.x, dropped.position!.y), walk: true });
+    return;
+  }
   const loot = nearestLoot(level, brain);
   if (loot) {
     setGoal(brain, level, { name: 'loot', tile: tileOf(level, loot.position!.x, loot.position!.y), walk: true });
@@ -1257,31 +1338,73 @@ function rivalsInSight(level: Level, entity: Entity, range: number): number {
   return count;
 }
 
-/**
- * What a saboteur should blow up next: the spot, in tiles, with the most of the rival's track and
- * machines within reach of one bomb, weighed against the walk, and where to stand to set it.
- */
-function findSabotage(level: Level, entity: Entity, field: Field): { tile: number; stand: number } | null {
-  const rivalTeam = entity.team === Team.One ? Team.Two : Team.One;
-  const spots: Array<{ x: number; y: number }> = [];
+/** Whether our base track is joined, through track the rival laid, to the rival's network. */
+function bridgedToRival(level: Level, entity: Entity): boolean {
+  const rival = entity.team === Team.One ? Team.Two : Team.One;
+  const seen = new Set<number>();
+  const queue: number[] = [];
   for (let ty = 0; ty < level.height; ty++) {
     for (let tx = 0; tx < level.width; tx++) {
       const tile = level.getTile(tx, ty);
-      if (tile?.type === TileType.Rail && tile.team === rivalTeam) spots.push({ x: tx, y: ty });
+      if (tile?.type === TileType.PlayerRail && tile.team === entity.team) {
+        seen.add(tx + ty * level.width);
+        queue.push(tx + ty * level.width);
+      }
     }
   }
-  const machines = [...world.with('position', 'health')].filter((e) => !e.removed && e.carriedBy === undefined
+  for (let i = 0; i < queue.length; i++) {
+    const x = queue[i] % level.width;
+    const y = Math.floor(queue[i] / level.width);
+    for (const [dx, dy] of DIRS) {
+      if (!railJoins(level, x, y, dx, dy)) continue;
+      const there = level.getTile(x + dx, y + dy)!;
+      if (there.type === TileType.Rail && there.team === rival) return true;
+      if (there.team !== undefined && there.team !== entity.team) continue;
+      const t = x + dx + (y + dy) * level.width;
+      if (!seen.has(t)) {
+        seen.add(t);
+        queue.push(t);
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * What to blow up next, as a tile and the tile to stand on to set the bomb: the spot with the most of
+ * the rival's track and machines within reach of one bomb, weighed against the walk. The laid track
+ * next to the rival's base is worth most of all: cut there, the rival's carriages cannot get home to
+ * deliver, and when our own track has joined theirs, ours carry off the treasure instead.
+ * With `cutsOnly` it looks no further than that cut, and only once the two networks are joined.
+ */
+function findSabotage(level: Level, entity: Entity, field: Field, cutsOnly = false): { tile: number; stand: number } | null {
+  const rivalTeam = entity.team === Team.One ? Team.Two : Team.One;
+  const bridged = bridgedToRival(level, entity);
+  if (cutsOnly && !bridged) return null;
+  const spots: Array<{ x: number; y: number; cut: boolean }> = [];
+  for (let ty = 0; ty < level.height; ty++) {
+    for (let tx = 0; tx < level.width; tx++) {
+      const tile = level.getTile(tx, ty);
+      if (tile?.type !== TileType.Rail || tile.team !== rivalTeam) continue;
+      // The link home: laid track touching the rival's base track.
+      const cut = DIRS.some(([dx, dy]) => isRailTile(level, tx + dx, ty + dy)
+        && level.inOwnBase(centreX(tx + dx), centreY(ty + dy), rivalTeam));
+      spots.push({ x: tx, y: ty, cut });
+    }
+  }
+  const machines = cutsOnly ? [] : [...world.with('position', 'health')].filter((e) => !e.removed && e.carriedBy === undefined
     && e.team === rivalTeam && (e.turret !== undefined || e.harvester !== undefined || e.railDroid !== undefined));
-  const machineTiles = machines.map((m) => ({ x: tileX(m.position!.x), y: tileY(m.position!.y) }));
+  const machineTiles = machines.map((m) => ({ x: tileX(m.position!.x), y: tileY(m.position!.y), cut: false }));
   // One bomb wrecks what lies within about a tile and a half of it.
   const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1;
   let best: { tile: number; stand: number } | null = null;
   let bestScore = -INF;
-  for (const spot of [...spots, ...machineTiles]) {
+  for (const spot of cutsOnly ? spots.filter((r) => r.cut) : [...spots, ...machineTiles]) {
     const tile = spot.x + spot.y * level.width;
     const stand = besideWall(level, field, tile);
     if (stand < 0) continue;
-    const value = spots.filter((r) => near(r, spot)).length + 4 * machineTiles.filter((m) => near(m, spot)).length;
+    const value = spots.filter((r) => near(r, spot)).length + 4 * machineTiles.filter((m) => near(m, spot)).length
+      + (spot.cut ? (bridged ? 40 : 12) : 0);
     // Worth a walk of a few tiles per piece wrecked, but never an expedition for a single rail.
     const score = value * 5 - field.dist[stand];
     if (score > bestScore) {
@@ -1437,7 +1560,8 @@ function carriageDemand(level: Level, entity: Entity, profile: AIDifficulty): nu
     for (const [dx, dy] of DIRS) {
       if (!railJoins(level, x, y, dx, dy)) continue;
       const tile = level.getTile(x + dx, y + dy)!;
-      if (tile.team !== undefined && tile.team !== entity.team) continue;
+      // Track the rival laid counts once we have joined it; their base track never does.
+      if (tile.team !== undefined && tile.team !== entity.team && (tile.type !== TileType.Rail || !isVersus())) continue;
       const t = x + dx + (y + dy) * level.width;
       if (!connected.has(t)) {
         connected.add(t);
@@ -1588,6 +1712,80 @@ function steerTo(entity: Entity, x: number, y: number, deadzone: number, out: Co
   out.up = dy < -deadzone;
 }
 
+/** Cross-lane error, in pixels, beyond which it steers back to the middle of the lane, and below which it stops. */
+const LANE_ON = 4;
+const LANE_OFF = 1.5;
+/** Tiles of straight walking looked ahead, so the steering aims far down the corridor, not at the next tile. */
+const LOOKAHEAD = 6;
+/** Ticks a direction key is held before it may swap to the opposite one. */
+const FLIP_TICKS = 8;
+
+/**
+ * Walks the path the way a person would: along a straight run it aims at the far end and keeps to
+ * the middle of the lane with a small tolerance, instead of chasing the centre of every tile, which
+ * made it twitch left and right. Returns the tile it is walking towards.
+ */
+function steerAlong(level: Level, entity: Entity, brain: Brain, out: Controls): void {
+  const pos = entity.position!;
+  const path = brain.path;
+  const w = level.width;
+  const xOf = (t: number) => t % w;
+  const yOf = (t: number) => Math.floor(t / w);
+  const first = path[0];
+  let dx = Math.sign(xOf(first) - tileX(pos.x));
+  let dy = Math.sign(yOf(first) - tileY(pos.y));
+  // Standing in the tile it is heading for: the way on is from there to the next one.
+  if (dx === 0 && dy === 0 && path.length > 1) {
+    dx = xOf(path[1]) - xOf(first);
+    dy = yOf(path[1]) - yOf(first);
+  }
+  let last = first;
+  for (let i = 1; i < path.length && i < LOOKAHEAD; i++) {
+    if (xOf(path[i]) - xOf(path[i - 1]) !== dx || yOf(path[i]) - yOf(path[i - 1]) !== dy) break;
+    last = path[i];
+  }
+  const goalX = centreX(xOf(last));
+  const goalY = centreY(yOf(last));
+  const laneX = centreX(xOf(first));
+  const laneY = centreY(yOf(first));
+  out.right = out.left = out.up = out.down = false;
+  if (dx !== 0 && dy === 0) {
+    if (Math.abs(goalX - pos.x) > 2) { out.right = goalX > pos.x; out.left = !out.right; }
+    const off = laneY - pos.y;
+    brain.lane = Math.abs(off) > (brain.lane ? LANE_OFF : LANE_ON);
+    if (brain.lane) { out.down = off > 0; out.up = !out.down; }
+  } else if (dy !== 0 && dx === 0) {
+    if (Math.abs(goalY - pos.y) > 2) { out.down = goalY > pos.y; out.up = !out.down; }
+    const off = laneX - pos.x;
+    brain.lane = Math.abs(off) > (brain.lane ? LANE_OFF : LANE_ON);
+    if (brain.lane) { out.right = off > 0; out.left = !out.right; }
+  } else {
+    // Not lined up with a straight run (just replanned, or between tiles): head for the tile.
+    brain.lane = false;
+    steerTo(entity, laneX, laneY, 2.5, out);
+  }
+}
+
+/** Keeps a key from flipping straight to its opposite: a person cannot reverse in a single tick either. */
+function settleKeys(brain: Brain, out: Controls): void {
+  const axes: Array<[{ dir: number; ticks: number }, 'left' | 'up', 'right' | 'down']> = [
+    [brain.held.x, 'left', 'right'], [brain.held.y, 'up', 'down'],
+  ];
+  for (const [held, minus, plus] of axes) {
+    const want = (out[plus] ? 1 : 0) - (out[minus] ? 1 : 0);
+    held.ticks++;
+    if (want !== held.dir) {
+      if (want !== 0 && held.dir !== 0 && held.ticks < FLIP_TICKS) {
+        out[minus] = held.dir < 0;
+        out[plus] = held.dir > 0;
+        continue;
+      }
+      held.dir = want;
+      held.ticks = 0;
+    }
+  }
+}
+
 function setAim(entity: Entity, x: number, y: number): void {
   const len = Math.hypot(x, y);
   if (len === 0) return;
@@ -1734,17 +1932,29 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
     const next = brain.path[0];
     const nx = centreX(next % level.width);
     const ny = centreY(Math.floor(next / level.width));
-    if (Math.abs(pos.x - nx) <= 3 && Math.abs(pos.y - ny) <= 3) brain.path.shift();
+    // Passing straight through a tile needs only the position along the lane; a corner needs its middle.
+    const after = brain.path[1];
+    let reached = Math.abs(pos.x - nx) <= 3 && Math.abs(pos.y - ny) <= 3;
+    if (!reached && after !== undefined) {
+      const adx = Math.sign((after % level.width) - (next % level.width));
+      const ady = Math.sign(Math.floor(after / level.width) - Math.floor(next / level.width));
+      const hdx = Math.sign((next % level.width) - tileX(pos.x));
+      const hdy = Math.sign(Math.floor(next / level.width) - tileY(pos.y));
+      if ((hdx === adx && hdy === ady) || (hdx === 0 && hdy === 0)) {
+        reached = adx !== 0 && ady === 0 ? Math.abs(pos.x - nx) <= 3 && Math.abs(pos.y - ny) <= 7
+          : adx === 0 && ady !== 0 ? Math.abs(pos.y - ny) <= 3 && Math.abs(pos.x - nx) <= 7 : false;
+      }
+    }
+    if (reached) brain.path.shift();
     if (brain.path.length > 0) {
-      const wp = brain.path[0];
-      steerTo(entity, centreX(wp % level.width), centreY(Math.floor(wp / level.width)), 1.5, out);
+      steerAlong(level, entity, brain, out);
       out.sprint = profile.sprint && brain.path.length > 6 && entity.carryingId === undefined;
     } else if (goal && !goal.walk) {
-      steerTo(entity, nx, ny, 1.5, out);
+      steerTo(entity, nx, ny, 2.5, out);
     }
   } else if (goal && (goal.drop || goal.build)) {
     const tx = goal.tile % level.width;
-    steerTo(entity, centreX(tx), centreY(Math.floor(goal.tile / level.width)), 1.5, out);
+    steerTo(entity, centreX(tx), centreY(Math.floor(goal.tile / level.width)), 2.5, out);
   }
 
   // --- giving up on a route that goes nowhere (a carriage jammed in a tunnel, a crowd in a corridor)
@@ -1787,7 +1997,8 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
 
   // --- fighting
   const enemy = brain.enemyId !== undefined ? world.entity(brain.enemyId) : undefined;
-  if (alive(enemy) && !aimed && entity.carryingId === undefined && goal?.name !== 'escape blast') {
+  // A rival who has stepped into their own base cannot be hurt, so no shots are wasted on them.
+  if (alive(enemy) && hostile(entity, enemy) && !aimed && entity.carryingId === undefined && goal?.name !== 'escape blast') {
     const at = enemy.position!;
     const d = dist(at, pos);
     const inv = entity.weaponInventory!;
@@ -1848,6 +2059,8 @@ function control(level: Level, entity: Entity, brain: Brain, profile: AIDifficul
       out.sprint = profile.sprint;
     }
   }
+
+  settleKeys(brain, out);
 
   if (!aimed) {
     const vx = (out.right ? 1 : 0) - (out.left ? 1 : 0);

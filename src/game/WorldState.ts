@@ -122,7 +122,7 @@ const COMPONENTS = new Set([
   'health', 'hurtTime', 'freezeTime', 'bounceWallTime', 'regenInterval', 'regenAmount', 'regenTimer', 'deathPoints',
   'facing', 'speed', 'friction', 'strength', 'aimVector', 'walkTime', 'stepTime', 'limp', 'bump', 'slide', 'chasing',
   'visual', 'frame', 'yOffset', 'flashTime', 'highlight', 'mobType', 'healthBarOffset', 'coinBarOffset', 'fx',
-  'animation', 'playerInput', 'playerStats', 'weapon', 'weaponInventory', 'money', 'buffs', 'loot', 'bullet',
+  'animation', 'playerInput', 'playerStats', 'weapon', 'weaponInventory', 'money', 'buffs', 'loot', 'weaponPickup', 'bullet',
   'building', 'tooltip', 'upgradable', 'rangeTicks', 'ephemeral', 'falling', 'stepTimer', 'railCooldown',
   'treasure', 'chest', 'spikeTrap', 'railDroid', 'explosion', 'dustTimer', 'shopItem', 'carriedBy', 'targetId',
   'carryingId', 'turret', 'bomb', 'harvester', 'facing8', 'ai', 'spawner', 'spawnedBy', 'minimapIcon', 'minimapColor', 'tile',
@@ -141,6 +141,7 @@ const REQUIRED: Record<string, Record<string, 'number' | 'string' | 'boolean' | 
   weaponInventory: { weapons: 'object', current: 'number' },
   loot: { value: 'number', kind: 'number', velX: 'number', velY: 'number', suckRadius: 'number',
     glide: 'number', age: 'number', life: 'number' },
+  weaponPickup: { kind: 'string', age: 'number', life: 'number' },
   bullet: { damage: 'number', ownerId: 'number', freezeTime: 'number', range: 'number', traveledRange: 'number' },
   building: { type: 'string', health: 'number', maxHealth: 'number' },
   tooltip: { title: 'string' }, upgradable: { level: 'number', maxLevel: 'number', costs: 'object' },
@@ -187,6 +188,8 @@ function checkEntity(data: EntityState): void {
     if (!i || typeof i.use !== 'boolean' || typeof i.build !== 'boolean' || typeof i.upgrade !== 'boolean'
       || !Number.isInteger(i.weaponSlot) || !Number.isInteger(i.weaponStep)) throw new Error('Invalid saved controls');
   }
+  if (data.weaponPickup && (!Object.prototype.hasOwnProperty.call(WEAPON_STATS, data.weaponPickup.kind)
+    || data.weaponPickup.age < 0 || data.weaponPickup.life < 1 || data.weaponPickup.life > 100000)) throw new Error('Invalid dropped weapon');
   if (data.weaponInventory && (!Array.isArray(data.weaponInventory.weapons)
     || !data.weaponInventory.weapons.every(w => Object.prototype.hasOwnProperty.call(WEAPON_STATS, w)))) throw new Error('Invalid saved weapons');
   if (data.upgradable && (!Array.isArray(data.upgradable.costs) || !data.upgradable.costs.every(Number.isFinite))) throw new Error('Invalid upgrade costs');

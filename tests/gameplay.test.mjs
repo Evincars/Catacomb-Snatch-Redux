@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { after, beforeEach, test } from 'node:test';
 import { createServer } from 'vite';
 
+// The network module registers a browser listener when it loads.
+globalThis.window ??= { addEventListener() {} };
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
 after(() => server.close());
 const load = (path) => server.ssrLoadModule(`/src/${path}.ts`);
@@ -34,6 +36,9 @@ const { captureWorld, validateWorld, restoreSettings } = await load('game/WorldS
 const { solveRicochet } = await load('systems/Ricochet');
 const { createBullet, BULLET_CONFIGS } = await load('entities/BulletFactory');
 const { cleanName } = await load('game/Settings');
+const { updateDeath } = await load('systems/DeathSystem');
+const { updateWeaponPickups, createWeaponPickup } = await load('systems/DeathDropSystem');
+const { coop } = await load('network/CoopSession');
 
 const centre = (t) => t * 32 + 16;
 const put = (level, x, y, type, extra = {}) => level.setTile(x, y, { ...createTile(type), ...extra });
@@ -459,7 +464,7 @@ test('adjacent hole tiles do not provide false support at their seam; flying and
 test('Normal spawn pressure spans grid boundaries and counts mixed species', () => {
   const level = new Level(32, 32);
   for (let i = 0; i < gameState.difficulty.mobDensity; i++) {
-    createMob(level, i % 2 ? 'snake' : 'bat', 330 + i * 15, 330);
+    createMob(level, i % 2 ? 'snake' : 'bat', 330 + i * 8, 330);
   }
   assert.equal(canSpawnMob(level, 'mummy', 310, 310), false);
   for (const mob of world.with('ai')) mob.removed = true;
@@ -899,4 +904,196 @@ test('player names are trimmed, limited and stripped of markup', () => {
   assert.equal(cleanName('<script>alert(1)</script>'), 'scriptalert1');
   assert.equal(cleanName('x'.repeat(40)).length, 12);
   assert.equal(cleanName(42), '');
+});
+
+/** Counts how often a movement key swaps to its opposite, the twitch a person cannot produce. */
+function reversals(ticks) {
+  let flips = 0;
+  const last = { x: 0, y: 0 };
+  for (const { pi } of ticks) {
+    const x = (pi.right ? 1 : 0) - (pi.left ? 1 : 0);
+    const y = (pi.down ? 1 : 0) - (pi.up ? 1 : 0);
+    if (x !== 0) { if (last.x !== 0 && x !== last.x) flips++; last.x = x; }
+    if (y !== 0) { if (last.y !== 0 && y !== last.y) flips++; last.y = y; }
+  }
+  return flips;
+}
+
+test('the AI walks a long corridor and an open field without twitching left and right', () => {
+  const corridor = new Level(44, 9);
+  for (let y = 0; y < 9; y++) for (let x = 0; x < 44; x++) put(corridor, x, y, TileType.Wall);
+  for (let x = 1; x <= 40; x++) put(corridor, x, 4, TileType.Floor);
+  for (const level of [corridor, new Level(44, 20)]) {
+    for (const e of [...world]) world.remove(e);
+    level.setSpawnPoints(Team.Two, [{ x: centre(2), y: centre(4) }]);
+    createShopItem(centre(38), centre(level === corridor ? 4 : 15), 'turret', Team.Two);
+    const ai = computer(2, 4, 500);
+    const seen = [];
+    for (let tick = 0; tick < 700; tick++) {
+      aiTick(level);
+      seen.push({ pi: { ...ai.playerInput } });
+      if (ai.carryingId !== undefined) break;
+    }
+    assert.ok(ai.carryingId !== undefined || ai.position.x > centre(30), 'never made it across');
+    assert.ok(reversals(seen) <= 2, `${reversals(seen)} left/right-up/down reversals on the way`);
+  }
+});
+
+test('a builder joins the rival laid track instead of laying a whole line of its own', () => {
+  const level = new Level(36, 20);
+  level.setSpawnPoints(Team.Two, [{ x: centre(5), y: centre(2) }]);
+  track(level, 5, 3, TileType.PlayerRail);
+  createBuilding(centre(30), centre(16), 'treasure');
+  for (let x = 10; x <= 29; x++) put(level, x, 15, TileType.Rail, { team: Team.One });
+  const ai = computer(5, 2, 3000);
+  ai.aiPlayer.role = 'builder';
+  ai.aiPlayer.difficulty = 'Insane';
+  const mine = () => {
+    const out = [];
+    for (let y = 0; y < 20; y++) for (let x = 0; x < 36; x++) {
+      const t = level.getTile(x, y);
+      if (t.type === TileType.Rail && t.team === Team.Two) out.push({ x, y });
+    }
+    return out;
+  };
+  const touches = () => mine().some((r) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+    const t = level.getTile(r.x + dx, r.y + dy);
+    return t.type === TileType.Rail && t.team === Team.One;
+  }));
+  for (let tick = 0; tick < 4000 && !touches(); tick++) aiTick(level);
+  assert.ok(touches(), 'never joined the rival track');
+  assert.ok(mine().length < 25, `laid ${mine().length} pieces, as if it ignored the rival line`);
+});
+
+test('a saboteur whose track is joined to the rival cuts the rival link to their home first', () => {
+  const level = new Level(40, 14);
+  level.baseAreas.push({ x0: 2, y0: 2, x1: 7, y1: 6, team: Team.One });
+  level.setSpawnPoints(Team.Two, [{ x: centre(30), y: centre(11) }]);
+  put(level, 7, 4, TileType.PlayerRail, { team: Team.One });
+  for (let x = 8; x <= 30; x++) put(level, x, 4, TileType.Rail, { team: Team.One });
+  put(level, 30, 10, TileType.PlayerRail, { team: Team.Two });
+  for (let y = 5; y <= 9; y++) put(level, 30, y, TileType.Rail, { team: Team.Two });
+  createShopItem(centre(33), centre(11), 'bomb', Team.Two);
+  const ai = computer(30, 11, 800);
+  ai.aiPlayer.role = 'saboteur';
+  const isRail = (x) => level.getTile(x, 4).type === TileType.Rail;
+  for (let tick = 0; tick < 4500 && isRail(8); tick++) aiTick(level);
+  assert.equal(isRail(8), false, 'the link to the rival base is still there');
+  assert.equal(isRail(20), true, 'it wrecked track in the middle instead');
+});
+
+test('the AI skips a turret upgrade whose bigger circle covers little new ground', () => {
+  const upgraded = (setup) => {
+    for (const e of [...world]) world.remove(e);
+    const level = new Level(30, 12);
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 30; x++) put(level, x, y, TileType.Wall);
+    for (let y = 2; y <= 9; y++) for (let x = 2; x <= 12; x++) put(level, x, y, TileType.Floor);
+    for (let x = 13; x <= 22; x++) put(level, x, 5, TileType.Floor);
+    level.setSpawnPoints(Team.Two, [{ x: centre(4), y: centre(5) }]);
+    const turret = createBuilding(centre(setup.x), centre(5), 'turret', Team.Two);
+    const ai = computer(4, 5, 5000);
+    ai.aiPlayer.difficulty = 'Insane';
+    for (let tick = 0; tick < 1500 && turret.upgradable.level === 1; tick++) aiTick(level);
+    return turret.upgradable.level > 1;
+  };
+  assert.equal(upgraded({ x: 7 }), true, 'a turret over open ground should be upgraded');
+  assert.equal(upgraded({ x: 19 }), false, 'a turret at the end of a bare corridor should not');
+});
+
+function homeLevel() {
+  const level = new Level(24, 12);
+  level.setSpawnPoints(Team.One, [{ x: centre(3), y: centre(3) }, { x: centre(3), y: centre(3) }]);
+  level.setSpawnPoints(Team.Two, [{ x: centre(20), y: centre(9) }, { x: centre(20), y: centre(9) }]);
+  return level;
+}
+function richPlayer(slot = 'host') {
+  const p = createPlayer(centre(15), centre(8), Team.One);
+  world.addComponent(p, 'playerSlot', slot);
+  p.playerStats.score = 1000;
+  p.weaponInventory.weapons.push('shotgun', 'raygun');
+  return p;
+}
+
+test('a fallen player counts down at home, leaving nine tenths of the coins and every spare gun behind', () => {
+  const level = homeLevel();
+  const p = richPlayer();
+  p.health.current = 0;
+  updateDeath(level, 1);
+  assert.equal(p.respawnTicks, 600, 'no ten second countdown');
+  assert.deepEqual([p.position.x, p.position.y], [centre(3), centre(3)], 'did not go home');
+  assert.equal(p.playerStats.score, 100);
+  const loot = [...world.with('loot')];
+  assert.equal(loot.reduce((sum, c) => sum + c.loot.value, 0), 900);
+  assert.ok(loot.some((c) => c.loot.kind >= 6), 'a rich purse should leave gems behind');
+  assert.deepEqual([...world.with('weaponPickup')].map((g) => g.weaponPickup.kind).sort(), ['raygun', 'shotgun']);
+  assert.deepEqual(p.weaponInventory.weapons, ['rifle']);
+  assert.equal(p.weapon.type, 'rifle');
+});
+
+test('a co-op companion without a computer opponent also waits out the countdown', () => {
+  gameState.opponent = 'none';
+  coop.role = 'host';
+  try {
+    const level = homeLevel();
+    const p = richPlayer('guest');
+    p.health.current = 0;
+    updateDeath(level, 1);
+    assert.equal(p.respawnTicks, 600);
+    assert.ok(!p.removed);
+  } finally {
+    coop.role = null;
+  }
+});
+
+test('a lone player who dies still ends the run, with nothing dropped', () => {
+  gameState.opponent = 'none';
+  const level = homeLevel();
+  const p = richPlayer();
+  p.health.current = 0;
+  updateDeath(level, 1);
+  assert.equal(p.respawnTicks, undefined);
+  assert.equal([...world.with('weaponPickup')].length, 0);
+});
+
+test('dropped guns lie on the ground for anyone without them to pick up, and the dead cannot', () => {
+  const level = homeLevel();
+  const fallen = richPlayer();
+  fallen.health.current = 0;
+  updateDeath(level, 1);
+  const rescuer = createPlayer(centre(15), centre(8), Team.One);
+  world.addComponent(rescuer, 'playerSlot', 'guest');
+  const [gun, far] = [...world.with('weaponPickup')];
+  far.position.x += 200;
+  gun.position.x = rescuer.position.x;
+  gun.position.y = rescuer.position.y;
+  fallen.position.x = gun.position.x;
+  fallen.position.y = gun.position.y;
+  const kind = gun.weaponPickup.kind;
+  updateWeaponPickups();
+  assert.deepEqual(rescuer.weaponInventory.weapons, ['rifle', kind]);
+  assert.equal(fallen.weaponInventory.weapons.length, 1, 'a player waiting to respawn picked a gun up');
+  assert.equal([...world.with('weaponPickup')].length, 1);
+  // The same kind cannot be picked up twice, and a far-off gun stays where it is.
+  const again = createWeaponPickup(rescuer.position.x, rescuer.position.y, kind);
+  updateWeaponPickups();
+  assert.ok(again.weaponPickup, 'picked up a gun it already owned');
+  assert.deepEqual(rescuer.weaponInventory.weapons, ['rifle', kind]);
+});
+
+test('the computer does not waste shots on a rival standing protected in their own base', () => {
+  const level = new Level(30, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(4), y: centre(5) }]);
+  const ai = computer(4, 5, 0);
+  ai.aiPlayer.difficulty = 'Hard';
+  const rival = createPlayer(centre(10), centre(5), Team.One);
+  world.addComponent(rival, 'playerSlot', 'host');
+  world.addComponent(rival, 'remoteInput', true);
+  rival.spawnProtected = true;
+  let shots = 0;
+  for (let tick = 0; tick < 240; tick++) {
+    aiTick(level);
+    if (ai.playerInput.shoot) shots++;
+  }
+  assert.equal(shots, 0);
+  assert.equal([...world.with('bullet')].length, 0);
 });

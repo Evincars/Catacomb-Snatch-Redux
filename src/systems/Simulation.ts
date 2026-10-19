@@ -14,6 +14,7 @@ import { updateBullets } from './BulletSystem';
 import { updateCombatTimers, updateBulletCollision, updateContactDamage } from './CombatSystem';
 import { updateBuffs } from './BuffSystem';
 import { updateLoot } from './LootSystem';
+import { updateWeaponPickups } from './DeathDropSystem';
 import { updateSpawners } from './SpawnerSystem';
 import { updateRandomSpawner } from './RandomSpawnerSystem';
 import { updateDeath } from './DeathSystem';
@@ -71,6 +72,7 @@ export const SIMULATION: readonly System[] = [
   () => updateChests(),
   ({ dt }) => updateBuffs(dt),
   ({ dt }) => updateLoot(dt),
+  () => updateWeaponPickups(),
   ({ dt }) => updateHarvesters(dt),
   ({ level, dt }) => updateSpawners(level, dt),
   ({ level }) => updateRandomSpawner(level),

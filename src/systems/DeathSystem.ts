@@ -1,4 +1,4 @@
-import { world } from '../world';
+import { world, Team } from '../world';
 import type { Level } from '../level/Level';
 import { createLoot, dropLoot, spillMoney } from '../entities/LootFactory';
 import { spawnDeathFx, spawnFx } from '../entities/FxFactory';
@@ -7,7 +7,7 @@ import type { SfxName } from '../audio/SoundPlayer';
 import { xpForLevel } from '../ui/HudPanel';
 import { destroyAttachments } from './BarSystem';
 import { coop } from '../network/CoopSession';
-import { respawnPlayer } from './HoleSystem';
+import { dropOnDeath } from './DeathDropSystem';
 import { isVersus } from '../game/GameState';
 import { RESPAWN_TICKS } from './RespawnSystem';
 
@@ -53,16 +53,24 @@ export function updateDeath(level: Level, _dt: number): void {
     if (entity.playerInput) {
       if (entity.aiPlayer) sound.playSound('death', pos.x, pos.y);
       else sound.playSound('death');
-      const timed = isVersus() && (entity.playerSlot !== undefined || entity.aiPlayer !== undefined);
-      if (timed || coop.role === 'host' && entity.playerSlot) {
+      // Anyone who can come back (a match against another side, or a co-op game) sits out a countdown
+      // at home and leaves their coins and guns where they fell. A lone player's death ends the run.
+      const returns = (entity.playerSlot !== undefined && coop.role === 'host') || entity.aiPlayer !== undefined
+        || isVersus() && entity.playerSlot !== undefined;
+      if (returns) {
+        dropOnDeath(entity);
+        spawnDeathFx(entity);
+        // The countdown is spent at home, and that is where they return.
+        const home = level.getRandomSpawnPoint(entity.team ?? Team.One);
+        if (home) {
+          pos.x = home.x;
+          pos.y = home.y;
+        }
         world.removeComponent(entity, 'falling');
-        if (timed) {
-          world.addComponent(entity, 'respawnTicks', RESPAWN_TICKS);
-          world.removeComponent(entity, 'buffs');
-          if (entity.velocity) entity.velocity.x = entity.velocity.y = 0;
-          if (entity.bump) entity.bump.x = entity.bump.y = 0;
-          spawnDeathFx(entity);
-        } else respawnPlayer(entity, level, 'death');
+        world.addComponent(entity, 'respawnTicks', RESPAWN_TICKS);
+        world.removeComponent(entity, 'buffs');
+        if (entity.velocity) entity.velocity.x = entity.velocity.y = 0;
+        if (entity.bump) entity.bump.x = entity.bump.y = 0;
         continue;
       }
     } else if (entity.chest) {

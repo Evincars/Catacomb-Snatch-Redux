@@ -103,6 +103,29 @@ export function dropLoot(x: number, y: number, value: number): void {
   }
 }
 
+/**
+ * Scatters a purse as the biggest pickups that fit it (diamonds, rubies, emeralds, then coins), so
+ * a rich player leaves gems behind. Worth is exact; the last piece takes whatever the cap leaves.
+ */
+export function spillPurse(x: number, y: number, total: number, maxPieces = 16): number {
+  let remaining = Math.floor(total);
+  let pieces = 0;
+  for (let kind = LOOT_KINDS.length - 1; kind >= 0 && remaining > 0; kind--) {
+    const value = LOOT_KINDS[kind].value;
+    while (remaining >= value && pieces < maxPieces - 1) {
+      const angle = Math.random() * Math.PI * 2;
+      createLoot(x, y, Math.cos(angle) * 0.8, Math.sin(angle) * 0.8, value, true);
+      remaining -= value;
+      pieces++;
+    }
+  }
+  if (remaining > 0) {
+    const angle = Math.random() * Math.PI * 2;
+    createLoot(x, y, Math.cos(angle) * 0.8, Math.sin(angle) * 0.8, remaining, true);
+  }
+  return Math.floor(total);
+}
+
 /** Spills a sum as a handful of exact-valued pickups, as when a harvester is wrecked. */
 export function spillMoney(x: number, y: number, total: number): void {
   let remaining = total;

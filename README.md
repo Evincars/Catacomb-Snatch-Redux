@@ -46,8 +46,9 @@ Keep the server running while playing: map previews and levels are fetched when 
 
 - Mob populations are bounded, with mixed-species density checks across tile-region boundaries
   and fewer reinforcements while a player is surrounded. Normal and Hard use the same spawn
-  amounts (up to 170 mobs, with random nests capped at 26); Hard retains health regeneration.
-  Nightmare raises those limits only modestly to 210 mobs and 32 nests; Easy uses 110 and 17.
+  amounts (up to 220 mobs, 12 within five tiles of a nest, with random nests capped at 32); Hard
+  retains health regeneration. Nightmare raises those limits only modestly to 270 mobs and 40 nests;
+  Easy uses 150 and 22.
   Each nest keeps at most 6 of its own mobs alive. Random nests cycle through bats, snakes,
   mummies and scarabs so every kind turns up, bats being the most common. Mobs steer around pits.
   A new map opens with half the nest cap already placed (never near either base), and a
@@ -113,8 +114,13 @@ actors, pointer coordinates and collision tiles all share the same world coordin
   compressed world snapshots synchronize players, enemies, buildings, loot, terrain and progression.
   Positional sound effects and game notices are forwarded to the guests as well.
   Each player has their own controls, camera, inventory and purse. Combined carried coins count
-  toward victory. A player killed in co-op respawns at the base with full health and brief protection;
-  the teammate's game continues. Single-player death behavior is unchanged.
+  toward victory. A player killed in co-op waits out a 10-second countdown at their home base, then
+  respawns there with full health and brief protection; the teammate's game continues.
+  Single-player death behavior is unchanged.
+- A fallen player (or computer) leaves **90% of their coins** where they fell, as the largest pickups
+  that fit (diamonds, rubies, emeralds, then coins) that blink and vanish like any loose coin, and
+  **every gun except the starting rifle** as a ground icon anyone without that gun can walk over
+  and take (guns vanish after 40 seconds).
 - In enemy mode, guns and turrets can damage opposing players, turrets, harvesters and
   carriages. Bombs also damage enemy equipment and destroy enemy-built rails; gunfire
   cannot destroy rails. Opposing equipment cannot be picked up, drained or upgraded.
@@ -173,6 +179,16 @@ Invite links grant access to the session, so share them only with the intended p
   shot), and if a line of fire exists that comes round the corner it stands still and fires it.
 - Its choices are read from the shop stalls, weapon stats and building definitions (cost, role,
   range, damage), so new guns, turrets or harvesters are used without changes to the AI.
+- It walks like a person: along a straight stretch it aims at the far end and holds its lane within a
+  few pixels, and a movement key cannot flip to its opposite within a few ticks, so it no longer
+  twitches left and right.
+- Turret upgrades are only bought when the longer reach covers enough new ground with a clear line:
+  corners where someone steps into view, the rival's track, the home base and the treasure count
+  extra, a turret at the end of a bare corridor is not upgraded.
+- When it lays track it joins the rival's already-laid track where that is cheaper, so its carriages
+  collect from the same treasure. A saboteur (or a lone computer once the two networks are joined)
+  goes for the rival's laid track next to their base first: cut there, the rival's carriages cannot
+  get home to deliver. Rivals standing protected in their own base are never shot at.
 - Difficulty changes reaction time, aim error, fire rate, engagement range, how many turrets and
   carriages it runs, upgrade level, how early it starts laying track, sprinting and when it retreats.
   Hard and Insane AIs also pay 10% / 20% less in their own shop.

@@ -62,6 +62,11 @@ const BUILDING_TITLES: Partial<Record<BuildingType, { title: string; lines: stri
   chest:     { title: 'Treasure chest', lines: ['Open it to release its treasure.'] },
 };
 
+/** How far a turret of the given level (1-based) shoots, in pixels. */
+export function turretRadiusAt(level: number): number {
+  return TURRET_UPGRADES.tiers[Math.min(TURRET_UPGRADES.tiers.length, Math.max(1, level)) - 1].radius;
+}
+
 /** Price of the next upgrade, scaled by difficulty like shop prices, or null at max level. */
 export function upgradeCostOf(entity: Entity): number | null {
   const up = entity.upgradable;

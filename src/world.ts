@@ -180,6 +180,9 @@ export type Entity = {
   // --- buffs ---
   buffs?: Array<{ type: 'poison' | 'troll_perk'; duration: number; strength: number }>;
 
+  /** A gun a fallen player left on the ground; anyone without that gun can pick it up. */
+  weaponPickup?: { kind: string; age: number; life: number };
+
   // --- loot ---
   loot?: {
     value: number;
