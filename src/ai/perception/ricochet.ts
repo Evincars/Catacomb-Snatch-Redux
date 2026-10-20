@@ -1,8 +1,6 @@
 import type { Level } from '../../level/Level';
-
-/** The bounce rules of BulletSystem, repeated here so a shot can be rehearsed before it is fired. */
-const BOUNCE_SPEEDUP = 1.2;
-const BOUNCE_EXTRA_TICKS = 5;
+// The bounce rules of BulletSystem itself, so a shot is rehearsed exactly as it will fly.
+import { BOUNCE_EXTRA_TICKS, BOUNCE_SPEEDUP, bounce, solidAt } from '../../systems/BulletSystem';
 /** Bullets spawn this far ahead of the shooter (BulletFactory's MUZZLE_REACH). */
 const MUZZLE_REACH = 4;
 const MAX_TICKS = 400;
@@ -40,11 +38,6 @@ export type BankShot = {
 
 type Flight = { hit: boolean; bounces: number; ticks: number };
 
-function solidAt(level: Level, x: number, y: number): boolean {
-  const tile = level.getTileAt(x, y);
-  return !tile || !tile.passable;
-}
-
 /** Where the target is expected to be after `tick` ticks of the shot. */
 function targetAt(level: Level, target: TargetSpec, tick: number): { x: number; y: number } {
   const t = Math.min(tick, LEAD_TICKS);
@@ -54,54 +47,40 @@ function targetAt(level: Level, target: TargetSpec, tick: number): { x: number; 
   return solidAt(level, x, y) ? { x: target.x, y: target.y } : { x, y };
 }
 
+/** Whether the shot at (x, y) overlaps the target where it is expected to be by then. */
+function touches(level: Level, shot: ShotSpec, target: TargetSpec, x: number, y: number, tick: number): boolean {
+  const at = targetAt(level, target, tick);
+  return Math.abs(x - at.x) < target.hw + shot.radius.x && Math.abs(y - at.y) < target.hh + shot.radius.y;
+}
+
 /** Flies one shot exactly as BulletSystem would and reports whether it reaches the target. */
 export function flyShot(level: Level, from: { x: number; y: number }, angle: number, shot: ShotSpec, target: TargetSpec): Flight {
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
-  let px = from.x + dx * MUZZLE_REACH;
-  let py = from.y + dy * MUZZLE_REACH;
-  let vx = dx * shot.speed;
-  let vy = dy * shot.speed;
+  const pos = { x: from.x + dx * MUZZLE_REACH, y: from.y + dy * MUZZLE_REACH };
+  const vel = { x: dx * shot.speed, y: dy * shot.speed };
   let range = shot.range;
-  let left = shot.bounces;
   let bounces = 0;
   let traveled = 0;
-
-  const touches = (x: number, y: number, tick: number): boolean => {
-    const at = targetAt(level, target, tick);
-    return Math.abs(x - at.x) < target.hw + shot.radius.x && Math.abs(y - at.y) < target.hh + shot.radius.y;
-  };
-
   for (let tick = 1; tick <= MAX_TICKS; tick++) {
-    const fromX = px;
-    const fromY = py;
-    let bounced = false;
-    if (left > 0 && solidAt(level, px + vx, py + vy)) {
-      const blockX = solidAt(level, px + vx, py);
-      const blockY = solidAt(level, px, py + vy);
-      if (blockX) vx = -vx;
-      if (blockY) vy = -vy;
-      if (!blockX && !blockY) {
-        vx = -vx;
-        vy = -vy;
-      }
-      left--;
+    const fromX = pos.x;
+    const fromY = pos.y;
+    const bounced = bounces < shot.bounces && bounce(level, pos, vel);
+    if (bounced) {
       bounces++;
-      vx *= BOUNCE_SPEEDUP;
-      vy *= BOUNCE_SPEEDUP;
-      range += Math.hypot(vx, vy) * BOUNCE_EXTRA_TICKS;
-      bounced = true;
+      vel.x *= BOUNCE_SPEEDUP;
+      vel.y *= BOUNCE_SPEEDUP;
+      range += Math.hypot(vel.x, vel.y) * BOUNCE_EXTRA_TICKS;
     } else {
-      px += vx;
-      py += vy;
+      pos.x += vel.x;
+      pos.y += vel.y;
     }
-    traveled += Math.hypot(vx, vy);
-
+    traveled += Math.hypot(vel.x, vel.y);
     // A shot that has died in a wall or at the end of its range can hit nothing this tick.
-    if (solidAt(level, px, py) || traveled >= range) return { hit: false, bounces, ticks: tick };
-    if (touches(px, py, tick) || (!bounced && touches((fromX + px) / 2, (fromY + py) / 2, tick))) {
-      return { hit: true, bounces, ticks: tick };
-    }
+    if (solidAt(level, pos.x, pos.y) || traveled >= range) return { hit: false, bounces, ticks: tick };
+    const hit = touches(level, shot, target, pos.x, pos.y, tick)
+      || (!bounced && touches(level, shot, target, (fromX + pos.x) / 2, (fromY + pos.y) / 2, tick));
+    if (hit) return { hit: true, bounces, ticks: tick };
   }
   return { hit: false, bounces, ticks: MAX_TICKS };
 }

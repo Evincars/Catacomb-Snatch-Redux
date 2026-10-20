@@ -27,7 +27,7 @@ export class Game {
     await this.app.init({
       width: GAME_WIDTH,
       height: GAME_HEIGHT,
-      // Keep world transforms in logical pixels; tilemap must not scale the stage again.
+      // Keep world transforms in logical pixels; nothing below may scale the stage again.
       resolution: SCALE,
       backgroundColor: 0x000000,
       antialias: false,

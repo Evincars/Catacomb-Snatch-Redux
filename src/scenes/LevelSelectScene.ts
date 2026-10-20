@@ -8,6 +8,7 @@ import { frameTexture } from '../render/Sheets';
 import { loadLevelBitmap } from '../level/LevelBitmap';
 import { LEVELS, gameState } from '../game/GameState';
 import type { LevelInfo } from '../game/GameState';
+import { report } from '../core/errors';
 
 const GW = GAME_WIDTH;
 const GH = GAME_HEIGHT;
@@ -154,7 +155,7 @@ export class LevelSelectScene implements Scene {
           holder.addChildAt(thumb, 1);
         })
         .catch((err: unknown) => {
-          console.error(`No preview for ${level.name}`, err);
+          report(err, `No preview for ${level.name}`, 'level');
           if (this.destroyed) return;
           const error = makeText('Preview unavailable', 0xff8888, 8, 'center');
           error.x = CELL_W / 2;

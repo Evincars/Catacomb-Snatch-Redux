@@ -7,6 +7,8 @@ import { frameTexture, whiteFrameTexture } from '../render/Sheets';
 const BAR_STEPS = 20;
 const BAR_HALF_WIDTH = 16;
 const SPRINT_BAR_OFFSET = 8;
+/** Room left, in coins, below which a harvester's bar turns orange. */
+const NEARLY_FULL = 500;
 
 /** Fill colour by fraction of health left, from Java's Mob.addHealthBar. */
 function fillColor(value: number, max: number): number {
@@ -17,7 +19,13 @@ function fillColor(value: number, max: number): number {
   return 0x8af116;
 }
 
-function createHealthBar(gameLayer: Container): { container: Container; fill: Sprite } {
+type Bar = { container: Container; fill: Sprite };
+
+const damaged = world.with('position', 'health', 'healthBarOffset');
+const storing = world.with('position', 'harvester', 'coinBarOffset');
+const sprinters = world.with('position', 'playerStats');
+
+function createHealthBar(gameLayer: Container): Bar {
   const container = new Container();
   const fill = new Sprite();
   container.addChild(
@@ -29,79 +37,89 @@ function createHealthBar(gameLayer: Container): { container: Container; fill: Sp
   return { container, fill };
 }
 
+/** Places a bar centred under the entity, `offset` pixels below its feet. */
+function placeBar(bar: Bar, pos: { x: number; y: number }, offset: number): void {
+  bar.container.x = Math.round(pos.x) - BAR_HALF_WIDTH;
+  bar.container.y = Math.round(pos.y) + offset;
+  bar.container.zIndex = pos.y + 0.5;
+  bar.container.visible = true;
+}
+
+function healthBarOf(entity: Entity, gameLayer: Container): Bar {
+  if (entity.healthBar) return entity.healthBar;
+  const bar = createHealthBar(gameLayer);
+  world.addComponent(entity, 'healthBar', bar);
+  return bar;
+}
+
+function coinBarOf(entity: Entity, gameLayer: Container): Bar {
+  if (entity.coinBar) return entity.coinBar;
+  const bar = createHealthBar(gameLayer);
+  world.addComponent(entity, 'coinBar', bar);
+  return bar;
+}
+
+function sprintBarOf(player: Entity, gameLayer: Container): Sprite {
+  if (player.sprintBar) return player.sprintBar;
+  const bar = new Sprite();
+  gameLayer.addChild(bar);
+  world.addComponent(player, 'sprintBar', bar);
+  return bar;
+}
+
+/** A depleting bar under a damaged mob, nest or machine, coloured by how much health is left. */
+function updateHealthBar(entity: Entity, gameLayer: Container): void {
+  const { current, max } = entity.health!;
+  const maxValue = Math.trunc(max);
+  const visible = !entity.removed && entity.respawnTicks === undefined && current < max && maxValue > 0;
+  if (!visible) {
+    if (entity.healthBar) entity.healthBar.container.visible = false;
+    return;
+  }
+  const bar = healthBarOf(entity, gameLayer);
+  const value = Math.max(0, Math.trunc(current));
+  bar.fill.texture = whiteFrameTexture('bar_green', Math.trunc((value * BAR_STEPS) / maxValue), 0);
+  bar.fill.tint = fillColor(value, maxValue);
+  placeBar(bar, entity.position!, entity.healthBarOffset!);
+}
+
+/** A harvester's bar fills with the coins it has stored and turns orange when nearly full. */
+function updateCoinBar(entity: Entity, gameLayer: Container): void {
+  if (entity.removed) {
+    if (entity.coinBar) entity.coinBar.container.visible = false;
+    return;
+  }
+  const { collected, capacity } = entity.harvester!;
+  const bar = coinBarOf(entity, gameLayer);
+  bar.fill.texture = whiteFrameTexture('bar_green', Math.min(BAR_STEPS, Math.trunc((collected * BAR_STEPS) / capacity)), 0);
+  bar.fill.tint = capacity - collected < NEARLY_FULL ? 0xff7200 : 0xffd800;
+  placeBar(bar, entity.position!, entity.coinBarOffset!);
+}
+
+/** The stamina bar under a sprinting player. */
+function updateSprintBar(player: Entity, gameLayer: Container): void {
+  const stats = player.playerStats!;
+  if (stats.sprint <= 0 || player.removed || player.respawnTicks !== undefined) {
+    if (player.sprintBar) player.sprintBar.visible = false;
+    return;
+  }
+  const bar = sprintBarOf(player, gameLayer);
+  const pos = player.position!;
+  bar.texture = frameTexture('sprint_bar', Math.trunc((stats.sprint * BAR_STEPS) / stats.maxSprint), 0);
+  bar.x = Math.round(pos.x) - BAR_HALF_WIDTH;
+  bar.y = Math.round(pos.y) + SPRINT_BAR_OFFSET;
+  bar.zIndex = pos.y + 0.5;
+  bar.visible = true;
+}
+
 /**
  * Health bars under damaged mobs/nests, and the stamina bar under a sprinting
  * player. Positions follow Java: bars are 32px wide, centred on the entity.
  */
 export function updateBars(gameLayer: Container): void {
-  for (const entity of world.with('position', 'health', 'healthBarOffset')) {
-    const { current, max } = entity.health!;
-    const maxValue = Math.trunc(max);
-    const visible = !entity.removed && entity.respawnTicks === undefined && current < max && maxValue > 0;
-
-    let bar = entity.healthBar;
-    if (!visible) {
-      if (bar) bar.container.visible = false;
-      continue;
-    }
-    if (!bar) {
-      bar = createHealthBar(gameLayer);
-      world.addComponent(entity, 'healthBar', bar);
-    }
-
-    const pos = entity.position!;
-    const value = Math.max(0, Math.trunc(current));
-    bar.fill.texture = whiteFrameTexture('bar_green', Math.trunc((value * BAR_STEPS) / maxValue), 0);
-    bar.fill.tint = fillColor(value, maxValue);
-    bar.container.x = Math.round(pos.x) - BAR_HALF_WIDTH;
-    bar.container.y = Math.round(pos.y) + entity.healthBarOffset!;
-    bar.container.zIndex = pos.y + 0.5;
-    bar.container.visible = true;
-  }
-
-  // A harvester's bar fills with the coins it has stored and turns orange when nearly full.
-  for (const entity of world.with('position', 'harvester', 'coinBarOffset')) {
-    const { collected, capacity } = entity.harvester!;
-    let bar = entity.coinBar;
-    if (entity.removed) {
-      if (bar) bar.container.visible = false;
-      continue;
-    }
-    if (!bar) {
-      bar = createHealthBar(gameLayer);
-      world.addComponent(entity, 'coinBar', bar);
-    }
-
-    const pos = entity.position!;
-    bar.fill.texture = whiteFrameTexture('bar_green', Math.min(BAR_STEPS, Math.trunc((collected * BAR_STEPS) / capacity)), 0);
-    bar.fill.tint = capacity - collected < 500 ? 0xff7200 : 0xffd800;
-    bar.container.x = Math.round(pos.x) - BAR_HALF_WIDTH;
-    bar.container.y = Math.round(pos.y) + entity.coinBarOffset!;
-    bar.container.zIndex = pos.y + 0.5;
-    bar.container.visible = true;
-  }
-
-  for (const player of world.with('position', 'playerStats')) {
-    const stats = player.playerStats!;
-    let bar = player.sprintBar;
-
-    if (stats.sprint <= 0 || player.removed || player.respawnTicks !== undefined) {
-      if (bar) bar.visible = false;
-      continue;
-    }
-    if (!bar) {
-      bar = new Sprite();
-      gameLayer.addChild(bar);
-      world.addComponent(player, 'sprintBar', bar);
-    }
-
-    const pos = player.position!;
-    bar.texture = frameTexture('sprint_bar', Math.trunc((stats.sprint * BAR_STEPS) / stats.maxSprint), 0);
-    bar.x = Math.round(pos.x) - BAR_HALF_WIDTH;
-    bar.y = Math.round(pos.y) + SPRINT_BAR_OFFSET;
-    bar.zIndex = pos.y + 0.5;
-    bar.visible = true;
-  }
+  for (const entity of damaged) updateHealthBar(entity, gameLayer);
+  for (const entity of storing) updateCoinBar(entity, gameLayer);
+  for (const player of sprinters) updateSprintBar(player, gameLayer);
 }
 
 /** Frees the display objects a removed entity owned besides its main sprite. */

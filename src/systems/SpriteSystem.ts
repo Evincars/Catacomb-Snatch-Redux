@@ -6,6 +6,11 @@ import { PixelLabel } from '../ui/PixelText';
 import { destroyAttachments } from './BarSystem';
 import { createAnimatedVisual, setVisualFrame } from '../render/AnimatedVisual';
 
+const directional = world.with('visual', 'sprite', 'facing8');
+const framed = world.with('visual', 'sprite', 'frame');
+const nests = world.with('spawner', 'visual', 'sprite', 'health');
+const sprited = world.with('sprite');
+
 /**
  * Gives every entity that declares a `visual` an actual Pixi sprite in the
  * game layer, so entities created mid-game (bullets, loot, spawned mobs)
@@ -35,7 +40,7 @@ export function updateSprites(gameLayer: Container): void {
   }
 
   // Directional art (turrets, bullets) changes cell without being animated.
-  for (const entity of world.with('visual', 'sprite', 'facing8')) {
+  for (const entity of directional) {
     if (entity.animation) continue;
     const v = entity.visual!;
     if (v.col === entity.facing8) continue;
@@ -44,7 +49,7 @@ export function updateSprites(gameLayer: Container): void {
   }
 
   // Frames chosen by a system (the harvester's animation) rather than by facing.
-  for (const entity of world.with('visual', 'sprite', 'frame')) {
+  for (const entity of framed) {
     const v = entity.visual!;
     if (v.col === entity.frame) continue;
     v.col = entity.frame;
@@ -52,7 +57,7 @@ export function updateSprites(gameLayer: Container): void {
   }
 
   // Nests crack open through four frames as they lose health.
-  for (const nest of world.with('spawner', 'visual', 'sprite', 'health')) {
+  for (const nest of nests) {
     const v = nest.visual!;
     const { current, max } = nest.health!;
     const col = Math.min(3, Math.max(0, Math.trunc(3 - (3 * current) / max)));
@@ -64,7 +69,7 @@ export function updateSprites(gameLayer: Container): void {
 
 /** Detaches and destroys all sprites, for tearing a level down. */
 export function clearSprites(): void {
-  for (const entity of world.with('sprite')) {
+  for (const entity of sprited) {
     destroyAttachments(entity);
     entity.sprite!.destroy({ children: true });
     world.removeComponent(entity, 'sprite');

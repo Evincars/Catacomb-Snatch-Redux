@@ -9,6 +9,8 @@ import { onTrack } from '../../perception/rails';
 import { usePlan } from '../goals';
 import type { Option } from '../utility';
 
+const droppedGuns = world.with('position', 'weaponPickup');
+
 /** Collecting what lies about, and what to do with nothing else to do. */
 export const ERRANDS: Option[] = [
   {
@@ -27,7 +29,7 @@ export const ERRANDS: Option[] = [
     id: 'pick up a dropped gun',
     ceiling: 38,
     evaluate(s) {
-      const dropped = nearestOf(s.level, s.brain, [...world.with('position', 'weaponPickup')].filter((g) => !g.removed
+      const dropped = nearestOf(s.level, s.brain, [...droppedGuns].filter((g) => !g.removed
         && !s.entity.weaponInventory!.weapons.includes(g.weaponPickup!.kind) && weaponGain(s.entity, g.weaponPickup!.kind) > 2),
       LOOT_DETOUR * 2);
       return dropped

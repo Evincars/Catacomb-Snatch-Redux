@@ -10,6 +10,10 @@ import { PixelLabel } from './PixelText';
 import { GAME_WIDTH, GAME_HEIGHT, camera } from '../render/Camera';
 import { characterName, gameState, isVersus } from '../game/GameState';
 import type { CharacterType } from '../entities/PlayerFactory';
+import { forEachTile } from '../level/Grid';
+
+const slotted = world.with('playerSlot');
+const onMinimap = world.with('position', 'minimapColor');
 
 const PANEL_TOP = GAME_HEIGHT - 80;
 /** The bars are 101-frame strips, frame 0 full and frame 100 empty. */
@@ -171,12 +175,12 @@ export class HudPanel {
         const yours = player.team === 2 ? level.player2Score : level.player1Score;
         const rival = player.team === 2 ? level.player1Score : level.player2Score;
         // With company on your side the computers are a team too (one per person): "LORD LARD TEAM".
-        const suffix = [...world.with('playerSlot')].length > 1 ? ' TEAM' : '';
+        const suffix = [...slotted].length > 1 ? ' TEAM' : '';
         this.rivalText.text = `${characterName(rivalCharacter())}${suffix}: ${pct(rival)}%`;
         this.teamText.text = `${characterName(gameState.selectedCharacter)}${suffix}: ${pct(yours)}%`;
       } else {
         const pct = Math.floor((stats.score * 100) / gameState.targetScore);
-        this.scoreText.text = `${characterLabel()}${[...world.with('playerSlot')].length > 1 ? ' TEAM' : ''}: ${pct}%`;
+        this.scoreText.text = `${characterLabel()}${[...slotted].length > 1 ? ' TEAM' : ''}: ${pct}%`;
       }
       this.weaponName = player.weapon?.type ?? '';
       this.renderWeaponLabel();
@@ -213,17 +217,14 @@ export class HudPanel {
     const sx = MINIMAP_SIZE / level.width;
     const sy = MINIMAP_SIZE / level.height;
 
-    for (let ty = 0; ty < level.height; ty++) {
-      for (let tx = 0; tx < level.width; tx++) {
-        if (!level.isSeen(tx, ty)) continue;
-        const tile = level.getTile(tx, ty);
-        if (!tile) continue;
-        ctx.fillStyle = tile.passable ? '#c8a050' : '#5a4a38';
-        ctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy));
-      }
-    }
+    forEachTile(0, 0, level.width - 1, level.height - 1, (tx, ty) => {
+      const tile = level.isSeen(tx, ty) ? level.getTile(tx, ty) : null;
+      if (!tile) return;
+      ctx.fillStyle = tile.passable ? '#c8a050' : '#5a4a38';
+      ctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy));
+    });
 
-    for (const entity of world.with('position', 'minimapColor')) {
+    for (const entity of onMinimap) {
       const p = entity.position!;
       const tx = Math.floor(p.x / TILE_WIDTH);
       const ty = Math.floor(p.y / TILE_HEIGHT);

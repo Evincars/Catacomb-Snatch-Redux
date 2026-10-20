@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
-import type { Entity, ShopKind } from '../world';
+import type { Entity } from '../world';
 import { frameTexture } from '../render/Sheets';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { codeLabel, bindingFor } from '../game/Settings';
@@ -43,7 +43,7 @@ export class WeaponBar {
         slot.addChild(bg);
       }
 
-      const def = SHOP_DEFS[kind as ShopKind];
+      const def = SHOP_DEFS[kind];
       const icon = new Sprite(frameTexture(def.sheet, def.col, 0));
       icon.scale.set(ICON_SCALE);
       icon.x = Math.round(((SLOT_W - 2) - 32 * ICON_SCALE) / 2);

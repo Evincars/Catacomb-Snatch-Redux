@@ -1,9 +1,10 @@
-import { world, Team } from '../world';
-import type { Entity, ShopKind } from '../world';
+import { Rectangle } from 'pixi.js';
+import { world, q, Team } from '../world';
+import type { BuildingKind, Entity, ShopKind } from '../world';
 import { createBuilding, applyUpgradeLevel, upgradeCostOf } from '../entities/BuildingFactory';
-import type { BuildingType } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
-import { WEAPON_STATS } from '../entities/WeaponStats';
+import { WEAPON_STATS, isWeaponKind } from '../entities/WeaponStats';
+import type { WeaponKind } from '../entities/WeaponStats';
 import { sound } from '../audio/SoundPlayer';
 import { notify, updateNotices, quietly } from '../game/Notices';
 import { keyLabel } from '../game/Settings';
@@ -14,7 +15,7 @@ import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from '../level/TileType
 import { targetOf } from './TargetingSystem';
 import { SLIDE_DRAG } from './MovementSystem';
 import { canSpawnRailDroid, createRailDroid } from './RailDroidSystem';
-import { BB } from '../math/BB';
+import { boxAround } from '../core/geometry';
 import type { Level } from '../level/Level';
 
 /** Carried buildings float above the player's head. */
@@ -39,9 +40,26 @@ export function carriageCost(): number {
   return Math.max(1, Math.round(DROID_COST * gameState.difficulty.shopCostMod));
 }
 
-/** Anything with weapon stats is equipped rather than carried. */
-function isWeapon(kind: ShopKind): boolean {
-  return Object.prototype.hasOwnProperty.call(WEAPON_STATS, kind);
+const carried = world.with('carriedBy');
+const carriedWithPosition = world.with('position', 'carriedBy');
+const solids = world.with('position', 'radius', 'blocking');
+const interactors = world.with('position', 'playerInput', 'playerStats', 'weaponInventory');
+
+const fitBox = new Rectangle();
+const bombBox = new Rectangle();
+const otherBox = new Rectangle();
+
+/** Offsets around the player's feet, within reach, that a building may come down at if the feet will not do. */
+const DROP_REACH = 24;
+const DROP_STEP = 4;
+const DROP_OFFSETS = buildDropOffsets();
+
+function buildDropOffsets(): Array<{ dx: number; dy: number; dist: number }> {
+  const offsets: Array<{ dx: number; dy: number; dist: number }> = [];
+  for (let dy = -DROP_REACH; dy <= DROP_REACH; dy += DROP_STEP) {
+    for (let dx = -DROP_REACH; dx <= DROP_REACH; dx += DROP_STEP) offsets.push({ dx, dy, dist: Math.hypot(dx, dy) });
+  }
+  return offsets.filter((o) => o.dist <= DROP_REACH);
 }
 
 export function carriedByPlayer(player: Entity): Entity | null {
@@ -59,29 +77,34 @@ function buy(player: Entity, item: Entity): void {
     return;
   }
 
-  if (isWeapon(kind)) {
-    const inv = player.weaponInventory!;
-    if (inv.weapons.includes(kind)) {
-      notify(`${SHOP_DEFS[kind].label} already owned`);
-      return;
-    }
-    stats.score -= cost;
-    inv.weapons.push(kind);
-    inv.current = inv.weapons.length - 1;
-    player.weapon = {
-      type: kind,
-      cooldown: WEAPON_STATS[kind].cooldown,
-      currentCooldown: player.weapon?.currentCooldown ?? 0,
-    };
-    notify(`Bought ${SHOP_DEFS[kind].label}`);
-    sound.playSound('upgrade');
-    spawnSpentCoin(player);
+  // Anything with weapon stats is equipped rather than carried.
+  if (isWeaponKind(kind)) buyWeapon(player, kind, cost);
+  else buyBuilding(player, kind, cost);
+}
+
+function buyWeapon(player: Entity, kind: WeaponKind, cost: number): void {
+  const inv = player.weaponInventory!;
+  if (inv.weapons.includes(kind)) {
+    notify(`${SHOP_DEFS[kind].label} already owned`);
     return;
   }
+  player.playerStats!.score -= cost;
+  inv.weapons.push(kind);
+  inv.current = inv.weapons.length - 1;
+  player.weapon = {
+    type: kind,
+    cooldown: WEAPON_STATS[kind].cooldown,
+    currentCooldown: player.weapon?.currentCooldown ?? 0,
+  };
+  notify(`Bought ${SHOP_DEFS[kind].label}`);
+  sound.playSound('upgrade');
+  spawnSpentCoin(player);
+}
 
-  // Buildings are handed to the player to carry and place.
-  stats.score -= cost;
-  const built = createBuilding(player.position!.x, player.position!.y, kind as BuildingType, player.team);
+/** Buildings are handed to the player to carry and place. */
+function buyBuilding(player: Entity, kind: BuildingKind, cost: number): void {
+  player.playerStats!.score -= cost;
+  const built = createBuilding(player.position!.x, player.position!.y, kind, player.team);
   pickUp(player, built);
   notify(`Bought ${SHOP_DEFS[kind].label} - press ${keyLabel('use')} to place`);
   sound.playSound('upgrade');
@@ -120,7 +143,7 @@ function upgrade(player: Entity, target: Entity | null): void {
 }
 
 function hasBuildingOn(tx: number, ty: number): boolean {
-  for (const b of world.with('position', 'building')) {
+  for (const b of q.buildings) {
     if (b.carriedBy !== undefined) continue;
     if (Math.floor(b.position!.x / TILE_WIDTH) === tx && Math.floor(b.position!.y / TILE_HEIGHT) === ty) return true;
   }
@@ -243,8 +266,8 @@ function fitsAt(level: Level, building: Entity, x: number, y: number): boolean {
   const r = building.radius ?? { x: 8, y: 8 };
   // Bombs may sit on track (they are how rails get blown); other buildings must not overhang it.
   if (!building.bomb && !level.footprintBuildable(x, y, r.x, r.y)) return false;
-  const bb = BB.fromCenter(x, y, r.x, r.y);
-  return !level.getClipBBs(x, y, r.x, r.y).some((clip) => clip.intersects(bb));
+  const body = boxAround(x, y, r.x, r.y, fitBox);
+  return !level.getClipBBs(x, y, r.x, r.y).some((clip) => clip.intersects(body));
 }
 
 /**
@@ -263,15 +286,8 @@ function dropSpot(level: Level, player: Entity, building: Entity): { x: number; 
   const len = Math.hypot(aim.x, aim.y) || 1;
   const ax = aim.x / len;
   const ay = aim.y / len;
-  const candidates: Array<{ x: number; y: number; score: number }> = [];
-  for (let dy = -24; dy <= 24; dy += 4) {
-    for (let dx = -24; dx <= 24; dx += 4) {
-      const dist = Math.hypot(dx, dy);
-      if (dist > 24) continue;
-      // Closer is better; ties go to spots behind the way the player faces.
-      candidates.push({ x: p.x + dx, y: p.y + dy, score: dist + (dx * ax + dy * ay) * 0.5 });
-    }
-  }
+  // Closer is better; ties go to spots behind the way the player faces.
+  const candidates = DROP_OFFSETS.map(({ dx, dy, dist }) => ({ x: p.x + dx, y: p.y + dy, score: dist + (dx * ax + dy * ay) * 0.5 }));
   candidates.sort((a, b) => a.score - b.score);
   return candidates.find((c) => freeAt(c.x, c.y)) ?? null;
 }
@@ -281,11 +297,11 @@ const BOMB_DROP_DISTANCE = 25;
 function bombFitsAt(level: Level, bomb: Entity, x: number, y: number): boolean {
   if (!fitsAt(level, bomb, x, y)) return false;
   const r = bomb.radius!;
-  const bb = BB.fromCenter(x, y, r.x, r.y);
-  for (const other of world.with('position', 'radius', 'blocking')) {
+  const body = boxAround(x, y, r.x, r.y, bombBox);
+  for (const other of solids) {
     if (other === bomb || other.carriedBy !== undefined || other.removed) continue;
     if (!other.building && !other.spawner && !other.railDroid) continue;
-    if (bb.intersects(BB.fromCenter(other.position!.x, other.position!.y, other.radius!.x, other.radius!.y))) return false;
+    if (body.intersects(boxAround(other.position!.x, other.position!.y, other.radius!.x, other.radius!.y, otherBox))) return false;
   }
   return true;
 }
@@ -346,7 +362,7 @@ function drop(player: Entity, building: Entity, level: Level): boolean {
 
 function carriedBy(player: Entity): Entity | null {
   const id = world.id(player);
-  for (const b of world.with('carriedBy')) {
+  for (const b of carried) {
     if (b.carriedBy === id) return b;
   }
   return null;
@@ -357,7 +373,7 @@ function carriedBy(player: Entity): Entity | null {
  * moves the player, so the load is never a tick behind and does not wobble.
  */
 export function updateCarried(): void {
-  for (const held of world.with('position', 'carriedBy')) {
+  for (const held of carriedWithPosition) {
     const carrier = world.entity(held.carriedBy!)?.position;
     if (!carrier) continue;
     held.position!.x = carrier.x;
@@ -369,7 +385,7 @@ export function updateCarried(): void {
 export function updateInteraction(level: Level): void {
   updateNotices();
 
-  for (const player of world.with('position', 'playerInput', 'playerStats', 'weaponInventory')) {
+  for (const player of interactors) {
     if (player.respawnTicks !== undefined || (player.health?.current ?? 1) <= 0) continue;
     // The computer's purchases and mistakes are not announced to the people playing.
     quietly(player.aiPlayer !== undefined, () => interact(player, level));

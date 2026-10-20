@@ -9,14 +9,24 @@ import { spawnFx } from '../entities/FxFactory';
 /** Ticks from stepping off the edge to landing at the spawn; matches the falling cry's length. */
 export const FALL_TICKS = 60;
 const FEMALE_CHARACTERS = ['countess_cruller', 'duchess_donut'];
+/** Half-size of the support box under the feet that must be all hole for a fall. */
+const SUPPORT = 6;
+/** Most coin piles a fall scatters. */
+const SPILL_PILES = 8;
+
+const grounded = world.with('position', 'health');
+
+function holeAt(level: Level, x: number, y: number): boolean {
+  return level.getTileAt(x, y)?.type === TileType.Hole;
+}
 
 /** Feet can overhang an edge while any part of their small support box has floor under it. */
 export function overHole(level: Level, entity: Entity): boolean {
   const p = entity.position!;
-  const rx = Math.min(6, entity.radius?.x ?? 0);
-  const ry = Math.min(6, entity.radius?.y ?? 0);
-  return [-rx, rx].every((dx) => [-ry, ry].every((dy) =>
-    level.getTileAt(p.x + dx, p.y + dy)?.type === TileType.Hole));
+  const rx = Math.min(SUPPORT, entity.radius?.x ?? 0);
+  const ry = Math.min(SUPPORT, entity.radius?.y ?? 0);
+  return holeAt(level, p.x - rx, p.y - ry) && holeAt(level, p.x - rx, p.y + ry)
+    && holeAt(level, p.x + rx, p.y - ry) && holeAt(level, p.x + rx, p.y + ry);
 }
 
 /**
@@ -24,14 +34,11 @@ export function overHole(level: Level, entity: Entity): boolean {
  * a player drops what they carry, scatters half their coins and respawns.
  */
 export function updateHoles(level: Level): void {
-  for (const entity of world.with('position', 'health')) {
+  for (const entity of grounded) {
     if (entity.removed || entity.carriedBy !== undefined || entity.mobType === 'bat' || entity.respawnTicks !== undefined) continue;
     if (!overHole(level, entity)) continue;
-
-    if (entity.playerInput) {
-      if (!entity.falling) startFall(entity);
-    }
-    else world.addComponent(entity, 'removed', true);
+    if (!entity.playerInput) world.addComponent(entity, 'removed', true);
+    else if (!entity.falling) startFall(entity);
   }
 }
 
@@ -48,6 +55,21 @@ function startFall(player: Entity): void {
   });
 }
 
+/** Half the purse scatters where they fell, as in Java's dropAllMoney(). */
+function spillHalfPurse(player: Entity): void {
+  const pos = player.position!;
+  const stats = player.playerStats;
+  if (!stats || stats.score <= 0) return;
+  let remaining = Math.floor(stats.score / 2);
+  stats.score -= remaining;
+  for (let i = 0; remaining > 0 && i < SPILL_PILES; i++) {
+    const value = Math.max(1, Math.floor(remaining / 2));
+    const dir = Math.random() * Math.PI * 2;
+    createLoot(pos.x, pos.y, Math.cos(dir), Math.sin(dir), value, true);
+    remaining -= value;
+  }
+}
+
 export function respawnPlayer(player: Entity, level: Level, reason: 'fall' | 'death' = 'fall'): void {
   const pos = player.position!;
   const health = player.health!;
@@ -62,18 +84,7 @@ export function respawnPlayer(player: Entity, level: Level, reason: 'fall' | 'de
     world.removeComponent(player, 'carryingId');
   }
 
-  // Half the purse scatters where they fell, as in Java's dropAllMoney().
-  const stats = player.playerStats;
-  if (reason === 'fall' && stats && stats.score > 0) {
-    let remaining = Math.floor(stats.score / 2);
-    stats.score -= remaining;
-    for (let i = 0; remaining > 0 && i < 8; i++) {
-      const value = Math.max(1, Math.floor(remaining / 2));
-      const dir = Math.random() * Math.PI * 2;
-      createLoot(pos.x, pos.y, Math.cos(dir), Math.sin(dir), value, true);
-      remaining -= value;
-    }
-  }
+  if (reason === 'fall') spillHalfPurse(player);
 
   const spawn = level.getRandomSpawnPoint(player.team ?? Team.One);
   if (spawn) {
@@ -85,7 +96,7 @@ export function respawnPlayer(player: Entity, level: Level, reason: 'fall' | 'de
   if (reason === 'fall') health.max = Math.max(1, health.max - 1);
   health.current = health.max;
 
-  player.velocity && (player.velocity.x = player.velocity.y = 0);
+  if (player.velocity) player.velocity.x = player.velocity.y = 0;
   if (player.bump) player.bump.x = player.bump.y = 0;
   player.hurtTime = reason === 'death' ? 60 : 0;
   player.freezeTime = 0;

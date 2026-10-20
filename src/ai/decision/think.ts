@@ -12,7 +12,7 @@ import { OFFENSE } from './options/offense';
 import { SHOPPING } from './options/shopping';
 import { SURVIVAL } from './options/survival';
 import { assess } from './situation';
-import { choose } from './utility';
+import { OptionArbiter, Planner } from './utility';
 import type { Option } from './utility';
 
 /**
@@ -25,10 +25,15 @@ export const OPTIONS: readonly Option[] = [...SURVIVAL, ...CARRYING, ...SHOPPING
 /** Dangers that interrupt anything, even an errand under way. */
 const URGENT: readonly Option[] = SURVIVAL.filter((o) => o.id === 'escape blast' || o.id === 'retreat');
 
+/** Computer players think one at a time, so one Yuka planner and its two arbiters serve them all. */
+const planner = new Planner();
+const urgentArbiter = new OptionArbiter(planner, URGENT);
+const arbiter = new OptionArbiter(planner, OPTIONS);
+
 export function think(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): void {
   const s = assess(level, entity, brain, profile);
 
-  const urgent = choose(URGENT, s);
+  const urgent = urgentArbiter.decide(s);
   if (urgent) {
     urgent.proposal.commit?.();
     setGoal(brain, level, urgent.proposal.goal);
@@ -50,7 +55,7 @@ export function think(level: Level, entity: Entity, brain: Brain, profile: AIDif
   }
   brain.goal = null;
 
-  const pick = choose(OPTIONS, s);
+  const pick = arbiter.decide(s);
   if (!pick) return;
   pick.proposal.commit?.();
   setGoal(brain, level, pick.proposal.goal);

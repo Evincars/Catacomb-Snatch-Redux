@@ -8,7 +8,7 @@ import { railCost } from '../../systems/InteractionSystem';
 import { roleOf } from '../brain';
 import { GUARD_SPAN, INF, NEST_CLEAR_RANGE, RAILS_PER_UPGRADE, UPGRADE_AFTER, UPGRADE_SAVE_TICKS } from '../constants';
 import { mobsNear, rivalsInSight } from '../perception/awareness';
-import { clearOfBlast, besideWall, findSabotage } from '../perception/demolition';
+import { besideWall, findSabotage, threateningBomb } from '../perception/demolition';
 import type { SabotageTarget } from '../perception/demolition';
 import { cheapestStall, ownBuildings } from '../perception/economy';
 import { centreX, centreY, tileAt, tileOf } from '../perception/geometry';
@@ -66,6 +66,38 @@ export type Situation = {
   savingForUpgrade: boolean;
 };
 
+type UpgradePlan = { upgradeDue: Entity | null; savingForUpgrade: boolean };
+const NO_UPGRADE: UpgradePlan = { upgradeDue: null, savingForUpgrade: false };
+
+/** The cheapest of its own buildings it could and would upgrade, or null. */
+function cheapestUpgrade(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): Entity | null {
+  const candidates = [...q.upgradables].filter((b) => !b.removed && b.team === entity.team && b.carriedBy === undefined
+    && b.upgradable!.level < profile.maxUpgrade && reachable(level, brain, b) < INF
+    && worthUpgrading(level, entity, brain, b))
+    .sort((a, b) => (upgradeCostOf(a) ?? INF) - (upgradeCostOf(b) ?? INF));
+  return candidates[0] ?? null;
+}
+
+/**
+ * Every few tiles of track it stops to save for an upgrade, so turrets and harvesters keep up. It saves
+ * for a while; once it can afford the upgrade it is due, and if it never can, it gives up and lays on.
+ */
+function upgradeSavings(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): UpgradePlan {
+  if (brain.age < UPGRADE_AFTER || brain.railsSinceUpgrade < RAILS_PER_UPGRADE) return NO_UPGRADE;
+  const pick = cheapestUpgrade(level, entity, brain, profile);
+  const cost = pick ? upgradeCostOf(pick) ?? INF : INF;
+  if (!pick || !Number.isFinite(cost)) {
+    brain.railsSinceUpgrade = 0;
+    return NO_UPGRADE;
+  }
+  brain.upgradeSince ??= brain.age;
+  if (entity.playerStats!.score - profile.reserve >= cost) return { upgradeDue: pick, savingForUpgrade: false };
+  if (brain.age - brain.upgradeSince < UPGRADE_SAVE_TICKS) return { upgradeDue: null, savingForUpgrade: true };
+  brain.railsSinceUpgrade = 0;
+  brain.upgradeSince = null;
+  return NO_UPGRADE;
+}
+
 /** Reads the world into a Situation, tidying the brain's bookkeeping on the way. */
 export function assess(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): Situation {
   const pos = entity.position!;
@@ -102,8 +134,7 @@ export function assess(level: Level, entity: Entity, brain: Brain, profile: AIDi
   const needsBaseDefense = !!defenseStall && reachable(level, brain, defenseStall) < INF
     && baseTurrets(level, entity).length < Math.min(3, profile.maxTurrets)
     && baseDefenseSpot(level, entity, brain) >= 0;
-  const danger = [...world.with('position', 'bomb')].find((b) => !b.removed && b.carriedBy === undefined
-    && b.bomb!.lit && !clearOfBlast(entity, b));
+  const danger = threateningBomb(entity);
 
   const home = level.getRandomSpawnPoint(entity.team ?? Team.Two);
   const railHead = plan && plan.length > 0
@@ -127,26 +158,7 @@ export function assess(level: Level, entity: Entity, brain: Brain, profile: AIDi
   const atHome = home !== null && walkDistance(level, field, home.x, home.y) < NEST_CLEAR_RANGE;
   const surplus = atHome || frontBusy || brain.railDone ? spare - trackBudget : -INF;
 
-  // Every few tiles of track it stops to save for an upgrade, so turrets and harvesters keep up.
-  let savingForUpgrade = false;
-  let upgradeDue: Entity | null = null;
-  if (!needsBaseDefense && brain.age >= UPGRADE_AFTER && brain.railsSinceUpgrade >= RAILS_PER_UPGRADE) {
-    const candidates = [...q.upgradables].filter((b) => !b.removed && b.team === entity.team && b.carriedBy === undefined
-      && b.upgradable!.level < profile.maxUpgrade && reachable(level, brain, b) < INF
-      && worthUpgrading(level, entity, brain, b))
-      .sort((a, b) => (upgradeCostOf(a) ?? INF) - (upgradeCostOf(b) ?? INF));
-    const pick = candidates[0];
-    const cost = pick ? upgradeCostOf(pick) ?? INF : INF;
-    if (pick && Number.isFinite(cost)) {
-      brain.upgradeSince ??= brain.age;
-      if (money - profile.reserve >= cost) upgradeDue = pick;
-      else if (brain.age - brain.upgradeSince < UPGRADE_SAVE_TICKS) savingForUpgrade = true;
-      else {
-        brain.railsSinceUpgrade = 0;
-        brain.upgradeSince = null;
-      }
-    } else brain.railsSinceUpgrade = 0;
-  }
+  const { upgradeDue, savingForUpgrade } = needsBaseDefense ? NO_UPGRADE : upgradeSavings(level, entity, brain, profile);
 
   return {
     level, entity, brain, profile, field, pos, role, saboteur, money, held, plan, wall, sabotage, engaged, threatened,

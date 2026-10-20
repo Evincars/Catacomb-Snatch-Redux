@@ -1,12 +1,14 @@
 import { world } from '../world';
 
+const props = world.with('position', 'ephemeral');
+
 /** Ticks of the fall, and how long before the end the prop starts to blink. */
 const BLINK_TICKS = 36;
 const BLINK_PERIOD = 4;
 
 /** Drops short-lived props to the floor, blinks them toward the end, then removes them. */
 export function updateEphemerals(): void {
-  for (const entity of world.with('position', 'ephemeral')) {
+  for (const entity of props) {
     if (entity.removed) continue;
     const e = entity.ephemeral!;
     e.age++;

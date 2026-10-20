@@ -1,13 +1,14 @@
 import { Container, Graphics } from 'pixi.js';
-import { CompositeTilemap } from '@pixi/tilemap';
 import type { Level } from './Level';
+import { forEachTile } from './Grid';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from './TileType';
+import type { TileData } from './TileType';
 import { RAIL_HORIZONTAL, RAIL_VERTICAL, isRailTile, railJoins, railFrameAt } from './RailLayout';
-import { getTexture } from '../assets/AssetLoader';
 import { Team } from '../world';
 import { gameState } from '../game/GameState';
 import { frameTexture } from '../render/Sheets';
 import { createAnimatedVisual } from '../render/AnimatedVisual';
+import { StaticTileLayer } from '../render/StaticTileLayer';
 
 const FLOOR_COLS = 8;
 
@@ -119,75 +120,72 @@ function railFrame(level: Level, tx: number, ty: number): number {
   return railFrameAt(level, tx, ty);
 }
 
-/** Batches terrain with tilemap; moving actors and walls keep their own depth sorting. */
+/** Floor art for a tile: a sand-blended edge, the dark rim of a pit under sand, or the plain variant. */
+function floorImage(level: Level, tx: number, ty: number, tile: TileData): number {
+  if (tile.type === TileType.Floor) return sandEdgeImage(level, tx, ty) ?? floorImageIndex(tile.type, tile.imageVariant);
+  if (tile.type === TileType.Hole && level.getTile(tx, ty - 1)?.type === TileType.Sand) return 7;
+  return floorImageIndex(tile.type, tile.imageVariant);
+}
+
+type TerrainLayers = { holes: Graphics; floors: StaticTileLayer; traps: Container; rails: StaticTileLayer; bases: StaticTileLayer };
+
+/** One tile of ground: a crumbling trap, the black inside of a pit, or a floor frame. */
+function drawGround(level: Level, layers: TerrainLayers, tx: number, ty: number): void {
+  const tile = level.getTile(tx, ty);
+  if (!tile || tile.type === TileType.Wall) return;
+  const x = tx * TILE_WIDTH;
+  const y = ty * TILE_HEIGHT;
+  if (tile.type === TileType.DropTrap) {
+    const row = level.getTile(tx, ty - 1)?.type === TileType.Hole ? 0 : 1;
+    const trap = createAnimatedVisual('droptrap', tile.crumble ?? 0, row);
+    trap.position.set(x, y);
+    layers.traps.addChild(trap);
+    return;
+  }
+  if (tile.type === TileType.Hole && level.getTile(tx, ty - 1)?.type === TileType.Hole) {
+    layers.holes.rect(x, y, TILE_WIDTH, TILE_HEIGHT).fill(0x000000);
+    return;
+  }
+  const img = floorImage(level, tx, ty, tile);
+  layers.floors.addTile(frameTexture('floortiles', img % FLOOR_COLS, Math.floor(img / FLOOR_COLS)), x, y);
+}
+
+function drawRail(level: Level, layers: TerrainLayers, tx: number, ty: number): void {
+  if (!level.getTile(tx, ty) || !isRailTile(level, tx, ty)) return;
+  layers.rails.addTile(frameTexture('rails', railFrame(level, tx, ty), 0), tx * TILE_WIDTH, ty * TILE_HEIGHT - RAIL_RISE);
+}
+
+/** Spawn platforms sit above the floor, below base pieces; base platforms above the floor but below walls. */
+function drawBases(level: Level, layers: TerrainLayers): void {
+  for (const sp of level.spawnTiles) {
+    const texture = frameTexture(spawnSheet(sp.team), sp.img % 4, Math.floor(sp.img / 4));
+    layers.bases.addTile(texture, sp.tileX * TILE_WIDTH + sp.offsetX, sp.tileY * TILE_HEIGHT);
+  }
+  for (const base of level.baseTiles) {
+    const texture = frameTexture(baseSheet(base.team, base.side), base.img % 2, Math.floor(base.img / 2));
+    layers.bases.addTile(texture, base.tileX * TILE_WIDTH, base.tileY * TILE_HEIGHT);
+  }
+}
+
+/**
+ * Batches the static terrain into Pixi v8 ParticleContainers (see StaticTileLayer); moving actors and
+ * walls keep their own depth-sorted sprites. Floors come first so wall overhang draws over them, and
+ * rails sit on top of the floor.
+ */
 export function buildLevelView(level: Level): Container {
   const container = new Container();
-  const holes = new Graphics();
-  const floors = new CompositeTilemap([getTexture('floortiles').source]);
-  const traps = new Container();
-  const rails = new CompositeTilemap([getTexture('rails').source]);
-  const bases = new CompositeTilemap();
-  container.addChild(holes, floors, traps, rails, bases);
-
-  // Floors first so wall overhang draws on top of them.
-  for (let ty = 0; ty < level.height; ty++) {
-    for (let tx = 0; tx < level.width; tx++) {
-      const tile = level.getTile(tx, ty);
-      if (!tile || tile.type === TileType.Wall) continue;
-
-      if (tile.type === TileType.DropTrap) {
-        const row = level.getTile(tx, ty - 1)?.type === TileType.Hole ? 0 : 1;
-        const s = createAnimatedVisual('droptrap', tile.crumble ?? 0, row);
-        s.x = tx * TILE_WIDTH;
-        s.y = ty * TILE_HEIGHT;
-        traps.addChild(s);
-        continue;
-      }
-      const above = level.getTile(tx, ty - 1);
-      const img = tile.type === TileType.Floor
-        ? sandEdgeImage(level, tx, ty) ?? floorImageIndex(tile.type, tile.imageVariant)
-        : tile.type === TileType.Hole && above?.type === TileType.Sand ? 7
-        : floorImageIndex(tile.type, tile.imageVariant);
-      const interiorHole = tile.type === TileType.Hole && above?.type === TileType.Hole;
-      if (interiorHole) {
-        holes.rect(tx * TILE_WIDTH, ty * TILE_HEIGHT, TILE_WIDTH, TILE_HEIGHT).fill(0x000000);
-      } else {
-        floors.tile(getTexture('floortiles'), tx * TILE_WIDTH, ty * TILE_HEIGHT, {
-          u: (img % FLOOR_COLS) * TILE_WIDTH,
-          v: Math.floor(img / FLOOR_COLS) * TILE_HEIGHT,
-          tileWidth: TILE_WIDTH,
-          tileHeight: TILE_HEIGHT,
-        });
-      }
-    }
-  }
-
-  // Rails sit on top of the floor.
-  for (let ty = 0; ty < level.height; ty++) {
-    for (let tx = 0; tx < level.width; tx++) {
-      const tile = level.getTile(tx, ty);
-      if (!tile || !isRailTile(level, tx, ty)) continue;
-
-      rails.tile(frameTexture('rails', railFrame(level, tx, ty), 0),
-        tx * TILE_WIDTH, ty * TILE_HEIGHT - RAIL_RISE);
-    }
-  }
-
-  // Spawn platform art sits above the floor, below base pieces.
-  for (const sp of level.spawnTiles) {
-    const sheet = spawnSheet(sp.team);
-    const col = sp.img % 4;
-    const row = Math.floor(sp.img / 4);
-    bases.tile(frameTexture(sheet, col, row),
-      sp.tileX * TILE_WIDTH + sp.offsetX, sp.tileY * TILE_HEIGHT);
-  }
-
-  // Player base platforms sit above the floor but below walls.
-  for (const base of level.baseTiles) {
-    const sheet = baseSheet(base.team, base.side);
-    bases.tile(frameTexture(sheet, base.img % 2, Math.floor(base.img / 2)),
-      base.tileX * TILE_WIDTH, base.tileY * TILE_HEIGHT);
-  }
-
+  const layers: TerrainLayers = {
+    holes: new Graphics(),
+    floors: new StaticTileLayer(),
+    traps: new Container(),
+    rails: new StaticTileLayer(),
+    bases: new StaticTileLayer(),
+  };
+  container.addChild(layers.holes, layers.floors, layers.traps, layers.rails, layers.bases);
+  const right = level.width - 1;
+  const bottom = level.height - 1;
+  forEachTile(0, 0, right, bottom, (tx, ty) => drawGround(level, layers, tx, ty));
+  forEachTile(0, 0, right, bottom, (tx, ty) => drawRail(level, layers, tx, ty));
+  drawBases(level, layers);
   return container;
 }

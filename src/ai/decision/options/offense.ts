@@ -10,20 +10,29 @@ import { huntPlan } from '../goals';
 import type { Situation } from '../situation';
 import type { Option } from '../utility';
 
+const damageable = world.with('position', 'health');
+const rivals = world.with('position', 'health', 'playerInput');
+
 /** Rivals' machines: what a computer player wrecks to win. */
 const isMachine = (e: { turret?: unknown; harvester?: unknown; railDroid?: unknown }) =>
   e.turret !== undefined || e.harvester !== undefined || e.railDroid !== undefined;
 
 /** Rival players or carriages close to what it owns: home, its turrets and its harvesters. */
 function intruders(s: Situation): Entity[] {
-  const anchors = [...(s.home ? [s.home] : []), ...s.turrets.map((t) => t.position!), ...s.harvesters.map((h) => h.position!)];
   const found = new Set<Entity>();
-  for (const a of anchors) {
-    for (const e of nearby(a.x, a.y, BASE_DEFENSE_RANGE, ['player', 'machine'])) {
-      if (hostile(s.entity, e) && (e.playerInput !== undefined || e.railDroid !== undefined)) found.add(e);
-    }
-  }
+  const watch = (at: { x: number; y: number }) => {
+    for (const e of nearby(at.x, at.y, BASE_DEFENSE_RANGE, INTRUDER_KINDS)) if (isIntruder(s.entity, e)) found.add(e);
+  };
+  if (s.home) watch(s.home);
+  for (const t of s.turrets) watch(t.position!);
+  for (const h of s.harvesters) watch(h.position!);
   return [...found];
+}
+
+const INTRUDER_KINDS = ['player', 'machine'] as const;
+
+function isIntruder(self: Entity, e: Entity): boolean {
+  return hostile(self, e) && (e.playerInput !== undefined || e.railDroid !== undefined);
 }
 
 export const OFFENSE: Option[] = [
@@ -55,7 +64,7 @@ export const OFFENSE: Option[] = [
     id: 'wreck their machines',
     ceiling: 40,
     evaluate(s) {
-      const machines = [...world.with('position', 'health')].filter((e) => hostile(s.entity, e) && isMachine(e)
+      const machines = [...damageable].filter((e) => hostile(s.entity, e) && isMachine(e)
         && (s.role !== 'builder' || e.railDroid !== undefined));
       const wreck = nearestOf(s.level, s.brain, machines);
       if (!wreck) return null;
@@ -69,7 +78,7 @@ export const OFFENSE: Option[] = [
     id: 'hunt',
     ceiling: 48,
     evaluate(s) {
-      const prey = nearestOf(s.level, s.brain, [...world.with('position', 'health')].filter((e) =>
+      const prey = nearestOf(s.level, s.brain, [...damageable].filter((e) =>
         hostile(s.entity, e) && (e.playerInput !== undefined || e.spawner !== undefined || e.ai !== undefined)));
       if (!prey) return null;
       const close = Math.hypot(prey.position!.x - s.pos.x, prey.position!.y - s.pos.y) < 14 * TILE_WIDTH;
@@ -82,7 +91,7 @@ export const OFFENSE: Option[] = [
     id: 'stalk',
     ceiling: 28,
     evaluate(s) {
-      const walled = [...world.with('position', 'health', 'playerInput')].filter((e) => hostile(s.entity, e));
+      const walled = [...rivals].filter((e) => hostile(s.entity, e));
       if (walled.length === 0) return null;
       const target = walled.reduce((best, e) => (dist(e.position!, s.pos) < dist(best.position!, s.pos) ? e : best));
       const spot = nearestReachableTo(s.level, s.field, target.position!);

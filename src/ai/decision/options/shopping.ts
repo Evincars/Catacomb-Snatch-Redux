@@ -1,10 +1,11 @@
 import { q } from '../../../world';
-import { WEAPON_STATS } from '../../../entities/WeaponStats';
-import { BULLET_CONFIGS } from '../../../entities/BulletFactory';
+import type { ShopKind } from '../../../world';
+import { isWeaponKind } from '../../../entities/WeaponStats';
+import type { WeaponKind } from '../../../entities/WeaponStats';
 import { upgradeCostOf } from '../../../entities/BuildingFactory';
 import { railCost, carriageCost } from '../../../systems/InteractionSystem';
 import { CARRIAGE_DELAY, GUARD_SPAN, INF } from '../../constants';
-import { weaponGain } from '../../perception/arsenal';
+import { bounces, weaponGain } from '../../perception/arsenal';
 import { hostile } from '../../perception/awareness';
 import { stallFor } from '../../perception/economy';
 import { reachable, nearestOf, walkDistance } from '../../perception/navigation';
@@ -16,14 +17,15 @@ import type { Option, Proposal } from '../utility';
 
 /** A walk to a stall, if the stall is there, reachable and affordable at `budget`. */
 function buyAt(s: Situation, score: number, name: string, role: Parameters<typeof stallFor>[1], budget: number,
-  commit?: () => void, wanted?: (kind: string) => boolean): Proposal | null {
+  commit?: () => void, wanted?: (kind: ShopKind) => boolean): Proposal | null {
   const stall = stallFor(s.entity, role, budget, wanted);
   if (!stall || reachable(s.level, s.brain, stall) >= INF) return null;
   return { score, goal: usePlan(s.level, s.brain, name, stall), commit };
 }
 
-const owns = (s: Situation, kind: string) => s.entity.weaponInventory!.weapons.includes(kind);
-const bounces = (kind: string) => (BULLET_CONFIGS[WEAPON_STATS[kind]?.bullet]?.bounces ?? 0) > 0;
+const owns = (s: Situation, kind: WeaponKind) => s.entity.weaponInventory!.weapons.includes(kind);
+/** A stall filter that takes only guns, and of those only the ones `test` accepts. */
+const gun = (test: (kind: WeaponKind) => boolean) => (kind: ShopKind) => isWeaponKind(kind) && test(kind);
 const idle = (s: Situation) => s.brain.blastId === undefined && s.brain.looseBombId === undefined;
 
 /** Everything bought, upgraded or laid with coins. */
@@ -34,7 +36,7 @@ export const SHOPPING: Option[] = [
     ceiling: 72,
     evaluate(s) {
       if (s.held || s.entity.weaponInventory!.weapons.some(bounces)) return null;
-      return buyAt(s, 72, 'buy weapon', 'weapon', s.money - s.profile.reserve, undefined, (kind) => !owns(s, kind) && bounces(kind));
+      return buyAt(s, 72, 'buy weapon', 'weapon', s.money - s.profile.reserve, undefined, gun((kind) => !owns(s, kind) && bounces(kind)));
     },
   },
   {
@@ -56,7 +58,7 @@ export const SHOPPING: Option[] = [
     evaluate(s) {
       if (s.needsBaseDefense) return null;
       return buyAt(s, 68, 'buy weapon', 'weapon', s.money - s.profile.reserve, undefined,
-        (kind) => !owns(s, kind) && weaponGain(s.entity, kind) > 2);
+        gun((kind) => !owns(s, kind) && weaponGain(s.entity, kind) > 2));
     },
   },
   {
@@ -89,7 +91,7 @@ export const SHOPPING: Option[] = [
     id: 'better gun with spare coins',
     ceiling: 58,
     evaluate(s) {
-      return buyAt(s, 58, 'buy weapon', 'weapon', s.spare, undefined, (kind) => !owns(s, kind) && weaponGain(s.entity, kind) > 2);
+      return buyAt(s, 58, 'buy weapon', 'weapon', s.spare, undefined, gun((kind) => !owns(s, kind) && weaponGain(s.entity, kind) > 2));
     },
   },
   {

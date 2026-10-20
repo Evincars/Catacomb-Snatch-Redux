@@ -1,12 +1,21 @@
 /** Persisted player preferences and key bindings. */
+import { MathUtils } from 'yuka';
+import { attempt } from '../core/errors';
+import { hasKey, isFiniteNumber, isRecord } from '../core/guards';
+import { createLog } from '../core/log';
 
-export type ActionName =
-  | 'up' | 'down' | 'left' | 'right' | 'sprint'
-  | 'fire' | 'fire_up' | 'fire_down' | 'fire_left' | 'fire_right'
-  | 'build' | 'use' | 'upgrade'
-  | 'weapon_slot_1' | 'weapon_slot_2' | 'weapon_slot_3'
-  | 'next_weapon' | 'prev_weapon'
-  | 'console' | 'chat';
+const log = createLog('settings');
+
+export const ACTION_NAMES = [
+  'up', 'down', 'left', 'right', 'sprint',
+  'fire', 'fire_up', 'fire_down', 'fire_left', 'fire_right',
+  'build', 'use', 'upgrade',
+  'weapon_slot_1', 'weapon_slot_2', 'weapon_slot_3',
+  'next_weapon', 'prev_weapon',
+  'console', 'chat',
+] as const;
+
+export type ActionName = (typeof ACTION_NAMES)[number];
 
 export const ACTION_LABELS: Record<ActionName, string> = {
   up: 'UP',
@@ -78,8 +87,8 @@ export function cleanName(text: unknown): string {
 
 const STORAGE_KEY = 'catacomb-snatch-settings';
 
-function load(): Settings {
-  const base: Settings = {
+function defaults(): Settings {
+  return {
     bindings: { ...DEFAULT_BINDINGS },
     sfxVolume: 0.6,
     musicVolume: 0.35,
@@ -89,32 +98,59 @@ function load(): Settings {
     aiDifficulty: 'Normal',
     playerName: '',
   };
+}
 
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return base;
-    const saved = JSON.parse(raw) as Partial<Settings>;
-    return {
-      ...base,
-      ...saved,
-      // Tab now shows the scoreboard; the console moved to the classic ~ key.
-      bindings: { ...base.bindings, ...(saved.bindings ?? {}), ...(saved.bindings?.console === 'Tab' ? { console: 'Backquote' } : {}) },
-      playerName: cleanName(saved.playerName),
-    };
-  } catch {
-    // Corrupt or unavailable storage must not stop the game from starting.
-    return base;
+function isActionName(key: string): key is ActionName {
+  return hasKey(DEFAULT_BINDINGS, key);
+}
+
+/** Saved key bindings: known actions bound to key codes, anything else ignored. */
+function readBindings(value: unknown): Partial<Record<ActionName, string>> {
+  const bindings: Partial<Record<ActionName, string>> = {};
+  if (!isRecord(value)) return bindings;
+  for (const [action, code] of Object.entries(value)) {
+    if (isActionName(action) && typeof code === 'string') bindings[action] = code;
   }
+  // Tab now shows the scoreboard; the console moved to the classic ~ key.
+  if (bindings.console === 'Tab') bindings.console = 'Backquote';
+  return bindings;
+}
+
+/** Takes what is valid from stored settings, keeping the default for anything missing or damaged. */
+function parseSettings(value: unknown, base: Settings): Settings {
+  if (!isRecord(value)) return base;
+  const volume = (v: unknown, fallback: number) => (isFiniteNumber(v) ? MathUtils.clamp(v, 0, 1) : fallback);
+  const flag = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
+  return {
+    bindings: { ...base.bindings, ...readBindings(value.bindings) },
+    sfxVolume: volume(value.sfxVolume, base.sfxVolume),
+    musicVolume: volume(value.musicVolume, base.musicVolume),
+    showFps: flag(value.showFps, base.showFps),
+    fullscreen: flag(value.fullscreen, base.fullscreen),
+    opponent: value.opponent === 'none' || value.opponent === 'ai' ? value.opponent : base.opponent,
+    aiDifficulty: typeof value.aiDifficulty === 'string' ? value.aiDifficulty : base.aiDifficulty,
+    playerName: cleanName(value.playerName),
+  };
+}
+
+function load(): Settings {
+  const base = defaults();
+  // Corrupt or unavailable storage must not stop the game from starting.
+  const stored = attempt(() => {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? parseSettings(JSON.parse(raw), base) : base;
+  });
+  if (stored.ok) return stored.value;
+  log.warn('Stored settings unreadable; using defaults', { reason: stored.error.message });
+  return base;
 }
 
 export const settings: Settings = load();
 
 export function saveSettings(): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Private browsing and the like; preferences simply will not persist.
-  }
+  // Private browsing and the like: preferences simply will not persist.
+  const saved = attempt(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)));
+  if (!saved.ok) log.warn('Settings could not be saved', { reason: saved.error.message });
 }
 
 export function resetBindings(): void {

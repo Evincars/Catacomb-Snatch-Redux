@@ -5,6 +5,8 @@ import { GAME_WIDTH } from '../render/Camera';
 import { getTexture } from '../assets/AssetLoader';
 import { makeText, makeTitle } from './PixelText';
 
+const slotted = world.with('playerSlot', 'playerStats');
+
 const ROW_H = 18;
 const WIDTH = 250;
 const TOP = 44;
@@ -19,7 +21,7 @@ export class Scoreboard {
   }
 
   private rows(): Entity[] {
-    return [...world.with('playerSlot', 'playerStats')]
+    return [...slotted]
       .sort((a, b) => PLAYER_SLOTS.indexOf(a.playerSlot!) - PLAYER_SLOTS.indexOf(b.playerSlot!));
   }
 

@@ -1,4 +1,6 @@
 import { TileType, TILE_WIDTH } from '../level/TileType';
+import type { AIDifficultyName } from '../game/GameState';
+import type { WeaponKind } from '../entities/WeaponStats';
 
 /** Distances, in pixels, at which guns are compared. */
 export const RANGE_BANDS = [32, 80, 140, 200, 260];
@@ -75,3 +77,18 @@ export const FLIP_TICKS = 8;
 
 /** Coins an upgrade may cost for each point of newly covered ground. */
 export const COINS_PER_POINT = 40;
+
+/**
+ * How much harder the computer's own gunfire hits than a person's with the same gun, per difficulty and
+ * per gun: Easy deals normal damage, Normal (medium) +10 %, Hard +20 %, Insane +30 %. Every gun has its
+ * own entry so one can be tuned (say, the seven-pellet shotgun) without touching the others.
+ */
+export const AI_GUN_DAMAGE = {
+  Easy:   { rifle: 1.0, shotgun: 1.0, raygun: 1.0 },
+  Normal: { rifle: 1.1, shotgun: 1.1, raygun: 1.1 },
+  Hard:   { rifle: 1.2, shotgun: 1.2, raygun: 1.2 },
+  Insane: { rifle: 1.3, shotgun: 1.3, raygun: 1.3 },
+} as const satisfies Record<AIDifficultyName, Record<WeaponKind, number>>;
+
+/** Coins a computer player is handed each time it dies, on top of whatever it kept, to rebuild with. */
+export const AI_DEATH_GOLD = 3000;

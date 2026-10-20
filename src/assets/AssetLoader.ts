@@ -1,5 +1,9 @@
 import { Assets, Texture } from 'pixi.js';
 import { assetUrl } from './assetUrl';
+import { LoadError } from '../core/errors';
+import { createLog } from '../core/log';
+
+const log = createLog('assets');
 
 export type AssetManifest = {
   art: Record<string, string>;
@@ -140,9 +144,6 @@ export const ASSETS: AssetManifest = {
     font_small_white:  '/art/fonts/font_small_white.png',
     font_small_gold:   '/art/fonts/font_small_gold.png',
     font_small_black:  '/art/fonts/font_small_black.png',
-
-    // Logo
-    mojang_logo: '/art/logo/mojang.png',
   },
 };
 
@@ -154,13 +155,24 @@ export const ART_COUNT = Object.keys(ASSETS.art).length;
 export async function loadAllAssets(onProgress?: (fraction: number) => void): Promise<void> {
   const entries = Object.entries(ASSETS.art);
   const bundle = entries.map(([alias, src]) => ({ alias, src: assetUrl(src) }));
-  await Assets.load(bundle, onProgress);
+  await Assets.load(bundle, onProgress).catch((cause: unknown) => {
+    throw new LoadError('Game art could not be loaded', { cause });
+  });
 
   for (const [key] of entries) {
     textures.set(key, Assets.get<Texture>(key));
   }
 }
 
+const reportedMissing = new Set<string>();
+
+/** The loaded texture, or an empty one (logged once per key) so a typo shows as a gap, not a crash. */
 export function getTexture(key: string): Texture {
-  return textures.get(key) ?? Texture.EMPTY;
+  const texture = textures.get(key);
+  if (texture) return texture;
+  if (textures.size > 0 && !reportedMissing.has(key)) {
+    reportedMissing.add(key);
+    log.warn('Unknown texture', { key });
+  }
+  return Texture.EMPTY;
 }

@@ -1,6 +1,7 @@
 import { world } from '../world';
-import type { Entity, ShopKind } from '../world';
+import type { Entity } from '../world';
 import { WEAPON_STATS } from '../entities/WeaponStats';
+import type { WeaponKind } from '../entities/WeaponStats';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { spillPurse } from '../entities/LootFactory';
 import { sound } from '../audio/SoundPlayer';
@@ -13,10 +14,15 @@ const WEAPON_LIFE = 60 * 40;
 const BLINK_TICKS = 180;
 const BLINK_PERIOD = 4;
 const PICKUP_REACH = 16;
+/** Dropped guns land in a ring this far from where their owner fell. */
+const DROP_RING = 14;
+
+const droppedGuns = world.with('position', 'weaponPickup');
+const collectors = world.with('position', 'playerStats', 'weaponInventory', 'health');
 
 /** A gun lying on the ground, drawn as its shop icon. */
-export function createWeaponPickup(x: number, y: number, kind: string): Entity {
-  const def = SHOP_DEFS[kind as ShopKind];
+export function createWeaponPickup(x: number, y: number, kind: WeaponKind): Entity {
+  const def = SHOP_DEFS[kind];
   return world.add({
     position: { x, y },
     radius: { x: 8, y: 8 },
@@ -26,6 +32,29 @@ export function createWeaponPickup(x: number, y: number, kind: string): Entity {
   });
 }
 
+/** Leaves nine tenths of the carried coins where the player fell, as the biggest gems and coins that fit. */
+function spillShare(player: Entity, at: { x: number; y: number }): void {
+  const stats = player.playerStats;
+  if (!stats || stats.score <= 0) return;
+  const share = Math.floor(stats.score * DEATH_PURSE_SHARE);
+  if (share > 0) stats.score -= spillPurse(at.x, at.y, share);
+}
+
+/** Scatters every gun but the starting one in a ring around the spot, and re-arms the player with the starter. */
+function dropSpareGuns(player: Entity, at: { x: number; y: number }): void {
+  const inv = player.weaponInventory;
+  if (!inv || inv.weapons.length < 2) return;
+  const spare = inv.weapons.length - 1;
+  for (let i = 1; i < inv.weapons.length; i++) {
+    const angle = ((i - 1) / spare) * Math.PI * 2 + Math.random();
+    createWeaponPickup(at.x + Math.cos(angle) * DROP_RING, at.y + Math.sin(angle) * DROP_RING, inv.weapons[i]);
+  }
+  const starter = inv.weapons[0];
+  inv.weapons = [starter];
+  inv.current = 0;
+  player.weapon = { type: starter, cooldown: WEAPON_STATS[starter].cooldown, currentCooldown: 0 };
+}
+
 /**
  * What a player leaves where they fall: nine tenths of their coins, as the biggest gems and
  * coins that fit, and every gun but the starting one. Coins and guns vanish after a while.
@@ -33,57 +62,54 @@ export function createWeaponPickup(x: number, y: number, kind: string): Entity {
 export function dropOnDeath(player: Entity): void {
   const pos = player.position;
   if (!pos) return;
-  const stats = player.playerStats;
-  if (stats && stats.score > 0) {
-    const share = Math.floor(stats.score * DEATH_PURSE_SHARE);
-    if (share > 0) {
-      stats.score -= spillPurse(pos.x, pos.y, share);
-    }
-  }
-  const inv = player.weaponInventory;
-  if (!inv || inv.weapons.length < 2) return;
-  const spare = inv.weapons.slice(1);
-  spare.forEach((kind, i) => {
-    const angle = (i / spare.length) * Math.PI * 2 + Math.random();
-    createWeaponPickup(pos.x + Math.cos(angle) * 14, pos.y + Math.sin(angle) * 14, kind);
-  });
-  const starter = inv.weapons[0];
-  inv.weapons = [starter];
-  inv.current = 0;
-  player.weapon = { type: starter, cooldown: WEAPON_STATS[starter].cooldown, currentCooldown: 0 };
+  spillShare(player, pos);
+  dropSpareGuns(player, pos);
+}
+
+function canCollect(player: Entity, gun: Entity): boolean {
+  if (player.removed || player.falling || player.respawnTicks !== undefined || player.health!.current <= 0) return false;
+  if (player.weaponInventory!.weapons.includes(gun.weaponPickup!.kind)) return false;
+  return Math.hypot(player.position!.x - gun.position!.x, player.position!.y - gun.position!.y) <= PICKUP_REACH;
+}
+
+function removeGun(gun: Entity): void {
+  world.removeComponent(gun, 'weaponPickup');
+  world.addComponent(gun, 'removed', true);
+}
+
+function collect(player: Entity, gun: Entity): void {
+  const kind = gun.weaponPickup!.kind;
+  const inv = player.weaponInventory!;
+  inv.weapons.push(kind);
+  inv.current = inv.weapons.length - 1;
+  player.weapon = { type: kind, cooldown: WEAPON_STATS[kind].cooldown, currentCooldown: player.weapon?.currentCooldown ?? 0 };
+  quietly(player.aiPlayer !== undefined, () => notify(`Picked up ${SHOP_DEFS[kind].label}`));
+  sound.playSound('upgrade', gun.position!.x, gun.position!.y);
+  removeGun(gun);
+}
+
+/** An unclaimed gun blinks for its last few seconds, then vanishes; returns whether it is gone. */
+function age(gun: Entity): boolean {
+  const info = gun.weaponPickup!;
+  info.age++;
+  const left = info.life - info.age;
+  if (gun.sprite) gun.sprite.visible = left > BLINK_TICKS || Math.floor(left / BLINK_PERIOD) % 2 === 0;
+  if (left > 0) return false;
+  removeGun(gun);
+  return true;
 }
 
 /** Lets anyone without a dropped gun pick it up by walking over it; unclaimed guns blink and vanish. */
 export function updateWeaponPickups(): void {
-  const players = [...world.with('position', 'playerStats', 'weaponInventory', 'health')];
-  for (const gun of world.with('position', 'weaponPickup')) {
-    if (gun.removed) continue;
-    const info = gun.weaponPickup!;
-    info.age++;
-    const left = info.life - info.age;
-    if (gun.sprite) gun.sprite.visible = left > BLINK_TICKS || Math.floor(left / BLINK_PERIOD) % 2 === 0;
-    if (left <= 0) {
-      world.removeComponent(gun, 'weaponPickup');
-      world.addComponent(gun, 'removed', true);
-      continue;
-    }
-    const p = gun.position!;
-    for (const player of players) {
-      const inv = player.weaponInventory!;
-      if (player.removed || player.falling || player.respawnTicks !== undefined || player.health!.current <= 0) continue;
-      if (inv.weapons.includes(info.kind) || Math.hypot(player.position!.x - p.x, player.position!.y - p.y) > PICKUP_REACH) continue;
-      inv.weapons.push(info.kind);
-      inv.current = inv.weapons.length - 1;
-      player.weapon = {
-        type: info.kind,
-        cooldown: WEAPON_STATS[info.kind].cooldown,
-        currentCooldown: player.weapon?.currentCooldown ?? 0,
-      };
-      quietly(player.aiPlayer !== undefined, () => notify(`Picked up ${SHOP_DEFS[info.kind as ShopKind].label}`));
-      sound.playSound('upgrade', p.x, p.y);
-      world.removeComponent(gun, 'weaponPickup');
-      world.addComponent(gun, 'removed', true);
-      break;
-    }
+  for (const gun of droppedGuns) {
+    if (gun.removed || age(gun)) continue;
+    const player = collectorOf(gun);
+    if (player) collect(player, gun);
   }
+}
+
+/** The first player close enough to pick the gun up who does not already have it. */
+function collectorOf(gun: Entity): Entity | null {
+  for (const player of collectors) if (canCollect(player, gun)) return player;
+  return null;
 }

@@ -42,6 +42,10 @@ const { cleanName } = await load('game/Settings');
 const { updateDeath } = await load('systems/DeathSystem');
 const { updateWeaponPickups, createWeaponPickup } = await load('systems/DeathDropSystem');
 const { coop } = await load('network/CoopSession');
+const { AI_GUN_DAMAGE, AI_DEATH_GOLD } = await load('ai/constants');
+const { findMobPath } = await load('systems/AISystem');
+const { attempt, attemptAsync, ensure, ValidationError, GameError, toGameError } = await load('core/errors/index');
+const { Log, LogLevel, useLog, activeLog, createLog } = await load('core/log/index');
 
 const centre = (t) => t * 32 + 16;
 const put = (level, x, y, type, extra = {}) => level.setTile(x, y, { ...createTile(type), ...extra });
@@ -1168,7 +1172,7 @@ test('the spatial index finds entities by kind within a radius', () => {
   assert.ok(nearby(100, 100, 40, ['player']).includes(p));
 });
 
-test('routes found with ngraph.path follow the cheapest tiles and go round walls', () => {
+test('routes found with Yuka A* follow the cheapest tiles and go round walls', () => {
   const level = new Level(16, 8);
   for (let y = 0; y < 7; y++) put(level, 8, y, TileType.Wall);
   const from = 2 + 3 * level.width;
@@ -1178,4 +1182,89 @@ test('routes found with ngraph.path follow the cheapest tiles and go round walls
   assert.equal(route.at(-1), goal);
   assert.ok(route.some((t) => t % level.width === 8 && Math.floor(t / level.width) === 7), 'went through the wall');
   assert.equal(route.length, field.dist[goal], 'the route costs what the distance field says');
+});
+
+/** Fires one shot from `shooter` along +x and returns the damage of the bullet it made. */
+function shotDamage(shooter, gun) {
+  shooter.weaponInventory.weapons = [gun];
+  shooter.weaponInventory.current = 0;
+  shooter.weapon = { type: gun, cooldown: 1, currentCooldown: 0 };
+  shooter.aimVector = { x: 1, y: 0 };
+  shooter.playerInput.shoot = true;
+  updateWeapons(1);
+  shooter.playerInput.shoot = false;
+  const shots = [...world.with('bullet')].filter((b) => b.bullet.ownerId === world.id(shooter));
+  for (const b of shots) world.remove(b);
+  return shots[0].bullet.damage;
+}
+
+test('computer gunfire hits 0/10/20/30 % harder from Easy to Insane, gun by gun; people deal base damage', () => {
+  const expected = { Easy: 1, Normal: 1.1, Hard: 1.2, Insane: 1.3 };
+  for (const gun of ['rifle', 'shotgun', 'raygun']) {
+    const base = BULLET_CONFIGS[{ rifle: 'rifle', shotgun: 'shotgun', raygun: 'ray' }[gun]].damage;
+    const person = createPlayer(centre(2), centre(2), Team.One);
+    assert.equal(shotDamage(person, gun), base, `${gun} for a person`);
+    for (const [difficulty, scale] of Object.entries(expected)) {
+      assert.equal(AI_GUN_DAMAGE[difficulty][gun], scale);
+      const ai = createPlayer(centre(2), centre(2), Team.Two);
+      world.addComponent(ai, 'aiPlayer', { character: 'lord_lard', difficulty });
+      assert.ok(Math.abs(shotDamage(ai, gun) - base * scale) < 1e-9, `${gun} on ${difficulty}`);
+    }
+  }
+});
+
+test('a computer player that dies is handed 3000 coins to rebuild with, after dropping its purse', () => {
+  const level = homeLevel();
+  const ai = computer(15, 8, 1000);
+  ai.health.current = 0;
+  updateDeath(level, 1);
+  assert.equal(AI_DEATH_GOLD, 3000);
+  assert.equal(ai.respawnTicks, 600);
+  assert.equal(ai.playerStats.score, 100 + AI_DEATH_GOLD, 'kept a tenth, plus the bonus');
+  const dropped = [...world.with('loot')].reduce((sum, c) => sum + c.loot.value, 0);
+  assert.equal(dropped, 900, 'the bonus is not spilled');
+  const person = richPlayer();
+  person.health.current = 0;
+  updateDeath(level, 1);
+  assert.equal(person.playerStats.score, 100, 'people get no bonus');
+});
+
+test('mobs path round walls with Yuka A*, and give up when walled off', () => {
+  const level = new Level(10, 6);
+  for (let y = 0; y < 5; y++) put(level, 5, y, TileType.Wall);
+  const path = findMobPath(level, { x: centre(2), y: centre(1) }, { x: centre(8), y: centre(1) });
+  assert.ok(path && path.length > 0);
+  assert.deepEqual(path.at(-1), { x: 8, y: 1 });
+  assert.ok(path.some((p) => p.x === 5 && p.y === 5), 'went round the bottom of the wall');
+  put(level, 5, 5, TileType.Wall);
+  assert.equal(findMobPath(level, { x: centre(2), y: centre(1) }, { x: centre(8), y: centre(1) }), undefined);
+});
+
+test('failures become typed GameErrors in Results, and log entries go to whichever sink is installed', async () => {
+  const bad = attempt(() => ensure(false, 'nope', { why: 'test' }));
+  assert.equal(bad.ok, false);
+  assert.ok(bad.error instanceof ValidationError);
+  assert.equal(bad.error.code, 'invalid-data');
+  assert.deepEqual(bad.error.context, { why: 'test' });
+  assert.deepEqual(attempt(() => 7), { ok: true, value: 7 });
+  const rejected = await attemptAsync(async () => { throw new TypeError('boom'); }, 'load-failed');
+  assert.ok(rejected.error instanceof GameError && rejected.error.code === 'load-failed' && rejected.error.cause instanceof TypeError);
+  assert.equal(toGameError('text').message, 'text');
+
+  class MemoryLog extends Log {
+    entries = [];
+    write(entry) { this.entries.push(entry); }
+  }
+  const previous = activeLog();
+  const memory = new MemoryLog(LogLevel.Info);
+  useLog(memory);
+  try {
+    const log = createLog('test');
+    log.debug('below the threshold');
+    log.warn('kept', { n: 1 });
+    assert.equal(memory.entries.length, 1);
+    assert.deepEqual([memory.entries[0].scope, memory.entries[0].message, memory.entries[0].context], ['test', 'kept', { n: 1 }]);
+  } finally {
+    useLog(previous);
+  }
 });

@@ -1,4 +1,8 @@
 import { assetUrl } from '../assets/assetUrl';
+import { LoadError, attemptAsync } from '../core/errors';
+import { createLog } from '../core/log';
+
+const log = createLog('audio');
 /**
  * Web Audio port of the Java ISoundPlayer. Music is queued as soon as it is
  * requested and is heard the moment the browser lets the AudioContext run
@@ -74,19 +78,19 @@ class SoundPlayer {
 
     await Promise.all(
       paths.map(async (path) => {
-        try {
-          const res = await fetch(assetUrl(path));
-          if (res.ok) {
-            const bytes = await res.arrayBuffer();
-            this.buffers.set(path, await ctx.decodeAudioData(bytes));
-            if (path === this.currentMusic && !this.music) this.playMusic(path, this.currentLoop);
-          }
-        } catch {
-          // A single unplayable clip must not break the whole game.
-        }
+        // A single unplayable clip must not break the whole game: it is logged and skipped.
+        const loaded = await attemptAsync(() => this.loadClip(ctx, path), 'load-failed');
+        if (!loaded.ok) log.warn('Sound clip unavailable', { path, reason: loaded.error.message });
         onClipDone?.();
       }),
     );
+  }
+
+  private async loadClip(ctx: AudioContext, path: string): Promise<void> {
+    const res = await fetch(assetUrl(path));
+    if (!res.ok) throw new LoadError(`HTTP ${res.status} loading ${path}`, { context: { path, status: res.status } });
+    this.buffers.set(path, await ctx.decodeAudioData(await res.arrayBuffer()));
+    if (path === this.currentMusic && !this.music) this.playMusic(path, this.currentLoop);
   }
 
   private context(): AudioContext {
@@ -118,7 +122,8 @@ class SoundPlayer {
     ctx.addEventListener('statechange', () => {
       if (ctx.state === 'running') detach();
     });
-    void ctx.resume().catch(() => {});
+    // Without a gesture the browser refuses; the listeners above retry on the first one.
+    void ctx.resume().catch(() => log.debug('Audio waits for a user gesture'));
   }
 
   /** Call from a click/keypress handler. Resumes the context if the browser suspended it. */

@@ -1,7 +1,7 @@
 import { q } from '../../world';
-import type { Entity } from '../../world';
+import type { Entity, ShopKind } from '../../world';
 import type { Level } from '../../level/Level';
-import { SHOP_DEFS } from '../../entities/ShopItemFactory';
+import { SHOP_DEFS, isShopKind } from '../../entities/ShopItemFactory';
 import type { ShopRole } from '../../entities/ShopItemFactory';
 import { INF, LOOT_DETOUR, RICH_LOOT, RICH_LOOT_DETOUR } from '../constants';
 import { centreX, centreY } from './geometry';
@@ -11,9 +11,7 @@ import type { Brain } from '../types';
 
 export function roleOfBuilding(e: Entity): ShopRole | null {
   const type = e.building?.type;
-  if (!type) return null;
-  const def = (SHOP_DEFS as Record<string, { role: ShopRole } | undefined>)[type];
-  return def?.role ?? null;
+  return isShopKind(type) ? SHOP_DEFS[type].role : null;
 }
 
 export function ownBuildings(entity: Entity, role: ShopRole): Entity[] {
@@ -27,7 +25,7 @@ export function treasureOf(): Entity | null {
 }
 
 /** Cheapest stall of a role it can afford, preferring the dearest (best) one. */
-export function stallFor(entity: Entity, role: ShopRole, budget: number, wanted?: (kind: string) => boolean): Entity | null {
+export function stallFor(entity: Entity, role: ShopRole, budget: number, wanted?: (kind: ShopKind) => boolean): Entity | null {
   let best: Entity | null = null;
   for (const stall of q.shopItems) {
     if (stall.team !== entity.team || stall.removed) continue;

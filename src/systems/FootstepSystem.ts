@@ -1,6 +1,8 @@
 import { world } from '../world';
 import { sound } from '../audio/SoundPlayer';
 
+const walkers = world.with('position', 'playerInput');
+
 /**
  * Ticks between steps (Java Player.playStepSound): 15 when walking, 25 when
  * carrying something, and 60% of either while sprinting.
@@ -11,7 +13,7 @@ const SPRINT_FACTOR = 0.6;
 
 /** Plays a step sound at a pace set by how the player is moving. */
 export function updateFootsteps(): void {
-  for (const player of world.with('position', 'playerInput')) {
+  for (const player of walkers) {
     const moving = (player.walkTime ?? 0) > 0 && !player.falling;
     if (!moving) {
       player.stepTimer = 0;

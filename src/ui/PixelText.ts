@@ -1,6 +1,6 @@
 import { Container, Sprite } from 'pixi.js';
 import type { Texture } from 'pixi.js';
-import { frameTexture } from '../render/Sheets';
+import { drawableSource, frameTexture } from '../render/Sheets';
 import { getTexture } from '../assets/AssetLoader';
 
 export type PixelTextAlign = 'left' | 'center' | 'right';
@@ -19,7 +19,7 @@ function glyphInk(): Ink[] {
   if (inkCache) return inkCache;
 
   const tex = getTexture(FONT);
-  const resource = tex.source?.resource as CanvasImageSource | undefined;
+  const resource = drawableSource(tex);
   if (!resource || tex.width === 0) return new Array<Ink>(256).fill({ left: 0, width: 5 });
 
   const canvas = document.createElement('canvas');
@@ -30,23 +30,22 @@ function glyphInk(): Ink[] {
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
   const ink: Ink[] = [];
-  for (let code = 0; code < 256; code++) {
-    const cx = (code % 16) * GLYPH;
-    const cy = Math.floor(code / 16) * GLYPH;
-    let min = GLYPH;
-    let max = -1;
-    for (let y = 0; y < GLYPH; y++) {
-      for (let x = 0; x < GLYPH; x++) {
-        if (data[((cy + y) * canvas.width + cx + x) * 4 + 3] > 0) {
-          if (x < min) min = x;
-          if (x > max) max = x;
-        }
-      }
-    }
-    ink.push(max < 0 ? { left: 0, width: SPACE_WIDTH - GLYPH_GAP } : { left: min, width: max - min + 1 });
-  }
+  for (let code = 0; code < 256; code++) ink.push(inkOf(data, canvas.width, (code % 16) * GLYPH, Math.floor(code / 16) * GLYPH));
   inkCache = ink;
   return ink;
+}
+
+/** The painted columns of the glyph whose cell starts at (cx, cy) in the font sheet's pixels. */
+function inkOf(data: Uint8ClampedArray, sheetWidth: number, cx: number, cy: number): Ink {
+  let min = GLYPH;
+  let max = -1;
+  for (let i = 0; i < GLYPH * GLYPH; i++) {
+    const x = i % GLYPH;
+    if (data[((cy + Math.floor(i / GLYPH)) * sheetWidth + cx + x) * 4 + 3] === 0) continue;
+    min = Math.min(min, x);
+    max = Math.max(max, x);
+  }
+  return max < 0 ? { left: 0, width: SPACE_WIDTH - GLYPH_GAP } : { left: min, width: max - min + 1 };
 }
 
 /** Punctuation outside the font sheet, drawn as its closest plain equivalent. */

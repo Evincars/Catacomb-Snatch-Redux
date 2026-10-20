@@ -1,6 +1,8 @@
 import { createTile, TileType, TILE_WIDTH, TILE_HEIGHT } from './TileType';
 import type { TileData } from './TileType';
-import { BB } from '../math/BB';
+import type { Rectangle } from 'pixi.js';
+import { BoxPool } from '../core/geometry';
+import { someTile } from './Grid';
 import { Team } from '../world';
 
 export type SpawnPoint = { x: number; y: number };
@@ -146,12 +148,7 @@ export class Level {
     const x1 = Math.floor((x + rx - 1) / TILE_WIDTH);
     const y0 = Math.floor((y - ry + 1) / TILE_HEIGHT);
     const y1 = Math.floor((y + ry - 1) / TILE_HEIGHT);
-    for (let ty = y0; ty <= y1; ty++) {
-      for (let tx = x0; tx <= x1; tx++) {
-        if (!this.getTile(tx, ty)?.buildable) return false;
-      }
-    }
-    return true;
+    return !someTile(x0, y0, x1, y1, (tx, ty) => !this.getTile(tx, ty)?.buildable);
   }
 
   setTile(x: number, y: number, tile: TileData): void {
@@ -175,44 +172,55 @@ export class Level {
     return tile === null ? false : tile.passable;
   }
 
-  /** Returns AABB obstacles for physics movement around the given world rect. */
-  getClipBBs(cx: number, cy: number, rx: number, ry: number): BB[] {
+  /** Collision boxes handed out by getClipBBs, reused call after call (an object pool). */
+  private readonly clipPool = new BoxPool();
+  private readonly clipBoxes: Rectangle[] = [];
+
+  /**
+   * Collision boxes of the map's edges and of every solid tile around the box centred at (cx, cy). The
+   * array and its boxes are reused by the next call: use them at once, never keep them.
+   */
+  getClipBBs(cx: number, cy: number, rx: number, ry: number): Rectangle[] {
     const W = this.width * TILE_WIDTH;
     const H = this.height * TILE_HEIGHT;
+    const pool = this.clipPool;
+    const result = this.clipBoxes;
+    pool.reset();
+    result.length = 0;
     // Hard map boundary walls — Java's Level.getClipBBs adds these explicitly
     // so entities can never leave the map regardless of tile types.
-    const result: BB[] = [
-      new BB(-TILE_WIDTH, 0, 0, H),
-      new BB(0, -TILE_HEIGHT, W, 0),
-      new BB(W, 0, W + TILE_WIDTH, H),
-      new BB(0, H, W, H + TILE_HEIGHT),
-    ];
-
+    result.push(
+      pool.between(-TILE_WIDTH, 0, 0, H),
+      pool.between(0, -TILE_HEIGHT, W, 0),
+      pool.between(W, 0, W + TILE_WIDTH, H),
+      pool.between(0, H, W, H + TILE_HEIGHT),
+    );
     const tx0 = Math.floor((cx - rx) / TILE_WIDTH) - 1;
     const ty0 = Math.floor((cy - ry) / TILE_HEIGHT) - 1;
     const tx1 = Math.ceil((cx + rx) / TILE_WIDTH) + 1;
     const ty1 = Math.ceil((cy + ry) / TILE_HEIGHT) + 1;
-
     for (let ty = ty0; ty <= ty1; ty++) {
-      for (let tx = tx0; tx <= tx1; tx++) {
-        const tile = this.getTile(tx, ty);
-        // A null tile is outside the map, which must block or entities walk into the void.
-        if (!tile || !tile.passable) {
-          // Walls stand 56px tall, so Java extends their box 6px above the tile;
-          // without this you can walk up into the base of a wall.
-          const topInset = !tile || tile.type === TileType.Wall ? WALL_CLIP_RISE : 0;
-          // Base pieces are slightly smaller than their tile (Java PlayerBaseLeft.addClipBBs).
-          const sideInset = tile?.type === TileType.PlayerBase ? BASE_CLIP_INSET : 0;
-          result.push(new BB(
-            tx * TILE_WIDTH + sideInset,
-            ty * TILE_HEIGHT - topInset + sideInset,
-            (tx + 1) * TILE_WIDTH - sideInset,
-            (ty + 1) * TILE_HEIGHT - sideInset,
-          ));
-        }
-      }
+      for (let tx = tx0; tx <= tx1; tx++) this.addTileClip(tx, ty);
     }
     return result;
+  }
+
+  /** Adds the collision box of one tile, if it blocks. */
+  private addTileClip(tx: number, ty: number): void {
+    const tile = this.getTile(tx, ty);
+    // A null tile is outside the map, which must block or entities walk into the void.
+    if (tile && tile.passable) return;
+    // Walls stand 56px tall, so Java extends their box 6px above the tile;
+    // without this you can walk up into the base of a wall.
+    const topInset = !tile || tile.type === TileType.Wall ? WALL_CLIP_RISE : 0;
+    // Base pieces are slightly smaller than their tile (Java PlayerBaseLeft.addClipBBs).
+    const sideInset = tile?.type === TileType.PlayerBase ? BASE_CLIP_INSET : 0;
+    this.clipBoxes.push(this.clipPool.between(
+      tx * TILE_WIDTH + sideInset,
+      ty * TILE_HEIGHT - topInset + sideInset,
+      (tx + 1) * TILE_WIDTH - sideInset,
+      (ty + 1) * TILE_HEIGHT - sideInset,
+    ));
   }
 
   inBaseArea(tx: number, ty: number): boolean {

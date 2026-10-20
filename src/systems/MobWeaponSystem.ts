@@ -5,6 +5,9 @@ import { createBullet } from '../entities/BulletFactory';
 import { TILE_WIDTH } from '../level/TileType';
 import { sound } from '../audio/SoundPlayer';
 
+const targets = world.with('position', 'playerInput', 'health');
+const spitters = world.with('position', 'mobType', 'ai', 'health');
+
 /** Mob kinds that spit poison, and how far and how often. */
 const SPITTERS: Record<string, { range: number; delay: number }> = {
   snake: { range: 6 * TILE_WIDTH, delay: 110 },
@@ -13,7 +16,7 @@ const SPITTERS: Record<string, { range: number; delay: number }> = {
 function nearestPlayer(from: { x: number; y: number }): Entity | null {
   let best: Entity | null = null;
   let bestDist = Infinity;
-  for (const p of world.with('position', 'playerInput', 'health')) {
+  for (const p of targets) {
     if (p.health!.current <= 0) continue;
     const d = Math.hypot(p.position!.x - from.x, p.position!.y - from.y);
     if (d < bestDist) {
@@ -26,7 +29,7 @@ function nearestPlayer(from: { x: number; y: number }): Entity | null {
 
 /** Snakes that can see a player spit green poison at them, with a jittered rhythm. */
 export function updateMobWeapons(level: Level): void {
-  for (const mob of world.with('position', 'mobType', 'ai', 'health')) {
+  for (const mob of spitters) {
     const spec = SPITTERS[mob.mobType!];
     if (!spec || mob.removed || mob.health!.current <= 0) continue;
     if ((mob.freezeTime ?? 0) > 0) continue;

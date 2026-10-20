@@ -1,9 +1,9 @@
 import { Container, Graphics, Sprite, Ticker } from 'pixi.js';
 import type { Application } from 'pixi.js';
 import type { Scene, SceneManager } from '../game/SceneManager';
-import { world, Team } from '../world';
+import { world, q, Team, playerInSlot, slottedCount } from '../world';
 import type { Entity, PlayerSlot, AIRole } from '../world';
-import type { Level } from '../level/Level';
+import type { Level, SpawnPoint } from '../level/Level';
 import { TILE_WIDTH, TILE_HEIGHT } from '../level/TileType';
 import { loadTmxLevel } from '../level/TmxLoader';
 import { buildLevelView } from '../level/TileRenderer';
@@ -38,18 +38,55 @@ import { bindingFor, keyLabel } from '../game/Settings';
 import { Scoreboard } from '../ui/Scoreboard';
 import { coop } from '../network/CoopSession';
 import { captureWorld, WorldReplica, restoreSettings } from '../game/WorldState';
+import type { WorldState } from '../game/WorldState';
+import { LoadError, NetworkError, StateError, ValidationError, attempt, report } from '../core/errors';
+import type { GameError } from '../core/errors';
 import { savedRun, saveMenu } from '../game/SaveStore';
 import { Level as RestorableLevel } from '../level/Level';
 import { updateInput } from '../systems/InputSystem';
 import { screenToWorld } from '../render/Camera';
 import { flushRemoved } from '../systems/DeathSystem';
 import { resetNameTags, updateNameTags } from '../systems/NameTagSystem';
-import { Mth } from '../math/Mth';
+import { aimToFacing8 } from '../render/Facing';
+import { exposeForDebugging } from '../core/debugHooks';
 
 /** Tiles of sight around the player, as in Java's Player.tick(). */
 const REVEAL_RADIUS = 5;
 
-const CHARACTERS: CharacterType[] = ['lord_lard', 'countess_cruller', 'herr_von_speck', 'duchess_donut'];
+const CHARACTERS: readonly CharacterType[] = ['lord_lard', 'countess_cruller', 'herr_von_speck', 'duchess_donut'];
+/** The original versus treasury target, two points per delivered pot. */
+const VERSUS_TARGET = 100;
+/** Where guests start relative to the host, by join order, so nobody stands inside anyone else. */
+const GUEST_OFFSETS: ReadonlyArray<readonly [number, number]> = [[0, 0], [16, 0], [-16, 0], [0, 16]];
+const GUEST_MINIMAP_COLOR = 0x80dfff;
+/** A guest's controls older than this are treated as let go. */
+const STALE_INPUT_MS = 500;
+
+const pricedStalls = world.with('shopItem', 'priceLabel');
+const upgradedHarvesters = world.with('harvester', 'upgradable');
+const hovered = world.with('hovered');
+
+/** Someone in the party is dead and not coming back, or gone. */
+function partyMemberLost(): boolean {
+  for (const e of q.slotted) {
+    if (e.removed || ((e.health?.current ?? 0) <= 0 && e.respawnTicks === undefined)) return true;
+  }
+  return false;
+}
+
+type Controls = NonNullable<Entity['playerInput']>;
+
+function noIntents(): Controls['intents'] {
+  return { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
+}
+
+/** Lets go of every key and button. */
+function releaseControls(input: Controls): void {
+  input.up = input.down = input.left = input.right = false;
+  input.shoot = input.use = input.sprint = false;
+  input.keyAim = null;
+  input.intents = noIntents();
+}
 
 export class InGameScene implements Scene {
   container: Container;
@@ -103,7 +140,7 @@ export class InGameScene implements Scene {
     loading.y = GAME_HEIGHT / 2;
     this.container.addChild(loading);
 
-    initInput(this.app.canvas as HTMLCanvasElement);
+    initInput(this.app.canvas);
 
     this.onKeyDown = (e: KeyboardEvent) => {
       if (this.finished) return;
@@ -146,10 +183,10 @@ export class InGameScene implements Scene {
       .catch((err: unknown) => {
         if (this.disposed) return;
         // A failed load used to leave a silent black screen; show it instead.
-        console.error('Failed to start level', err);
+        const error = report(err, 'Failed to start level', 'level');
         loading.destroy();
         this.container.removeChildren();
-        this.showLoadError(err);
+        this.showLoadError(error);
       });
   }
 
@@ -168,37 +205,10 @@ export class InGameScene implements Scene {
     this.replica.localSlot = coop.role ? this.slot : null;
     // Nobody else can join once the match is under way.
     if (coop.role === 'host') coop.lock();
-    if (snapshot) {
-      restoreSettings(snapshot);
-      this.hostPaused = coop.role === 'guest' && !!coop.latest?.paused;
-      this.lastTerrain = JSON.stringify(snapshot.level.tiles);
-      this.level = RestorableLevel.restore(snapshot.level);
-      this.replica.apply(snapshot);
-      if (coop.role !== 'guest') {
-        for (const harvester of world.with('harvester', 'upgradable')) applyUpgradeLevel(harvester);
-      }
-      savedRun.pending = null;
-    } else {
-      if (coop.role === 'guest') throw new Error('Waiting for the host world');
-      const { path } = gameState.selectedLevel;
-      if (!path) throw new Error('This level has no map file.');
-      if (gameState.opponentChoice === 'ai' && gameState.multiplayerMode !== 'enemy') {
-        gameState.opponent = 'ai';
-        // The computer never plays the same character as the people.
-        const others = CHARACTERS.filter(c => c !== gameState.selectedCharacter);
-        gameState.aiCharacter = others[Math.floor(Math.random() * others.length)];
-      } else {
-        gameState.opponent = 'none';
-      }
-      this.level = await loadTmxLevel(path, gameState.difficulty.shopCostMod);
-      if (this.disposed) return;
-      if (gameState.opponent === 'ai' && !this.level.getRandomSpawnPoint(Team.Two)) {
-        gameState.opponent = 'none';
-        notify('This map has no second base - playing without the computer');
-      }
-      this.level.targetScore = isVersus() ? 100 : gameState.targetScore;
-    }
-    if (import.meta.env.DEV) (window as unknown as { __level: Level }).__level = this.level;
+    if (snapshot) this.restore(snapshot);
+    else this.level = await this.openFreshLevel();
+    if (this.disposed) return;
+    exposeForDebugging({ __level: this.level });
 
     this.gameLayer.sortableChildren = true;
     this.container.addChild(this.gameLayer);
@@ -220,32 +230,14 @@ export class InGameScene implements Scene {
     const spawn =
       this.level.getRandomSpawnPoint(Team.One) ??
       { x: 2 * TILE_WIDTH, y: 2 * TILE_HEIGHT };
-    const slot = this.slot;
-    const existing = [...world.with('playerSlot')].find(e => e.playerSlot === slot);
-    this.player = existing ?? createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
-    world.addComponent(this.player, 'playerSlot', slot);
+    this.player = playerInSlot(this.slot) ?? createPlayer(spawn.x, spawn.y, Team.One, gameState.selectedCharacter);
+    world.addComponent(this.player, 'playerSlot', this.slot);
     world.removeComponent(this.player, 'remoteInput');
     if (coop.role === 'host') {
       this.setName(this.player, coop.nameOf('host') ?? coop.hostName);
-      const guestTeam = gameState.multiplayerMode === 'enemy' ? Team.Two : Team.One;
-      coop.guestSlots().forEach((guestSlot, index) => {
-        const base = guestTeam === Team.One ? spawn : this.level.getRandomSpawnPoint(guestTeam);
-        if (!base) throw new Error('This map has no second-player spawn point');
-        // Teammates start side by side rather than inside each other.
-        const dx = [0, 16, -16, 0][index + 1] ?? 0;
-        const dy = [0, 0, 0, 16][index + 1] ?? 0;
-        const guest = [...world.with('playerSlot')].find(e => e.playerSlot === guestSlot)
-          ?? createPlayer(base.x + dx, base.y + dy, guestTeam, gameState.selectedCharacter);
-        world.addComponent(guest, 'playerSlot', guestSlot);
-        world.addComponent(guest, 'remoteInput', true);
-        this.setName(guest, coop.nameOf(guestSlot) ?? guestSlot);
-        guest.minimapColor = 0x80dfff;
-      });
+      this.addGuests(spawn);
     } else if (!coop.role) {
-      // A restored single-player run only has a local host character.
-      for (const entity of world.with('playerSlot')) {
-        if (entity !== this.player && entity.playerInput) world.addComponent(entity, 'remoteInput', true);
-      }
+      this.markOthersRemote();
     }
     if (!snapshot && coop.role !== 'guest' && gameState.opponent === 'ai') this.addComputerOpponents();
     // Placed after the player so no nest lands within sight of the start.
@@ -253,28 +245,10 @@ export class InGameScene implements Scene {
 
     coop.onState = () => {
       if (coop.role !== 'guest' || !coop.latest || this.disposed) return;
-      try {
-        const { state, paused, scores, levelChanged } = coop.latest;
-        restoreSettings(state);
-        let dirty = false;
-        if (levelChanged) {
-          const terrain = JSON.stringify(state.level.tiles);
-          dirty = terrain !== this.lastTerrain;
-          this.lastTerrain = terrain;
-          this.level = RestorableLevel.restore(state.level);
-        }
-        if (scores) [this.level.player1Score, this.level.player2Score] = scores;
-        this.hostPaused = paused;
-        this.replica.apply(state);
-        const mine = [...world.with('playerSlot')].find(e => e.playerSlot === this.slot);
-        if (!mine) throw new Error('Host state has no character for this player');
-        this.player = mine;
-        if (dirty) this.rebuildTerrain();
-      } catch (error) {
-        console.error('Applying co-op state:', error);
-        this.finished = true;
-        this.showLoadError(error);
-      }
+      const applied = attempt(() => this.applyHostState(), 'network');
+      if (applied.ok) return;
+      this.finished = true;
+      this.showLoadError(report(applied.error, 'Applying co-op state failed', 'network'));
     };
     coop.onEnd = winner => this.end(winner);
     if (coop.role === 'host') {
@@ -288,9 +262,90 @@ export class InGameScene implements Scene {
     this.buildHud();
     // The crosshair stands in for the OS pointer while playing.
     this.container.addChild(this.crosshair.graphics);
-    (this.app.canvas as HTMLCanvasElement).style.cursor = 'none';
+    this.app.canvas.style.cursor = 'none';
     this.centerCameraOn(this.player.position!.x, this.player.position!.y);
     if (coop.role === 'host') this.sendWorld(false, true);
+  }
+
+  /** Picks up a saved run, or the world the host sent. */
+  private restore(snapshot: WorldState): void {
+    restoreSettings(snapshot);
+    this.hostPaused = coop.role === 'guest' && !!coop.latest?.paused;
+    this.lastTerrain = JSON.stringify(snapshot.level.tiles);
+    this.level = RestorableLevel.restore(snapshot.level);
+    this.replica.apply(snapshot);
+    savedRun.pending = null;
+    if (coop.role === 'guest') return;
+    for (const harvester of upgradedHarvesters) applyUpgradeLevel(harvester);
+  }
+
+  /** The computer joins unless this is an enemy match; it never plays the same character as the people. */
+  private chooseOpponent(): void {
+    if (gameState.opponentChoice !== 'ai' || gameState.multiplayerMode === 'enemy') {
+      gameState.opponent = 'none';
+      return;
+    }
+    gameState.opponent = 'ai';
+    const others = CHARACTERS.filter(c => c !== gameState.selectedCharacter);
+    gameState.aiCharacter = others[Math.floor(Math.random() * others.length)];
+  }
+
+  /** Loads the chosen map for a new run. */
+  private async openFreshLevel(): Promise<Level> {
+    if (coop.role === 'guest') throw new StateError('Waiting for the host world');
+    const { path } = gameState.selectedLevel;
+    if (!path) throw new LoadError('This level has no map file.', { context: { level: gameState.selectedLevel.name } });
+    this.chooseOpponent();
+    const level = await loadTmxLevel(path, gameState.difficulty.shopCostMod);
+    if (gameState.opponent === 'ai' && !level.getRandomSpawnPoint(Team.Two)) {
+      gameState.opponent = 'none';
+      notify('This map has no second base - playing without the computer');
+    }
+    level.targetScore = isVersus() ? VERSUS_TARGET : gameState.targetScore;
+    return level;
+  }
+
+  /** Every guest who joined gets a character: at the host's side, or at the other base in an enemy match. */
+  private addGuests(spawn: SpawnPoint): void {
+    const guestTeam = gameState.multiplayerMode === 'enemy' ? Team.Two : Team.One;
+    coop.guestSlots().forEach((guestSlot, index) => {
+      const base = guestTeam === Team.One ? spawn : this.level.getRandomSpawnPoint(guestTeam);
+      if (!base) throw new ValidationError('This map has no second-player spawn point');
+      // Teammates start side by side rather than inside each other.
+      const [dx, dy] = GUEST_OFFSETS[index + 1] ?? [0, 0];
+      const guest = playerInSlot(guestSlot) ?? createPlayer(base.x + dx, base.y + dy, guestTeam, gameState.selectedCharacter);
+      world.addComponent(guest, 'playerSlot', guestSlot);
+      world.addComponent(guest, 'remoteInput', true);
+      this.setName(guest, coop.nameOf(guestSlot) ?? guestSlot);
+      guest.minimapColor = GUEST_MINIMAP_COLOR;
+    });
+  }
+
+  /** A restored single-player run only has a local host character. */
+  private markOthersRemote(): void {
+    for (const entity of q.slotted) {
+      if (entity !== this.player && entity.playerInput) world.addComponent(entity, 'remoteInput', true);
+    }
+  }
+
+  /** A guest takes the host's latest world: settings, terrain when it changed, scores and entities. */
+  private applyHostState(): void {
+    const { state, paused, scores, levelChanged } = coop.latest!;
+    restoreSettings(state);
+    let dirty = false;
+    if (levelChanged) {
+      const terrain = JSON.stringify(state.level.tiles);
+      dirty = terrain !== this.lastTerrain;
+      this.lastTerrain = terrain;
+      this.level = RestorableLevel.restore(state.level);
+    }
+    if (scores) [this.level.player1Score, this.level.player2Score] = scores;
+    this.hostPaused = paused;
+    this.replica.apply(state);
+    const mine = playerInSlot(this.slot);
+    if (!mine) throw new NetworkError('Host state has no character for this player');
+    this.player = mine;
+    if (dirty) this.rebuildTerrain();
   }
 
   private sendWorld(paused: boolean, withLevel: boolean): void {
@@ -335,14 +390,14 @@ export class InGameScene implements Scene {
     syncWalls(this.level);
   };
 
-  private showLoadError(err: unknown): void {
+  private showLoadError(err: GameError): void {
     const title = makeTitle('Could not load level');
     title.x = GAME_WIDTH / 2;
     title.y = 70;
     this.container.addChild(title);
 
     const detail = makeText(
-      `${gameState.selectedLevel.name}\n${err instanceof Error ? err.message : String(err)}`,
+      `${gameState.selectedLevel.name}\n${err.message}`,
       0xff8888,
       8,
       'center',
@@ -371,7 +426,7 @@ export class InGameScene implements Scene {
   private updatePrompt(): void {
     this.hud.setNotices(takeNotices().map((n) => n.text));
 
-    const hover = world.with('hovered').first ?? null;
+    const hover = hovered.first ?? null;
     const target = targetOf(this.player);
     this.hud.setHint((hover ?? target)?.tooltip?.title ?? '');
 
@@ -406,7 +461,7 @@ export class InGameScene implements Scene {
     this.paused = !this.paused;
     this.mainConfirmation = null;
     this.overlay.removeChildren().forEach((c) => c.destroy({ children: true }));
-    const canvas = this.app.canvas as HTMLCanvasElement;
+    const canvas = this.app.canvas;
     this.crosshair.graphics.visible = !this.paused;
     canvas.style.cursor = this.paused ? '' : 'none';
     resetInput();
@@ -559,8 +614,6 @@ export class InGameScene implements Scene {
     if (coop.role === 'guest') flushRemoved();
 
     const pos = this.player.position;
-    const stats = this.player.playerStats;
-    const health = this.player.health;
 
     if (pos) {
       this.centerCameraOn(pos.x, pos.y);
@@ -571,18 +624,13 @@ export class InGameScene implements Scene {
         REVEAL_RADIUS,
       );
     }
-    if (coop.role === 'host') {
-      for (const teammate of world.with('playerSlot', 'position')) {
-        this.level.reveal(Math.floor(teammate.position!.x / TILE_WIDTH),
-          Math.floor(teammate.position!.y / TILE_HEIGHT), REVEAL_RADIUS);
-      }
-    }
+    if (coop.role === 'host') this.revealAroundTeam();
     this.darkness.update(this.level);
 
     this.hud.update(this.player, this.level);
     this.scoreboard.update(this.scoreboardHeld && !this.console.visible, this.player);
     // The other side's stalls are not for sale to this player, so their prices stay hidden.
-    for (const stall of world.with('shopItem', 'priceLabel')) stall.priceLabel!.visible = stall.team === this.player.team;
+    for (const stall of pricedStalls) stall.priceLabel!.visible = stall.team === this.player.team;
     this.respawnLabel.text = this.player.respawnTicks !== undefined
       ? `Respawning in ${Math.ceil(this.player.respawnTicks / 60)}...` : '';
     this.weaponBar.update(this.player);
@@ -594,63 +642,73 @@ export class InGameScene implements Scene {
       this.hud.setPrompt(this.hostPaused ? 'Host paused the game' : coop.status);
     }
 
-    // The player entity is removed by DeathSystem once health hits zero.
+    // The guest's screen follows the host's verdict.
     if (coop.role === 'guest') return;
-    if (coop.role === 'host' && ([...world.with('playerSlot')].some(e =>
-      ((e.health?.current ?? 0) <= 0 && e.respawnTicks === undefined) || e.removed)
-      || [...world.with('playerSlot')].length < 2)) {
-      this.end(0);
-    } else if (isVersus()) {
-      // Versus play goes on through deaths; the first side to fill its treasury wins.
-      if (this.level.player1Score >= this.level.targetScore) this.end(Team.One);
-      else if (this.level.player2Score >= this.level.targetScore) this.end(Team.Two);
-    } else if (!health || health.current <= 0 || this.player.removed) {
-      this.end(0);
-    } else if (stats
-      && [...world.with('playerSlot', 'playerStats')].reduce((sum, p) => sum + p.playerStats!.score, 0) >= this.level.targetScore) {
-      this.end(Team.One);
+    const winner = this.outcome();
+    if (winner !== null) this.end(winner);
+  }
+
+  private revealAroundTeam(): void {
+    for (const teammate of q.slotted) {
+      const p = teammate.position;
+      if (p) this.level.reveal(Math.floor(p.x / TILE_WIDTH), Math.floor(p.y / TILE_HEIGHT), REVEAL_RADIUS);
     }
+  }
+
+  /**
+   * Whether the match is over, and who won (0 for nobody): a co-op party falls apart when anyone dies for
+   * good or leaves; versus play goes on through deaths until one side fills its treasury; a lone run ends
+   * when the player dies (DeathSystem removes them) or the party's purse reaches the target.
+   */
+  private outcome(): number | null {
+    if (coop.role === 'host') {
+      if (slottedCount() < 2 || partyMemberLost()) return 0;
+    }
+    if (isVersus()) {
+      if (this.level.player1Score >= this.level.targetScore) return Team.One;
+      return this.level.player2Score >= this.level.targetScore ? Team.Two : null;
+    }
+    const health = this.player.health;
+    if (!health || health.current <= 0 || this.player.removed) return 0;
+    let purse = 0;
+    for (const p of q.slotted) purse += p.playerStats?.score ?? 0;
+    return this.player.playerStats && purse >= this.level.targetScore ? Team.One : null;
   }
 
   private sendGuestInput(idle: boolean): void {
     updateInput(1);
     const input = structuredClone(this.player.playerInput!);
-    if (idle || this.player.respawnTicks !== undefined) {
-      input.up = input.down = input.left = input.right = input.shoot = input.use = input.sprint = false;
-      input.keyAim = null;
-      input.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
-    }
+    if (idle || this.player.respawnTicks !== undefined) releaseControls(input);
     const aim = screenToWorld(input.mouseX, input.mouseY);
     const pos = this.player.position!;
     const dx = aim.x - pos.x, dy = aim.y - pos.y;
     const length = Math.hypot(dx, dy) || 1;
     this.player.aimVector = input.keyAim ?? { x: dx / length, y: dy / length };
-    this.player.facing = Mth.aimToFacing8(this.player.aimVector.x, this.player.aimVector.y);
+    this.player.facing = aimToFacing8(this.player.aimVector.x, this.player.aimVector.y);
     coop.sendInput({ input, aim, sequence: this.inputSequence++ });
   }
 
   private applyGuestInput(): void {
     for (const slot of coop.guestSlots()) {
-      const guest = [...world.with('playerSlot')].find(e => e.playerSlot === slot);
+      const guest = playerInSlot(slot);
       if (!guest?.playerInput) continue;
       const { frame, at } = coop.inputOf(slot);
-      if (!frame || performance.now() - at > 500) {
-        guest.playerInput.up = guest.playerInput.down = guest.playerInput.left = guest.playerInput.right = false;
-        guest.playerInput.shoot = guest.playerInput.use = guest.playerInput.sprint = false;
-        guest.playerInput.keyAim = null;
-        guest.playerInput.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
+      // Controls that stopped arriving are let go of, rather than held down for ever.
+      if (!frame || performance.now() - at > STALE_INPUT_MS) {
+        releaseControls(guest.playerInput);
         continue;
       }
       guest.playerInput = structuredClone(frame.input);
       guest.aimWorld = frame.aim;
-      frame.input.intents = { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
+      // Button presses count once; the next stale tick must not repeat them.
+      frame.input.intents = noIntents();
     }
   }
 
   /** A guest who left takes their character with them; what they carried is left on the floor. */
   private removeDeparted(): void {
     for (const slot of this.departed.splice(0)) {
-      const leaver = [...world.with('playerSlot')].find(e => e.playerSlot === slot);
+      const leaver = playerInSlot(slot);
       if (!leaver) continue;
       notify(`${leaver.playerName ?? 'A player'} left the game`);
       const held = leaver.carryingId !== undefined ? world.entity(leaver.carryingId) : undefined;
@@ -682,7 +740,7 @@ export class InGameScene implements Scene {
     this.crosshair.destroy();
     this.tooltip.destroy();
     this.weaponBar.destroy();
-    (this.app.canvas as HTMLCanvasElement).style.cursor = '';
+    this.app.canvas.style.cursor = '';
     clearSprites();
     this.container.destroy({ children: true });
   }

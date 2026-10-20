@@ -4,7 +4,7 @@ import type { Scene, SceneManager } from '../game/SceneManager';
 import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
-import { settings, saveSettings, resetBindings, codeLabel, ACTION_LABELS } from '../game/Settings';
+import { settings, saveSettings, resetBindings, codeLabel, ACTION_LABELS, ACTION_NAMES } from '../game/Settings';
 import type { ActionName } from '../game/Settings';
 
 /** Laid out in two columns matching the original key bindings screen. */
@@ -21,6 +21,13 @@ const ROW_H = 28;
 const BTN_W = 120;
 const BTN_H = 22;
 const TOP = 72;
+
+/** Binds a key to an action, clearing it from any other action so bindings stay unique. */
+function bind(action: ActionName, code: string): void {
+  for (const other of ACTION_NAMES) if (other !== action && settings.bindings[other] === code) settings.bindings[other] = '';
+  settings.bindings[action] = code;
+  saveSettings();
+}
 
 export class KeyBindingsScene implements Scene {
   container: Container;
@@ -70,16 +77,7 @@ export class KeyBindingsScene implements Scene {
     this.onKeyDown = (e: KeyboardEvent) => {
       if (!this.capturing) return;
       e.preventDefault();
-      if (e.code !== 'Escape') {
-        // Clear the key from any other action so bindings stay unique.
-        for (const action of Object.keys(settings.bindings) as ActionName[]) {
-          if (action !== this.capturing && settings.bindings[action] === e.code) {
-            settings.bindings[action] = '';
-          }
-        }
-        settings.bindings[this.capturing] = e.code;
-        saveSettings();
-      }
+      if (e.code !== 'Escape') bind(this.capturing, e.code);
       this.capturing = null;
       this.refresh();
     };

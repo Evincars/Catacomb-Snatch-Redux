@@ -1,6 +1,7 @@
 import { Container, Graphics } from 'pixi.js';
 import type { Scene, SceneManager } from '../game/SceneManager';
-import { deleteSave, readSaves, savedRun, saveMenu, writeSave } from '../game/SaveStore';
+import { deleteSave, loadSaves, savedRun, saveMenu, writeSave } from '../game/SaveStore';
+import { attempt, report } from '../core/errors';
 import type { SavedGame } from '../game/SaveStore';
 import type { WorldState } from '../game/WorldState';
 import { makeText, makeTitle } from '../ui/PixelText';
@@ -13,9 +14,10 @@ export class SavesScene implements Scene {
   private error = '';
   private disposed = false;
   constructor(private manager: SceneManager, private state?: WorldState) { this.draw(); }
+  /** Runs a save-list action; a failure is logged and shown on screen instead of thrown. */
   private attempt(action: () => void): void {
-    try { action(); this.error = ''; }
-    catch (error) { console.error('Saved games:', error); this.error = error instanceof Error ? error.message : String(error); }
+    const result = attempt(action);
+    this.error = result.ok ? '' : report(result.error, 'Saved game action failed', 'saves').message;
     if (!this.disposed) this.draw();
   }
   private button(label: string, x: number, y: number, width: number, action: () => void): void {
@@ -29,9 +31,9 @@ export class SavesScene implements Scene {
     this.container.addChild(background);
     const title = makeTitle(this.state ? 'Save game' : 'Saved games');
     title.x = 256; title.y = 24; this.container.addChild(title);
-    let saves: SavedGame[] = [];
-    try { saves = readSaves(); }
-    catch (error) { console.error('Reading saves:', error); this.error = error instanceof Error ? error.message : String(error); }
+    const loaded = loadSaves();
+    const saves: SavedGame[] = loaded.ok ? loaded.value : [];
+    if (!loaded.ok) this.error = report(loaded.error, 'Reading saves failed', 'saves').message;
     this.page = Math.min(this.page, Math.max(0, Math.ceil(saves.length / 4) - 1));
     saves.slice(this.page * 4, this.page * 4 + 4).forEach((save, i) => {
       const y = 78 + i * 57;
@@ -39,15 +41,7 @@ export class SavesScene implements Scene {
       const label = `${save.name} ${mode}${save.state.settings.opponent === 'ai' ? ' (VS AI)' : ''}`;
       const text = makeText(`${label.length > 32 ? label.slice(0, 29) + '...' : label}\n${save.updatedAt.slice(0, 16).replace('T', ' ')}`, 0xffdd88);
       text.x = 24; text.y = y; this.container.addChild(text);
-      this.button(this.state ? 'Replace' : 'Load', 305, y, 86, () => this.attempt(() => {
-        if (this.state) {
-          if (window.confirm(`Overwrite "${save.name}"?`)) writeSave(save.name, this.state, coop.role === 'host', save.id);
-        } else {
-          savedRun.pending = save;
-          if (save.coop) this.manager.goto('coop_host');
-          else { coop.close(); this.manager.goto('in_game'); }
-        }
-      }));
+      this.button(this.state ? 'Replace' : 'Load', 305, y, 86, () => this.attempt(() => this.pick(save)));
       this.button('Delete', 402, y, 86, () => this.attempt(() => {
         if (window.confirm(`Delete "${save.name}"?`)) deleteSave(save.id);
       }));
@@ -64,6 +58,21 @@ export class SavesScene implements Scene {
     this.button('Back', 360, 310, 128, () => this.manager.back('title'));
     const error = makeText(this.error.slice(0, 58), 0xff8888); error.x = 24; error.y = 354; this.container.addChild(error);
   }
+  /** Overwrites the save with the game in progress, or loads it. */
+  private pick(save: SavedGame): void {
+    if (this.state) {
+      if (window.confirm(`Overwrite "${save.name}"?`)) writeSave(save.name, this.state, coop.role === 'host', save.id);
+      return;
+    }
+    savedRun.pending = save;
+    if (save.coop) {
+      this.manager.goto('coop_host');
+      return;
+    }
+    coop.close();
+    this.manager.goto('in_game');
+  }
+
   destroy(): void {
     this.disposed = true;
     if (this.state) saveMenu.state = null;

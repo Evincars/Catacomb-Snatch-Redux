@@ -23,7 +23,17 @@ const SAMPLE_STEP = 6;
 /** Pixels at which people crowding each other start to push apart. */
 const PERSONAL_SPACE = 26;
 
-type Body = { vehicle: Vehicle; path: Path; follow: FollowPathBehavior; separation: SeparationBehavior };
+/** Waypoints handed to the path behaviour each tick: the far point in sight and the next few tiles. */
+const WAYPOINTS = 3;
+
+type Body = {
+  vehicle: Vehicle;
+  path: Path;
+  follow: FollowPathBehavior;
+  separation: SeparationBehavior;
+  /** Reused every tick, so walking allocates nothing. */
+  waypoints: Vector3[];
+};
 const bodies = new WeakMap<Entity, Body>();
 const neighbourPool: Vehicle[] = [];
 const force = new Vector3();
@@ -40,10 +50,23 @@ function bodyOf(entity: Entity): Body {
     separation.weight = 0.6;
     vehicle.steering.add(follow);
     vehicle.steering.add(separation);
-    body = { vehicle, path, follow, separation };
+    const waypoints = Array.from({ length: WAYPOINTS }, () => new Vector3());
+    body = { vehicle, path, follow, separation, waypoints };
     bodies.set(entity, body);
   }
   return body;
+}
+
+const BODY_CORNERS = [[-BODY, -BODY], [BODY, -BODY], [-BODY, BODY], [BODY, BODY]] as const;
+
+/** Whether a body centred at (x, y) touches nothing but plain floor. */
+function bodyFits(level: Level, cost: Float32Array, x: number, y: number): boolean {
+  for (const [ox, oy] of BODY_CORNERS) {
+    const tx = Math.floor((x + ox) / TILE_WIDTH);
+    const ty = Math.floor((y + oy) / TILE_WIDTH);
+    if (tx < 0 || ty < 0 || tx >= level.width || ty >= level.height || cost[tx + ty * level.width] > 1) return false;
+  }
+  return true;
 }
 
 /** Whether a body can walk the straight line between two points without touching a wall, pit edge or obstacle. */
@@ -51,13 +74,7 @@ function clearLine(level: Level, cost: Float32Array, ax: number, ay: number, bx:
   const length = Math.hypot(bx - ax, by - ay);
   const steps = Math.max(1, Math.ceil(length / SAMPLE_STEP));
   for (let i = 1; i <= steps; i++) {
-    const x = ax + ((bx - ax) * i) / steps;
-    const y = ay + ((by - ay) * i) / steps;
-    for (const [ox, oy] of [[-BODY, -BODY], [BODY, -BODY], [-BODY, BODY], [BODY, BODY]]) {
-      const tx = Math.floor((x + ox) / TILE_WIDTH);
-      const ty = Math.floor((y + oy) / TILE_WIDTH);
-      if (tx < 0 || ty < 0 || tx >= level.width || ty >= level.height || cost[tx + ty * level.width] > 1) return false;
-    }
+    if (!bodyFits(level, cost, ax + ((bx - ax) * i) / steps, ay + ((by - ay) * i) / steps)) return false;
   }
   return true;
 }
@@ -87,10 +104,10 @@ export function drive(level: Level, entity: Entity, brain: Brain, out: Controls)
   body.path.clear();
   let endX = pos.x;
   let endY = pos.y;
-  for (let i = aim; i < Math.min(brain.path.length, aim + 3); i++) {
+  for (let i = aim; i < Math.min(brain.path.length, aim + WAYPOINTS); i++) {
     endX = centreX(brain.path[i] % w);
     endY = centreY(Math.floor(brain.path[i] / w));
-    body.path.add(new Vector3(endX, 0, endY));
+    body.path.add(body.waypoints[i - aim].set(endX, 0, endY));
   }
   const vehicle = body.vehicle;
   vehicle.position.set(pos.x, 0, pos.y);

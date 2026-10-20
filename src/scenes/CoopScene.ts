@@ -8,6 +8,7 @@ import { NameField } from '../ui/NameField';
 import { gameState } from '../game/GameState';
 import { settings } from '../game/Settings';
 import { GAME_WIDTH, GAME_HEIGHT } from '../render/Camera';
+import { attempt, attemptAsync, report, StateError } from '../core/errors';
 
 export class CoopScene implements Scene {
   container = new Container();
@@ -18,7 +19,7 @@ export class CoopScene implements Scene {
   private place: () => void;
 
   constructor(private manager: SceneManager, role: 'host' | 'guest', destination?: string) {
-    const canvas = manager.application.canvas as HTMLCanvasElement;
+    const canvas = manager.application.canvas;
     const title = makeTitle(role === 'host' ? 'Host multiplayer' : 'Join multiplayer');
     title.x = 256; title.y = 30;
     this.container.addChild(title);
@@ -63,21 +64,18 @@ export class CoopScene implements Scene {
     window.addEventListener('resize', this.place);
     this.place();
 
+    const copyInvite = async () => {
+      if (!coop.invite) throw new StateError('Invite is not ready yet');
+      await navigator.clipboard.writeText(coop.invite);
+      status.text = 'Invite copied. Send it to the other players.';
+    };
+    const connect = async () => {
+      await coop.open('guest', invitePeer(this.input.value));
+      watch();
+    };
     const action = this.button(role === 'host' ? 'Copy invite' : 'Connect', 136, async () => {
-      try {
-        if (role === 'host') {
-          if (!coop.invite) throw new Error('Invite is not ready yet');
-          await navigator.clipboard.writeText(coop.invite);
-          status.text = 'Invite copied. Send it to the other players.';
-        } else {
-          const peer = invitePeer(this.input.value);
-          await coop.open('guest', peer);
-          watch();
-        }
-      } catch (error) {
-        console.error('Co-op lobby:', error);
-        status.text = error instanceof Error ? error.message : String(error);
-      }
+      const done = await attemptAsync(role === 'host' ? copyInvite : connect, 'network');
+      if (!done.ok) showError(done.error);
     });
 
     // Everyone sets the name the others will see above their character.
@@ -121,8 +119,7 @@ export class CoopScene implements Scene {
       coop.close(); savedRun.pending = null; manager.goto('title');
     });
     const showError = (error: unknown) => {
-      console.error('Co-op lobby:', error);
-      status.text = error instanceof Error ? error.message : String(error);
+      status.text = report(error, 'Co-op lobby', 'network').message;
     };
     if (role === 'host') {
       void coop.open('host').catch(showError);
@@ -130,8 +127,9 @@ export class CoopScene implements Scene {
       watch();
     } else if (destination) {
       this.input.value = destination;
-      try { void coop.open('guest', invitePeer(destination)).catch(showError); }
-      catch (error) { showError(error); }
+      const peer = attempt(() => invitePeer(destination));
+      if (peer.ok) void coop.open('guest', peer.value).catch(showError);
+      else showError(peer.error);
       watch();
     } else status.text = 'Paste the link your host sent you.';
 

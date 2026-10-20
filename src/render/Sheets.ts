@@ -139,6 +139,15 @@ export function frameTexture(key: string, col: number, row: number): Texture {
   return tex;
 }
 
+/** The pixels behind a texture, if they can be drawn onto a 2D canvas (an image, bitmap or canvas). */
+export function drawableSource(texture: Texture): CanvasImageSource | null {
+  const resource: unknown = texture.source?.resource;
+  if (typeof ImageBitmap !== 'undefined' && resource instanceof ImageBitmap) return resource;
+  if (typeof HTMLImageElement !== 'undefined' && resource instanceof HTMLImageElement) return resource;
+  if (typeof HTMLCanvasElement !== 'undefined' && resource instanceof HTMLCanvasElement) return resource;
+  return null;
+}
+
 const whiteSheets = new Map<string, Texture>();
 const whiteFrames = new Map<string, Texture>();
 
@@ -148,7 +157,7 @@ function whiteSheet(key: string): Texture | null {
   if (hit) return hit;
 
   const base = getTexture(key);
-  const resource = base.source?.resource as CanvasImageSource | undefined;
+  const resource = drawableSource(base);
   if (!resource || base.width === 0) return null;
 
   const canvas = document.createElement('canvas');

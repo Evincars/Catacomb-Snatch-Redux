@@ -3,10 +3,20 @@ import { ART_COUNT, loadAllAssets } from './assets/AssetLoader';
 import { sound } from './audio/SoundPlayer';
 import { settings } from './game/Settings';
 import { Game } from './game/Game';
+import { errorMessage, installGlobalErrorHandlers, report } from './core/errors';
+
+/** An error and every `cause` behind it, innermost last, each with its stack. */
+function describe(err: unknown): string {
+  const parts: string[] = [];
+  for (let e: unknown = err; e !== undefined && parts.length < 5; e = e instanceof Error ? e.cause : undefined) {
+    parts.push(e instanceof Error ? `${e.message}\n${e.stack ?? ''}` : errorMessage(e));
+  }
+  return parts.join('\nCaused by: ');
+}
 
 function showFatal(err: unknown): void {
   document.getElementById('loading')?.remove();
-  const msg = err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err);
+  const msg = describe(err);
   const pre = document.createElement('pre');
   pre.style.cssText = 'color:#f88;font:12px monospace;padding:16px;white-space:pre-wrap';
   pre.textContent = `Catacomb Snatch failed to start:\n\n${msg}`;
@@ -23,6 +33,7 @@ function showProgress(fraction: number): void {
 }
 
 async function main(): Promise<void> {
+  installGlobalErrorHandlers();
   // Everything here is pixel art drawn at 2x; smoothing only blurs it.
   TextureSource.defaultOptions.scaleMode = 'nearest';
 
@@ -57,7 +68,6 @@ async function main(): Promise<void> {
   document.getElementById('loading')?.remove();
 }
 
-main().catch((err) => {
-  console.error(err);
-  showFatal(err);
+main().catch((err: unknown) => {
+  showFatal(report(err, 'Catacomb Snatch failed to start', 'boot'));
 });

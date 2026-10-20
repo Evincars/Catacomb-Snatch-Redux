@@ -2,6 +2,7 @@ import { World } from 'miniplex';
 import type { Sprite, Container, Graphics } from 'pixi.js';
 import type { PixelLabel } from './ui/PixelText';
 import type { CharacterType } from './entities/PlayerFactory';
+import type { WeaponKind } from './entities/WeaponStats';
 
 export const enum Team {
   Neutral = 0,
@@ -27,7 +28,10 @@ export type PlayerIntents = {
   upgrade: boolean;
 };
 
-export type ShopKind = 'turret' | 'harvester' | 'bomb' | 'rifle' | 'shotgun' | 'raygun';
+/** Buildings sold at a stall, carried off and placed. */
+export type BuildingKind = 'turret' | 'harvester' | 'bomb';
+
+export type ShopKind = BuildingKind | WeaponKind;
 
 /** The host plus up to three guests; 'guest' is the first guest, as in older saves. */
 export type PlayerSlot = 'host' | 'guest' | 'guest2' | 'guest3';
@@ -168,11 +172,11 @@ export type Entity = {
 
   // --- weapon ---
   weapon?: {
-    type: string;
+    type: WeaponKind;
     cooldown: number;
     currentCooldown: number;
   };
-  weaponInventory?: { weapons: string[]; current: number };
+  weaponInventory?: { weapons: WeaponKind[]; current: number };
 
   // --- money ---
   money?: { amount: number; max: number };
@@ -181,7 +185,7 @@ export type Entity = {
   buffs?: Array<{ type: 'poison' | 'troll_perk'; duration: number; strength: number }>;
 
   /** A gun a fallen player left on the ground; anyone without that gun can pick it up. */
-  weaponPickup?: { kind: string; age: number; life: number };
+  weaponPickup?: { kind: WeaponKind; age: number; life: number };
 
   // --- loot ---
   loot?: {
@@ -235,7 +239,7 @@ export type Entity = {
   /** Set while the pointer is over it. */
   hovered?: true;
   /** Runtime corner brackets drawn around a targeted entity; owned by MarkerSystem. */
-  marker?: Container;
+  marker?: Graphics;
   /** Ticks left to keep the range circle visible; refreshed while the entity is focused or carried. */
   rangeTicks?: number;
   /** Runtime range circle and the radius it was drawn for; owned by RangeSystem. */
@@ -364,4 +368,16 @@ export const q = {
   walls:         world.with('position', 'wallTile'),
   rangeViews:    world.with('position', 'rangeTicks'),
   ephemerals:    world.with('position', 'ephemeral'),
+  slotted:       world.with('playerSlot'),
 };
+
+/** The character playing in a slot, if anyone is. */
+export function playerInSlot(slot: PlayerSlot): Entity | undefined {
+  for (const e of q.slotted) if (e.playerSlot === slot) return e;
+  return undefined;
+}
+
+/** How many people's characters are in the match. */
+export function slottedCount(): number {
+  return q.slotted.size;
+}

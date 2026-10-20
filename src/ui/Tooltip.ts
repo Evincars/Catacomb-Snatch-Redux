@@ -8,6 +8,9 @@ import { keyLabel } from '../game/Settings';
 import { PixelLabel } from './PixelText';
 import { targetOf } from '../systems/TargetingSystem';
 
+const hovered = world.with('position', 'hovered');
+const targeted = world.with('position', 'targeted');
+
 const TITLE_COLOR = 0xffd860;
 const LINE_COLOR = 0xffffff;
 const UPGRADE_COLOR = 0x7fe05a;
@@ -59,8 +62,8 @@ export class TooltipView {
   }
 
   update(player?: Entity): void {
-    const entity = world.with('position', 'hovered').first
-      ?? (player ? targetOf(player) : world.with('position', 'targeted').first) ?? null;
+    const entity = hovered.first
+      ?? (player ? targetOf(player) : targeted.first) ?? null;
     const content = entity ? describe(entity) : null;
     if (!entity || !content) {
       this.container.visible = false;

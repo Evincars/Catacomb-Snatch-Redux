@@ -1,12 +1,14 @@
 import { world, q, Team } from '../world';
 import type { Level } from '../level/Level';
 import type { AIDifficulty } from '../game/GameState';
+import type { Entity } from '../world';
+import type { Brain } from './types';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { brainOf, profileOf } from './brain';
 import { think } from './decision/think';
 import { clearIntents, control } from './execution/control';
 import { enemiesNear, mobsNear, pickEnemy, pickHidden, rivalsInSight } from './perception/awareness';
-import { clearOfBlast } from './perception/demolition';
+import { threateningBomb } from './perception/demolition';
 import { alive } from './perception/geometry';
 import { beginPerception } from './perception/spatial';
 
@@ -36,6 +38,73 @@ export function openingCoins(profile: AIDifficulty): number {
   return Math.max(STARTING_GOLD, needed);
 }
 
+const computers = world.with('aiPlayer', 'playerInput', 'position', 'playerStats', 'weaponInventory', 'health');
+
+function releaseKeys(entity: Entity): void {
+  const pi = entity.playerInput!;
+  clearIntents(entity);
+  pi.up = pi.down = pi.left = pi.right = pi.shoot = pi.sprint = false;
+}
+
+/** Dead, respawning or falling: it plays no part this tick. */
+function outOfPlay(entity: Entity): boolean {
+  return entity.respawnTicks !== undefined || entity.falling !== undefined || entity.health!.current <= 0;
+}
+
+/** Plans made before dying are stale. */
+function forgetPlans(brain: Brain): void {
+  brain.goal = null;
+  brain.path = [];
+  brain.enemyId = undefined;
+  brain.think = 0;
+}
+
+/**
+ * Something that cannot wait for the next plan: a lit bomb about to catch it, health low with enemies
+ * close, or a load in hand when a rival or a mob closes in (down it goes at once).
+ */
+function needsReplan(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): boolean {
+  if (threateningBomb(entity) && brain.goal?.name !== 'escape blast') return true;
+  const health = entity.health!;
+  const carrying = entity.carryingId !== undefined;
+  if (!carrying && health.current < health.max * profile.retreatHealth && enemiesNear(entity, 160)
+    && brain.goal?.name !== 'retreat') return true;
+  if (!carrying || brain.age % 4 !== 0 || brain.goal?.name === 'stash fight') return false;
+  if (world.entity(entity.carryingId!)?.bomb !== undefined) return false;
+  return mobsNear(level, entity, 72) > 0 || rivalsInSight(level, entity, profile.engageRange) > 0;
+}
+
+/** Spotting enemies happens more often than planning, but still with a reaction delay. */
+function spotEnemy(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): void {
+  const lost = brain.enemyId !== undefined && !alive(world.entity(brain.enemyId));
+  if (brain.age % 4 !== 0 && !lost) return;
+  const seen = pickEnemy(level, entity, profile, brain.goal?.huntId);
+  if (seen) brain.bank = null;
+  const enemy = seen ?? pickHidden(level, entity, brain, profile);
+  const id = enemy ? world.id(enemy) : undefined;
+  if (id === brain.enemyId) return;
+  brain.enemyId = id;
+  brain.reaction = profile.reactionTicks;
+}
+
+function play(level: Level, entity: Entity): void {
+  const brain = brainOf(entity);
+  releaseKeys(entity);
+  if (outOfPlay(entity)) {
+    forgetPlans(brain);
+    return;
+  }
+  brain.age++;
+  const profile = profileOf(entity);
+  if (needsReplan(level, entity, brain, profile)) brain.think = 0;
+  if (--brain.think <= 0) {
+    think(level, entity, brain, profile);
+    brain.think = profile.thinkTicks;
+  }
+  spotEnemy(level, entity, brain, profile);
+  control(level, entity, brain, profile);
+}
+
 /**
  * Plays every computer-controlled player: re-plans every few ticks (how often
  * depends on its difficulty), then steers, aims and presses keys each tick.
@@ -43,53 +112,7 @@ export function openingCoins(profile: AIDifficulty): number {
  */
 export function updateAIPlayers(level: Level): void {
   beginPerception();
-  for (const entity of world.with('aiPlayer', 'playerInput', 'position', 'playerStats', 'weaponInventory', 'health')) {
-    if (entity.removed) continue;
-    const brain = brainOf(entity);
-    const pi = entity.playerInput!;
-    clearIntents(entity);
-    pi.up = pi.down = pi.left = pi.right = pi.shoot = pi.sprint = false;
-
-    if (entity.respawnTicks !== undefined || entity.falling || entity.health!.current <= 0) {
-      // Plans made before dying are stale.
-      brain.goal = null;
-      brain.path = [];
-      brain.enemyId = undefined;
-      brain.think = 0;
-      continue;
-    }
-    brain.age++;
-    const profile = profileOf(entity);
-
-    const blastDanger = [...world.with('position', 'bomb')].some((b) => !b.removed && b.carriedBy === undefined
-      && b.bomb!.lit && !clearOfBlast(entity, b));
-    if (blastDanger && brain.goal?.name !== 'escape blast') brain.think = 0;
-    if (entity.carryingId === undefined && entity.health!.current < entity.health!.max * profile.retreatHealth
-      && enemiesNear(entity, 160) && brain.goal?.name !== 'retreat') brain.think = 0;
-    // Carrying something when a rival or a mob closes in: down it goes at once, rather than at the next plan.
-    if (entity.carryingId !== undefined && brain.age % 4 === 0 && brain.goal?.name !== 'stash fight'
-      && world.entity(entity.carryingId)?.bomb === undefined
-      && (mobsNear(level, entity, 72) > 0 || rivalsInSight(level, entity, profile.engageRange) > 0)) brain.think = 0;
-    if (--brain.think <= 0) {
-      think(level, entity, brain, profile);
-      brain.think = profile.thinkTicks;
-    }
-
-    // Spotting enemies happens more often than planning, but still with a reaction delay.
-    if (brain.age % 4 === 0 || (brain.enemyId !== undefined && !alive(world.entity(brain.enemyId)))) {
-      let enemy = pickEnemy(level, entity, profile, brain.goal?.huntId);
-      if (enemy) brain.bank = null;
-      else {
-        const hidden = pickHidden(level, entity, brain, profile);
-        enemy = hidden;
-      }
-      const id = enemy ? world.id(enemy) : undefined;
-      if (id !== brain.enemyId) {
-        brain.enemyId = id;
-        brain.reaction = profile.reactionTicks;
-      }
-    }
-
-    control(level, entity, brain, profile);
+  for (const entity of computers) {
+    if (!entity.removed) play(level, entity);
   }
 }

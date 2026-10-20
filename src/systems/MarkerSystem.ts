@@ -2,6 +2,9 @@ import { Container, Graphics } from 'pixi.js';
 import { world } from '../world';
 import { centreOf } from './TargetingSystem';
 
+const markedOut = world.with('marker');
+const targets = world.with('position', 'targeted');
+
 const BASE_HALF = 17;
 /** How far the brackets swing in and out, and how many ticks a full cycle takes. */
 const SWING = 2;
@@ -30,14 +33,14 @@ function drawMarker(g: Graphics, half: number): void {
 /** Frames whatever a player is reaching for with four corner brackets that breathe in and out. */
 export function updateMarkers(gameLayer: Container): void {
   clock++;
-  for (const entity of world.with('marker')) {
+  for (const entity of markedOut) {
     if (!entity.targeted) entity.marker!.visible = false;
   }
 
   const half = BASE_HALF + Math.round(SWING * Math.sin((clock / CYCLE_TICKS) * Math.PI * 2));
 
-  for (const entity of world.with('position', 'targeted')) {
-    let marker = entity.marker as Graphics | undefined;
+  for (const entity of targets) {
+    let marker = entity.marker;
     if (!marker) {
       marker = new Graphics();
       marker.zIndex = MARKER_Z;

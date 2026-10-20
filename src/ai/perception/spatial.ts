@@ -2,6 +2,8 @@ import RBush from 'rbush';
 import { world } from '../../world';
 import type { Entity } from '../../world';
 
+const placed = world.with('position');
+
 /** What an entity is to a computer player: the groups its senses ask about. */
 export type Kind = 'player' | 'mob' | 'nest' | 'machine' | 'building' | 'bomb' | 'loot' | 'gun';
 
@@ -33,7 +35,7 @@ function ensureBuilt(): void {
   builtFor = frame;
   tree.clear();
   const items: Item[] = [];
-  for (const e of world.with('position')) {
+  for (const e of placed) {
     if (e.removed) continue;
     const kind = kindOf(e);
     if (!kind) continue;

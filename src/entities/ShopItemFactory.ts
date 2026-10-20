@@ -20,7 +20,7 @@ type ShopDef = {
 };
 
 /** Base shop prices; difficulty scaling is applied when stalls are created. */
-export const SHOP_DEFS: Record<ShopKind, ShopDef> = {
+export const SHOP_DEFS: Readonly<Record<ShopKind, ShopDef>> = {
   turret:    { cost: 75,  role: 'defense',  sheet: 'turret',      col: 0, yOffset: 10, label: 'Turret', tooltip: { title: 'Turret', image: 'tooltip_turret' } },
   harvester: { cost: 300, role: 'economy', sheet: 'harvester',   col: 0, yOffset: 22, label: 'Harvester', tooltip: { title: 'Harvester', image: 'tooltip_harvester' } },
   bomb:      { cost: 500, role: 'explosive', sheet: 'bomb',        col: 0, yOffset: 7,  label: 'Bomb', tooltip: { title: 'Bomb', image: 'tooltip_bomb' } },
@@ -28,6 +28,10 @@ export const SHOP_DEFS: Record<ShopKind, ShopDef> = {
   shotgun:   { cost: 300, role: 'weapon', sheet: 'weapon_list', col: 1, yOffset: 5,  label: 'Shotgun', tooltip: { title: 'Shotgun', lines: ['Fires a spread of pellets.', 'Deadly up close.'] } },
   raygun:    { cost: 800, role: 'weapon', sheet: 'weapon_list', col: 2, yOffset: 5,  label: 'Raygun', tooltip: { title: 'Raygun', lines: ['Fires bolts of plasma.', 'Hits hard from afar.'] } },
 };
+
+export function isShopKind(value: unknown): value is ShopKind {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(SHOP_DEFS, value);
+}
 
 export function createShopItem(x: number, y: number, kind: ShopKind, team: Team, costMod = 1): Entity {
   const def = SHOP_DEFS[kind];

@@ -1,26 +1,30 @@
 import { world } from '../world';
+import type { Entity } from '../world';
 import { spawnFx } from '../entities/FxFactory';
 import { setVisualFrame } from '../render/AnimatedVisual';
 
+const effects = world.with('fx', 'visual');
+const blasts = world.with('explosion', 'position');
+
+/** Shows the strip frame for the effect's age, at the effect's scale. */
+function showFrame(entity: Entity): void {
+  const fx = entity.fx!;
+  const visual = entity.visual!;
+  const frame = fx.cycle ? fx.age % fx.frames : Math.min(fx.frames - 1, Math.floor((fx.age * fx.frames) / fx.duration));
+  const sprite = entity.sprite;
+  if (visual.col !== frame) {
+    visual.col = frame;
+    if (sprite) setVisualFrame(sprite, visual.sheet, frame);
+  }
+  if (sprite && fx.scale && sprite.scale.x !== fx.scale) sprite.scale.set(fx.scale);
+}
+
 /** Steps effect sprites through their strips and retires them when finished. */
 export function updateFx(): void {
-  for (const entity of world.with('fx', 'visual')) {
+  for (const entity of effects) {
     if (entity.removed) continue;
-
     const fx = entity.fx!;
-    const visual = entity.visual!;
-    const frame = fx.cycle
-      ? fx.age % fx.frames
-      : Math.min(fx.frames - 1, Math.floor((fx.age * fx.frames) / fx.duration));
-
-    if (visual.col !== frame) {
-      visual.col = frame;
-      if (entity.sprite) setVisualFrame(entity.sprite, visual.sheet, frame);
-    }
-    if (entity.sprite && fx.scale && entity.sprite.scale.x !== fx.scale) {
-      entity.sprite.scale.set(fx.scale);
-    }
-
+    showFrame(entity);
     if (fx.rise) entity.position!.y -= fx.rise;
     if (++fx.age >= fx.duration) world.addComponent(entity, 'removed', true);
   }
@@ -39,7 +43,7 @@ const FIREBALLS_PER_TICK = 2;
  * outward, so every tile it reaches is filled with fire.
  */
 export function updateExplosions(): void {
-  for (const entity of world.with('explosion', 'position')) {
+  for (const entity of blasts) {
     if (entity.removed) continue;
     const ex = entity.explosion!;
     if (--ex.life < 0) {

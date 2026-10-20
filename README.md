@@ -15,6 +15,9 @@
 | [TypeScript](https://www.typescriptlang.org/) | Type-safe language replacing the original Java |
 | [PixiJS](https://pixijs.com/) | 2D WebGL rendering engine |
 | [Miniplex](https://github.com/hmans/miniplex) | Entity Component System (ECS) for game logic |
+| [Yuka](https://mugen87.github.io/yuka/) | Game AI: graph search (A*, Dijkstra, BFS), steering, goal arbitration, math helpers |
+| [rbush](https://github.com/mourner/rbush) | R-tree spatial index for the computer players' senses |
+| [PeerJS](https://peerjs.com/) | WebRTC peer-to-peer co-op and versus |
 | [Vite](https://vitejs.dev/) | Build tooling and dev server |
 
 The architecture follows a strict ECS pattern: all game objects are entities with components (data), and systems operate on them each tick. Rendering is handled by PixiJS with spritesheets loaded from Tiled-compatible `.tmx` level files.
@@ -90,10 +93,11 @@ Keep the server running while playing: map previews and levels are fetched when 
   100-tick rest; the original staggered variants start 30 or 60 ticks later. They hurt grounded
   entities, not flying bats, and prevent building on their tiles.
 
-Terrain uses `@pixi/tilemap` batches instead of a full-map render texture. Animated actors, pickups,
+Terrain is batched with PixiJS v8's own `ParticleContainer` (one per sheet, see `src/render/StaticTileLayer.ts`)
+instead of a full-map render texture. Animated actors, pickups,
 effects, harvesters, spikes and cracked floors use PixiJS `AnimatedSprite`. Their frames are driven
 by the game loop with automatic ticker updates disabled, preserving pause, save and co-op timing.
-The renderer uses a 512×384 logical viewport at 2× resolution, with an unscaled stage so tilemaps,
+The renderer uses a 512×384 logical viewport at 2× resolution, with an unscaled stage so terrain,
 actors, pointer coordinates and collision tiles all share the same world coordinates.
 
 ## Multiplayer and saves
@@ -249,13 +253,17 @@ The computer players live in `src/ai/`, split the way a game AI usually is:
 
 - **Perception** (`src/ai/perception/`) reads the world. Positions of people, mobs, nests, machines,
   loot and bombs are kept in a spatial index (**rbush**, an R-tree, rebuilt once per tick);
-  walking distances come from a Dijkstra field over the tile grid and point-to-point routes from
-  **ngraph.path** (A* over an **ngraph.graph** of the floor, rebuilt only when the floor changes), using the same step costs so
-  both agree. Also here: track planning, turret placement and upgrade value, sabotage targets,
+  walking distances come from **yuka**'s `Dijkstra` and point-to-point routes from its `AStar`, both over one
+  `TileGraph` (a yuka `Graph` of the level, `src/level/TileGraph.ts`) whose step costs are supplied per search,
+  so both agree and the graph never has to be rebuilt when the floor changes. Mobs and the track planner use
+  the same graph. Also here: track planning, turret placement and upgrade value, sabotage targets,
   gun ratings and the ricochet solver.
-- **Decision** (`src/ai/decision/`) is Utility AI: perception builds one `Situation`; each `Option`
-  (survival, carrying, shopping and building, offence, errands) scores itself against it and the best
-  score becomes the goal. Options declare a score ceiling so those that cannot win are not evaluated.
+- **Decision** (`src/ai/decision/`) is Utility AI on **yuka**'s goal-driven design: perception builds one
+  `Situation`; each `Option` (survival, carrying, shopping and building, offence, errands) is a yuka
+  `GoalEvaluator` scoring itself against it, and a yuka `Think` arbiter makes the best score the goal.
+  Options declare a score ceiling so those that cannot win are not evaluated. How hard the computer's
+  gunfire hits per difficulty and gun (`AI_GUN_DAMAGE`) and the coins it gets on each death
+  (`AI_DEATH_GOLD`) live in `src/ai/constants.ts`.
 - **Execution** (`src/ai/execution/`) turns the goal into key presses: walking uses **yuka** steering
   (follow-path towards the farthest point in clear sight, plus separation from people crowding it), with
   keys that cannot flip instantly; fighting aims, leads targets, picks the gun and fires ricochets.

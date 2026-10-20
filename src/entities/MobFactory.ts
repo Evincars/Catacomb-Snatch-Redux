@@ -2,6 +2,7 @@ import { world, Team, Facing } from '../world';
 import type { Entity } from '../world';
 import type { Level } from '../level/Level';
 import { gameState } from '../game/GameState';
+import { hasKey } from '../core/guards';
 
 export type MobType = 'mummy' | 'scarab' | 'snake' | 'bat' | 'pharao';
 
@@ -67,7 +68,16 @@ const MOB_CONFIGS: Record<MobType, MobConfig> = {
 
 /** Collision half-size of a mob kind, so spawners can test a spot before creating the mob. */
 export function mobRadius(type: string): { x: number; y: number } {
-  return (MOB_CONFIGS[type as MobType] ?? MOB_CONFIGS.mummy).radius;
+  return configOf(type).radius;
+}
+
+function isMobType(type: string): type is MobType {
+  return hasKey(MOB_CONFIGS, type);
+}
+
+/** An unknown kind (an old save, a typo in a map) falls back to the mummy. */
+function configOf(type: string) {
+  return isMobType(type) ? MOB_CONFIGS[type] : MOB_CONFIGS.mummy;
 }
 
 export function createMob(
@@ -76,7 +86,7 @@ export function createMob(
   x: number,
   y: number,
 ): Entity {
-  const cfg = MOB_CONFIGS[type as MobType] ?? MOB_CONFIGS.mummy;
+  const cfg = configOf(type);
   const difficulty = gameState.difficulty;
   const health = cfg.health * MOB_HEALTH_BOOST * difficulty.healthMod;
   const regenInterval = cfg.regenInterval ?? difficulty.regenInterval;
@@ -88,7 +98,7 @@ export function createMob(
     blocking: true,
     physicsSlide: true,
     team: Team.Neutral,
-    mobType: MOB_CONFIGS[type as MobType] ? type : 'mummy',
+    mobType: isMobType(type) ? type : 'mummy',
     health: { current: health, max: health },
     healthBarOffset: 10,
     hurtTime: 0,

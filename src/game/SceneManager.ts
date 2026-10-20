@@ -1,4 +1,5 @@
 import type { Application, Container } from 'pixi.js';
+import { StateError } from '../core/errors';
 
 export type SceneName =
   | 'title'
@@ -33,14 +34,19 @@ export class SceneManager {
     this.app = app;
   }
 
+  private factoryOf(name: SceneName): SceneFactory {
+    const factory = this.factories.get(name);
+    if (!factory) throw new StateError(`Scene not registered: ${name}`, { name });
+    return factory;
+  }
+
   register(name: SceneName, factory: SceneFactory): this {
     this.factories.set(name, factory);
     return this;
   }
 
   goto(name: SceneName): void {
-    const factory = this.factories.get(name);
-    if (!factory) throw new Error(`Scene not registered: ${name}`);
+    const factory = this.factoryOf(name);
 
     // Build the next scene first: if its constructor throws, the current one
     // stays on screen instead of leaving the stage blank.
@@ -60,9 +66,7 @@ export class SceneManager {
 
   /** Shows a scene on top of the current one without tearing the current one down. */
   pushOverlay(name: SceneName): void {
-    const factory = this.factories.get(name);
-    if (!factory) throw new Error(`Scene not registered: ${name}`);
-    const scene = factory(this);
+    const scene = this.factoryOf(name)(this);
     this.overlays.push(scene);
     this.app.stage.addChild(scene.container);
   }

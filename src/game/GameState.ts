@@ -49,9 +49,17 @@ export const LEVELS: LevelInfo[] = [
 export type MultiplayerMode = 'companion' | 'enemy';
 export type OpponentMode = 'none' | 'ai';
 
+export const AI_DIFFICULTY_NAMES = ['Easy', 'Normal', 'Hard', 'Insane'] as const;
+
+export type AIDifficultyName = (typeof AI_DIFFICULTY_NAMES)[number];
+
+export function isAIDifficultyName(value: unknown): value is AIDifficultyName {
+  return AI_DIFFICULTY_NAMES.some((name) => name === value);
+}
+
 /** How a computer opponent plays; every number is a tuning knob, not a rule. */
 export type AIDifficulty = {
-  name: string;
+  name: AIDifficultyName;
   /** Ticks between re-planning what to do next. */
   thinkTicks: number;
   /** Ticks before it notices and turns on a new target. */
@@ -85,7 +93,7 @@ export type AIDifficulty = {
   aggression: number;
 };
 
-export const AI_DIFFICULTIES: AIDifficulty[] = [
+export const AI_DIFFICULTIES: readonly AIDifficulty[] = [
   { name: 'Easy',   thinkTicks: 45, reactionTicks: 40, aimError: 0.35, engageRange: 150, fireRate: 0.45, drainThreshold: 400,
     maxCarriages: 1, maxTurrets: 2, trackTurrets: 1, maxUpgrade: 1, railDelay: 60 * 90, sprint: false, retreatHealth: 0.25, reserve: 100, shopDiscount: 1, ricochet: false, aggression: 0.25 },
   { name: 'Normal', thinkTicks: 25, reactionTicks: 22, aimError: 0.18, engageRange: 200, fireRate: 0.8,  drainThreshold: 250,
@@ -96,25 +104,44 @@ export const AI_DIFFICULTIES: AIDifficulty[] = [
     maxCarriages: 5, maxTurrets: 7, trackTurrets: 6, maxUpgrade: 3, railDelay: 0,       sprint: true,  retreatHealth: 0.4,  reserve: 0,   shopDiscount: 0.8, ricochet: true, aggression: 1 },
 ];
 
-// Mutable singleton, carries choices across scenes
-export const gameState = {
-  multiplayerMode: 'companion' as MultiplayerMode,
+export type GameState = {
+  multiplayerMode: MultiplayerMode;
   /** A computer-controlled opponent on Team Two in the current run; not combined with an enemy guest. */
-  opponent: 'none' as OpponentMode,
+  opponent: OpponentMode;
   /** The menu's opponent choice. Kept apart from `opponent` so a map without a
    *  second base, an enemy match or a loaded save never silently clears it. */
-  opponentChoice: settings.opponent as OpponentMode,
-  aiDifficulty: AI_DIFFICULTIES.find(d => d.name === settings.aiDifficulty) ?? AI_DIFFICULTIES[1],
+  opponentChoice: OpponentMode;
+  aiDifficulty: AIDifficulty;
   /** Character the computer plays, picked when a match starts; never the player's. */
-  aiCharacter: 'herr_von_speck' as CharacterType,
-  selectedCharacter: 'lord_lard' as CharacterType,
+  aiCharacter: CharacterType;
+  selectedCharacter: CharacterType;
+  difficulty: Difficulty;
+  selectedLevel: LevelInfo;
+  winningTeam: number;
+  /** Retired debug switch, kept only so saved games still validate. The ~ console replaced it. */
+  debug: boolean;
+  // Solo/companion GoldRush counts carried coins. Enemy matches instead use
+  // the original versus treasury target of 100, with two points per delivery.
+  targetScore: number;
+};
+
+/** The AI difficulty profile with this name, or Normal. */
+export function aiDifficultyNamed(name: string): AIDifficulty {
+  return AI_DIFFICULTIES.find((d) => d.name === name) ?? AI_DIFFICULTIES[1];
+}
+
+// Mutable singleton, carries choices across scenes
+export const gameState: GameState = {
+  multiplayerMode: 'companion',
+  opponent: 'none',
+  opponentChoice: settings.opponent,
+  aiDifficulty: aiDifficultyNamed(settings.aiDifficulty),
+  aiCharacter: 'herr_von_speck',
+  selectedCharacter: 'lord_lard',
   difficulty: DIFFICULTIES[1],
   selectedLevel: LEVELS[0],
   winningTeam: 0,
-  /** Retired debug switch, kept only so saved games still validate. The ~ console replaced it. */
   debug: false,
-  // Solo/companion GoldRush counts carried coins. Enemy matches instead use
-  // the original versus treasury target of 100, with two points per delivery.
   targetScore: 5000,
 };
 

@@ -1,6 +1,8 @@
 import { world } from '../world';
 import { spawnDust } from '../entities/FxFactory';
 
+const runners = world.with('position', 'velocity', 'playerStats');
+
 const WALK_INTERVAL = 8;
 const SPRINT_INTERVAL = 4;
 /** How far behind the feet the puff appears. */
@@ -16,7 +18,7 @@ function nextInterval(sprinting: boolean): number {
 
 /** Kicks up dust behind players while they run. */
 export function updateDust(): void {
-  for (const player of world.with('position', 'velocity', 'playerStats')) {
+  for (const player of runners) {
     const moving = (player.walkTime ?? 0) > 0;
     if (!moving) {
       player.dustTimer = 0;

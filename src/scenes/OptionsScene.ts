@@ -9,6 +9,7 @@ import { NameField } from '../ui/NameField';
 import { getTexture } from '../assets/AssetLoader';
 import { settings, saveSettings } from '../game/Settings';
 import { sound } from '../audio/SoundPlayer';
+import { reportRejection } from '../core/errors';
 
 const COL_X = 146;
 const ROW_H = 38;
@@ -46,8 +47,9 @@ export class OptionsScene implements Scene {
       settings.fullscreen = on;
       saveSettings();
       // Fullscreen requests are only honoured from a user gesture, which this is.
-      if (on) void document.documentElement.requestFullscreen?.().catch(() => {});
-      else void document.exitFullscreen?.().catch(() => {});
+      // The browser may refuse (no gesture, or an embedded page); the game simply stays windowed.
+      const change = on ? document.documentElement.requestFullscreen?.() : document.exitFullscreen?.();
+      if (change) reportRejection(change, 'Fullscreen change refused', 'options');
     };
     this.container.addChild(fullscreen);
     y += ROW_H;
@@ -89,7 +91,7 @@ export class OptionsScene implements Scene {
     nameLabel.x = GAME_WIDTH / 2;
     nameLabel.y = y;
     this.container.addChild(nameLabel);
-    this.nameField = new NameField(manager.application.canvas as HTMLCanvasElement, COL_X, y + 12, 240, 22);
+    this.nameField = new NameField(manager.application.canvas, COL_X, y + 12, 240, 22);
 
     const back = new PixelButton('Back', 240, 26);
     back.x = COL_X;

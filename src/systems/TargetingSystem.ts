@@ -5,6 +5,8 @@ import { sheetInfo } from '../render/Sheets';
 import { TILE_HEIGHT } from '../level/TileType';
 import { isVersus } from '../game/GameState';
 
+const inspectable = world.with('position', 'tooltip');
+
 /** How far ahead of the player their aim line reaches. */
 export const INTERACT_REACH = 36;
 /** Slack added to a candidate's own radius when testing the aim line against it. */
@@ -48,7 +50,7 @@ function closest(player: Entity, from: { x: number; y: number }, maxDist: number
   let best: Entity | null = null;
   let bestDist = maxDist * maxDist;
 
-  for (const candidate of world.with('position', 'tooltip')) {
+  for (const candidate of inspectable) {
     if (!usableBy(player, candidate)) continue;
     const at = centreOf(candidate);
     const d = (at.x - from.x) ** 2 + (at.y - from.y) ** 2;
@@ -72,7 +74,7 @@ export function hitByAimLine(player: Entity): Entity | null {
   let best: Entity | null = null;
   let bestAlong = Infinity;
 
-  for (const candidate of world.with('position', 'tooltip')) {
+  for (const candidate of inspectable) {
     if (!usableBy(player, candidate)) continue;
     const at = candidate.position!;
     const rx = at.x - from.x;
@@ -97,34 +99,40 @@ export function hitByAimLine(player: Entity): Entity | null {
  * recording it as `targeted` / `hovered` tags so marker and tooltip systems
  * can react without knowing anything about shops or buildings.
  */
+const marked = world.with('targeted');
+const pointedAt = world.with('hovered');
+const aimers = world.with('position', 'playerInput');
+
+/** Whatever the aim line meets becomes the player's target; the computer's reach is not marked on screen. */
+function aimAt(player: Entity): void {
+  const target = hitByAimLine(player);
+  if (!target) {
+    delete player.targetId;
+    return;
+  }
+  player.targetId = world.id(target)!;
+  if (!player.aiPlayer) world.addComponent(target, 'targeted', true);
+}
+
+/** The local player's cursor highlights what it is over. */
+function hoverUnderCursor(player: Entity): void {
+  const pi = player.playerInput!;
+  const hovered = closest(player, screenToWorld(pi.mouseX, pi.mouseY), HOVER_RADIUS);
+  if (hovered) world.addComponent(hovered, 'hovered', true);
+}
+
 export function updateTargeting(): void {
-  for (const entity of world.with('targeted')) world.removeComponent(entity, 'targeted');
-  for (const entity of world.with('hovered')) world.removeComponent(entity, 'hovered');
-
-  for (const player of world.with('position', 'playerInput')) {
-    if (player.respawnTicks !== undefined || (player.health?.current ?? 1) <= 0) {
+  for (const entity of marked) world.removeComponent(entity, 'targeted');
+  for (const entity of pointedAt) world.removeComponent(entity, 'hovered');
+  for (const player of aimers) {
+    // The dead target nothing, and a carried building is already in hand: nothing else can be targeted.
+    const idle = player.respawnTicks !== undefined || (player.health?.current ?? 1) <= 0 || player.carryingId !== undefined;
+    if (idle) {
       delete player.targetId;
       continue;
     }
-    // A carried building is already in hand; nothing else can be targeted.
-    if (player.carryingId !== undefined) {
-      delete player.targetId;
-      continue;
-    }
-
-    const target = hitByAimLine(player);
-    if (target) {
-      player.targetId = world.id(target)!;
-      // The computer's reach is not marked on screen.
-      if (!player.aiPlayer) world.addComponent(target, 'targeted', true);
-    } else {
-      delete player.targetId;
-    }
-
-    const pi = player.playerInput!;
-    if (player.remoteInput) continue;
-    const hovered = closest(player, screenToWorld(pi.mouseX, pi.mouseY), HOVER_RADIUS);
-    if (hovered) world.addComponent(hovered, 'hovered', true);
+    aimAt(player);
+    if (!player.remoteInput) hoverUnderCursor(player);
   }
 }
 

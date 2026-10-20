@@ -1,4 +1,4 @@
-import { Sprite } from 'pixi.js';
+import { Rectangle, Sprite } from 'pixi.js';
 import type { Container } from 'pixi.js';
 import { world } from '../world';
 import type { Entity } from '../world';
@@ -6,7 +6,7 @@ import { TILE_WIDTH, TILE_HEIGHT, TileType } from '../level/TileType';
 import { isRailTile, railJoins } from '../level/RailLayout';
 import type { Level } from '../level/Level';
 import { frameTexture } from '../render/Sheets';
-import { BB } from '../math/BB';
+import { boxAround } from '../core/geometry';
 import { move } from './MovementSystem';
 import { sound } from '../audio/SoundPlayer';
 import { gameState, isVersus } from '../game/GameState';
@@ -39,6 +39,18 @@ const WEDGE_TICKS = 90;
 /** Each carriage times its own window, so a jam is never broken by everyone turning at once. */
 const WEDGE_JITTER = 90;
 const WEDGE_DISTANCE = 6;
+/** Carriages closer than this to a tile centre block a new one being set down there. */
+const SPAWN_CLEARANCE = 28;
+
+const carriages = world.with('position', 'railDroid');
+const pushable = world.with('position', 'radius', 'playerInput');
+const buildings = world.with('position', 'building');
+const banked = world.with('playerStats', 'playerInput');
+const loaded = world.with('railDroid', 'sprite');
+
+/** Scratch boxes for overlap tests; each test fills them and reads them straight away. */
+const boxA = new Rectangle();
+const boxB = new Rectangle();
 
 export function canSpawnRailDroid(level: Level, x: number, y: number): boolean {
   const tx = Math.floor(x / TILE_WIDTH);
@@ -46,8 +58,8 @@ export function canSpawnRailDroid(level: Level, x: number, y: number): boolean {
   if (!isRailTile(level, tx, ty)) return false;
   const cx = tx * TILE_WIDTH + TILE_WIDTH / 2;
   const cy = ty * TILE_HEIGHT + TILE_HEIGHT / 2;
-  for (const other of world.with('position', 'railDroid')) {
-    if (!other.removed && Math.abs(other.position!.x - cx) < 28 && Math.abs(other.position!.y - cy) < 28) return false;
+  for (const other of carriages) {
+    if (!other.removed && Math.abs(other.position!.x - cx) < SPAWN_CLEARANCE && Math.abs(other.position!.y - cy) < SPAWN_CLEARANCE) return false;
   }
   return true;
 }
@@ -97,8 +109,13 @@ function isAhead(self: Entity, other: Entity, dir: number): boolean {
   return ahead > 0 && ahead < BUMP_DIST && aside < 12;
 }
 
-function boxOf(e: Entity, x = e.position!.x, y = e.position!.y): BB {
-  return BB.fromCenter(x, y, e.radius!.x, e.radius!.y);
+function boxOf(e: Entity, x = e.position!.x, y = e.position!.y, out = boxA): Rectangle {
+  return boxAround(x, y, e.radius!.x, e.radius!.y, out);
+}
+
+/** Whether `a` placed at (ax, ay) would overlap `b` placed at (bx, by). */
+function overlapAt(a: Entity, ax: number, ay: number, b: Entity, bx = b.position!.x, by = b.position!.y): boolean {
+  return boxOf(a, ax, ay, boxA).intersects(boxOf(b, bx, by, boxB));
 }
 
 function distSquared(x: number, y: number, other: Entity): number {
@@ -116,30 +133,34 @@ function walkDir(player: Entity): { x: number; y: number } {
  * leaning against it the other way turns it back instead, and so does one
  * pinned against a wall. Returns whether the carriage must reverse.
  */
-function meetPlayers(level: Level, droid: Entity, players: Entity[], dir: number): boolean {
+function meetPlayers(level: Level, droid: Entity, players: Iterable<Entity>, dir: number): boolean {
   const pos = droid.position!;
-  const next = boxOf(droid, pos.x + DX[dir] * SPEED, pos.y + DY[dir] * SPEED);
+  const nx = pos.x + DX[dir] * SPEED;
+  const ny = pos.y + DY[dir] * SPEED;
   for (const player of players) {
     if (player.falling || (player.health?.current ?? 1) <= 0) continue;
     const pp = player.position!;
     const ahead = (pp.x - pos.x) * DX[dir] + (pp.y - pos.y) * DY[dir];
-    if (ahead <= 0 || !next.intersects(boxOf(player))) continue;
-
+    if (ahead <= 0 || !overlapAt(droid, nx, ny, player)) continue;
     const w = walkDir(player);
-    if (w.x * DX[dir] + w.y * DY[dir] < 0) return true;
-
-    // Shove the player just clear of where the carriage is about to be. A player already
-    // overlapping it is eased out over a few ticks instead of being flung across the tile.
-    const gap = ahead - (DX[dir] !== 0 ? droid.radius!.x + player.radius!.x : droid.radius!.y + player.radius!.y);
-    const push = Math.min(SPEED * 2, Math.max(0, SPEED - gap));
-    const bx = pp.x;
-    const by = pp.y;
-    const r = player.radius!;
-    move(pp, r, DX[dir] * push, DY[dir] * push, level.getClipBBs(pp.x, pp.y, r.x, r.y), false);
-    const moved = Math.abs(pp.x - bx) + Math.abs(pp.y - by);
-    if (moved < push - 0.05) return true;
+    if (w.x * DX[dir] + w.y * DY[dir] < 0 || !shove(level, droid, player, dir, ahead)) return true;
   }
   return false;
+}
+
+/**
+ * Shoves the player just clear of where the carriage is about to be. A player already overlapping it is
+ * eased out over a few ticks instead of being flung across the tile. Returns false when a wall stops them.
+ */
+function shove(level: Level, droid: Entity, player: Entity, dir: number, ahead: number): boolean {
+  const pp = player.position!;
+  const r = player.radius!;
+  const gap = ahead - (DX[dir] !== 0 ? droid.radius!.x + r.x : droid.radius!.y + r.y);
+  const push = Math.min(SPEED * 2, Math.max(0, SPEED - gap));
+  const bx = pp.x;
+  const by = pp.y;
+  move(pp, r, DX[dir] * push, DY[dir] * push, level.getClipBBs(pp.x, pp.y, r.x, r.y), false);
+  return Math.abs(pp.x - bx) + Math.abs(pp.y - by) >= push - 0.05;
 }
 
 /** Fills the pot beside the treasure pile and banks it on the team's own track. */
@@ -149,33 +170,42 @@ function handleTreasure(level: Level, droid: Entity): void {
     rd.swapTime--;
     return;
   }
-  const pos = droid.position!;
-  if (!rd.full) {
-    const reach = boxOf(droid).grow(TREASURE_REACH);
-    for (const b of world.with('position', 'building')) {
-      if (b.building!.type !== 'treasure' || !reach.intersects(boxOf(b))) continue;
-      rd.full = true;
-      rd.swapTime = SWAP_TIME;
-      sound.playSound('gem', pos.x, pos.y);
-      return;
-    }
+  if (!rd.full) fillAtTreasure(droid);
+  else deliver(level, droid);
+}
+
+/** A carriage within reach of the treasure pile (Java's getBB().grow(32)) fills its pot. */
+function fillAtTreasure(droid: Entity): void {
+  const rd = droid.railDroid!;
+  const reach = boxOf(droid, undefined, undefined, boxA).pad(TREASURE_REACH);
+  for (const b of buildings) {
+    if (b.building!.type !== 'treasure' || !reach.intersects(boxOf(b, undefined, undefined, boxB))) continue;
+    rd.full = true;
+    rd.swapTime = SWAP_TIME;
+    sound.playSound('gem', droid.position!.x, droid.position!.y);
     return;
   }
+}
 
+/** A full pot is emptied on the team's own base track. A delivery only moves the score; nothing drops and nothing sounds. */
+function deliver(level: Level, droid: Entity): void {
+  const rd = droid.railDroid!;
+  const pos = droid.position!;
   const tile = level.getTileAt(pos.x, pos.y);
-  if (!tile || tile.type !== TileType.PlayerRail
-    || isVersus() && tile.team !== droid.team) return;
+  if (!tile || tile.type !== TileType.PlayerRail || (isVersus() && tile.team !== droid.team)) return;
   rd.full = false;
   rd.swapTime = SWAP_TIME;
-  // A delivery only empties the pot and moves the score; nothing drops and nothing sounds.
-  if (isVersus()) {
-    if (droid.team === 1) level.player1Score += TREASURE_PROGRESS;
-    else if (droid.team === 2) level.player2Score += TREASURE_PROGRESS;
-  } else {
-    for (const player of world.with('playerStats', 'playerInput')) {
-      if (player.team === droid.team) player.playerStats!.score += TREASURE_REWARD;
-    }
+  if (!isVersus()) {
+    payTeam(droid.team);
+    return;
   }
+  if (droid.team === 1) level.player1Score += TREASURE_PROGRESS;
+  else if (droid.team === 2) level.player2Score += TREASURE_PROGRESS;
+}
+
+/** In a co-operative game every player of the team is credited for a pot brought home. */
+function payTeam(team: number | undefined): void {
+  for (const player of banked) if (player.team === team) player.playerStats!.score += TREASURE_REWARD;
 }
 
 /**
@@ -205,117 +235,149 @@ function breakWedge(level: Level, droid: Entity): void {
   rd.dir = Math.random() < 0.5 ? back : chooseDir(level, tx, ty, back);
 }
 
+/** Track taken up beneath it: the carriage just sits there; a stopped one on track picks a way to go. */
+function chooseStart(level: Level, droid: Entity): void {
+  const rd = droid.railDroid!;
+  const tx = Math.floor(droid.position!.x / TILE_WIDTH);
+  const ty = Math.floor(droid.position!.y / TILE_HEIGHT);
+  if (!isRailTile(level, tx, ty)) rd.dir = -1;
+  else if (rd.dir < 0) rd.dir = chooseDir(level, tx, ty, -1);
+}
+
+/** Whether two carriages are about to run into each other this tick. */
+function aboutToMeet(a: Entity, b: Entity): boolean {
+  const ar = a.railDroid!;
+  const br = b.railDroid!;
+  if (ar.dir < 0 || br.dir < 0 || ar.dir === br.dir) return false;
+  const ax = a.position!.x + DX[ar.dir] * SPEED;
+  const ay = a.position!.y + DY[ar.dir] * SPEED;
+  const bx = b.position!.x + DX[br.dir] * SPEED;
+  const by = b.position!.y + DY[br.dir] * SPEED;
+  if ((ax - bx) ** 2 + (ay - by) ** 2 >= distSquared(a.position!.x, a.position!.y, b)) return false;
+  return isAhead(a, b, ar.dir) || isAhead(b, a, br.dir) || overlapAt(a, ax, ay, b, bx, by);
+}
+
+/** Two carriages of a team meeting with one pot full and one empty hand the treasure over. */
+function handOver(a: Entity, b: Entity, handedOver: Set<Entity>): void {
+  const ar = a.railDroid!;
+  const br = b.railDroid!;
+  if (a.team !== b.team || ar.full === br.full || handedOver.has(a) || handedOver.has(b)) return;
+  [ar.full, br.full] = [br.full, ar.full];
+  ar.swapTime = br.swapTime = SWAP_TIME;
+  handedOver.add(a);
+  handedOver.add(b);
+  sound.playSound('gem', a.position!.x, a.position!.y);
+}
+
+function meet(a: Entity, b: Entity, bumped: Set<Entity>, handedOver: Set<Entity>): void {
+  if (!aboutToMeet(a, b)) return;
+  handOver(a, b, handedOver);
+  bumped.add(a);
+  bumped.add(b);
+}
+
+/** Processes each meeting once, before either carriage moves or changes its cargo; both turn back. */
+function resolveMeetings(droids: readonly Entity[]): void {
+  const bumped = new Set<Entity>();
+  const handedOver = new Set<Entity>();
+  for (let i = 0; i < droids.length; i++) {
+    for (let j = i + 1; j < droids.length; j++) meet(droids[i], droids[j], bumped, handedOver);
+  }
+  for (const droid of bumped) droid.railDroid!.dir = (droid.railDroid!.dir + 2) % 4;
+}
+
+/**
+ * A reversal can happen exactly on a centre, including the instant of purchase. Never leave that centre
+ * along a nonexistent connection.
+ */
+function keepOnTrack(level: Level, droid: Entity, tx: number, ty: number, cx: number, cy: number): void {
+  const rd = droid.railDroid!;
+  const pos = droid.position!;
+  if (railJoins(level, tx, ty, DX[rd.dir], DY[rd.dir])) return;
+  const along = (pos.x - cx) * DX[rd.dir] + (pos.y - cy) * DY[rd.dir];
+  if (along > 0) rd.dir = (rd.dir + 2) % 4;
+  else if (Math.abs(pos.x - cx) < 0.001 && Math.abs(pos.y - cy) < 0.001) rd.dir = chooseDir(level, tx, ty, rd.dir);
+}
+
+/** Whether another carriage takes up the spot it would roll into, and stepping there would bring them closer. */
+function blockedAt(droids: readonly Entity[], droid: Entity, nx: number, ny: number): boolean {
+  const pos = droid.position!;
+  return droids.some((other) => other !== droid && overlapAt(droid, nx, ny, other)
+    && distSquared(nx, ny, other) < distSquared(pos.x, pos.y, other));
+}
+
+/**
+ * Rolls one step towards the next tile centre; on reaching it, settles there and picks where to go next.
+ * Returns false when it could not roll at all (no way on, or another carriage in the way).
+ */
+function roll(level: Level, droids: readonly Entity[], droid: Entity): boolean {
+  const rd = droid.railDroid!;
+  const pos = droid.position!;
+  const tx = Math.floor(pos.x / TILE_WIDTH);
+  const ty = Math.floor(pos.y / TILE_HEIGHT);
+  const cx = tx * TILE_WIDTH + TILE_WIDTH / 2;
+  const cy = ty * TILE_HEIGHT + TILE_HEIGHT / 2;
+  if (meetPlayers(level, droid, pushable, rd.dir)) rd.dir = (rd.dir + 2) % 4;
+  keepOnTrack(level, droid, tx, ty, cx, cy);
+  if (rd.dir < 0) return false;
+  const dir = rd.dir;
+  // Signed distance to this tile's centre along the heading, before and after the step.
+  const before = (pos.x - cx) * DX[dir] + (pos.y - cy) * DY[dir];
+  const step = before < 0 ? Math.min(SPEED, -before) : SPEED;
+  const nx = pos.x + DX[dir] * step;
+  const ny = pos.y + DY[dir] * step;
+  if (blockedAt(droids, droid, nx, ny)) return false;
+  pos.x = nx;
+  pos.y = ny;
+  const after = (pos.x - cx) * DX[dir] + (pos.y - cy) * DY[dir];
+  if (before < 0 && after >= 0) {
+    pos.x = cx;
+    pos.y = cy;
+    rd.dir = chooseDir(level, tx, ty, dir);
+  } else if (dir % 2 === 0) {
+    pos.x = cx;
+  } else {
+    pos.y = cy;
+  }
+  return true;
+}
+
+/** Shows the carriage facing the way it last rolled. */
+function updateFrame(droid: Entity): void {
+  const rd = droid.railDroid!;
+  if (rd.dir >= 0) rd.lastDir = rd.dir;
+  const [col, row] = FRAMES[rd.lastDir];
+  const v = droid.visual!;
+  if (v.col === col && v.row === row) return;
+  v.col = col;
+  v.row = row;
+  if (droid.sprite) droid.sprite.texture = frameTexture(v.sheet, col, row);
+}
+
 /**
  * Carriages roll along the track from tile centre to tile centre, picking a
  * random onward branch at junctions and reversing at dead ends, on meeting
  * another carriage, or when a player pushes back against them.
  */
 export function updateRailDroids(level: Level): void {
-  const droids = [...world.with('position', 'railDroid')].filter((d) => !d.removed);
-  const players = [...world.with('position', 'radius', 'playerInput')];
-
+  const droids = [...carriages].filter((d) => !d.removed);
   for (const droid of droids) {
-    const rd = droid.railDroid!;
-    const pos = droid.position!;
-    const tx = Math.floor(pos.x / TILE_WIDTH);
-    const ty = Math.floor(pos.y / TILE_HEIGHT);
-    // Track taken up beneath it: the carriage just sits there.
-    if (!isRailTile(level, tx, ty)) rd.dir = -1;
-    else if (rd.dir < 0) rd.dir = chooseDir(level, tx, ty, -1);
+    chooseStart(level, droid);
     handleTreasure(level, droid);
   }
-
-  // Process each meeting once, before either carriage moves or changes its cargo.
-  const bumped = new Set<Entity>();
-  const handedOver = new Set<Entity>();
-  for (let i = 0; i < droids.length; i++) {
-    const a = droids[i];
-    const ar = a.railDroid!;
-    for (let j = i + 1; j < droids.length; j++) {
-      const b = droids[j];
-      const br = b.railDroid!;
-      if (ar.dir < 0 || br.dir < 0 || ar.dir === br.dir) continue;
-      const ax = a.position!.x + DX[ar.dir] * SPEED;
-      const ay = a.position!.y + DY[ar.dir] * SPEED;
-      const bx = b.position!.x + DX[br.dir] * SPEED;
-      const by = b.position!.y + DY[br.dir] * SPEED;
-      if ((ax - bx) ** 2 + (ay - by) ** 2 >= distSquared(a.position!.x, a.position!.y, b)) continue;
-      if (!isAhead(a, b, ar.dir) && !isAhead(b, a, br.dir)
-        && !boxOf(a, ax, ay).intersects(boxOf(b, bx, by))) continue;
-      if (a.team === b.team && ar.full !== br.full && !handedOver.has(a) && !handedOver.has(b)) {
-        [ar.full, br.full] = [br.full, ar.full];
-        ar.swapTime = br.swapTime = SWAP_TIME;
-        handedOver.add(a);
-        handedOver.add(b);
-        sound.playSound('gem', a.position!.x, a.position!.y);
-      }
-      bumped.add(a);
-      bumped.add(b);
-    }
-  }
-  for (const droid of bumped) droid.railDroid!.dir = (droid.railDroid!.dir + 2) % 4;
-
+  resolveMeetings(droids);
   for (const droid of droids) {
     breakWedge(level, droid);
-    const rd = droid.railDroid!;
-    const pos = droid.position!;
-    const tx = Math.floor(pos.x / TILE_WIDTH);
-    const ty = Math.floor(pos.y / TILE_HEIGHT);
-    const cx = tx * TILE_WIDTH + TILE_WIDTH / 2;
-    const cy = ty * TILE_HEIGHT + TILE_HEIGHT / 2;
-
-    // A struck carriage stalls for a moment, like any hurt mob.
-    if (rd.dir >= 0 && (droid.freezeTime ?? 0) <= 0) {
-      if (meetPlayers(level, droid, players, rd.dir)) rd.dir = (rd.dir + 2) % 4;
-      // A reversal can happen exactly on a centre, including the instant of
-      // purchase. Never leave that centre along a nonexistent connection.
-      if (!railJoins(level, tx, ty, DX[rd.dir], DY[rd.dir])) {
-        const along = (pos.x - cx) * DX[rd.dir] + (pos.y - cy) * DY[rd.dir];
-        if (along > 0) rd.dir = (rd.dir + 2) % 4;
-        else if (Math.abs(pos.x - cx) < 0.001 && Math.abs(pos.y - cy) < 0.001) {
-          rd.dir = chooseDir(level, tx, ty, rd.dir);
-        }
-      }
-      if (rd.dir < 0) continue;
-      const dir = rd.dir;
-      // Signed distance to this tile's centre along the heading, before and after the step.
-      const before = (pos.x - cx) * DX[dir] + (pos.y - cy) * DY[dir];
-      const step = before < 0 ? Math.min(SPEED, -before) : SPEED;
-      const nx = pos.x + DX[dir] * step;
-      const ny = pos.y + DY[dir] * step;
-      const next = boxOf(droid, nx, ny);
-      if (droids.some((other) => other !== droid && next.intersects(boxOf(other))
-        && distSquared(nx, ny, other) < distSquared(pos.x, pos.y, other))) continue;
-      pos.x = nx;
-      pos.y = ny;
-      const after = (pos.x - cx) * DX[dir] + (pos.y - cy) * DY[dir];
-
-      if (before < 0 && after >= 0) {
-        // Reached the centre: settle on it and decide where to go next.
-        pos.x = cx;
-        pos.y = cy;
-        rd.dir = chooseDir(level, tx, ty, dir);
-      } else if (dir % 2 === 0) {
-        pos.x = cx;
-      } else {
-        pos.y = cy;
-      }
-    }
-
-    if (rd.dir >= 0) rd.lastDir = rd.dir;
-    const [col, row] = FRAMES[rd.lastDir];
-    const v = droid.visual!;
-    if (v.col !== col || v.row !== row) {
-      v.col = col;
-      v.row = row;
-      if (droid.sprite) droid.sprite.texture = frameTexture(v.sheet, col, row);
-    }
+    // A struck carriage stalls for a moment, like any hurt mob; one that cannot roll keeps its old look.
+    const rolling = droid.railDroid!.dir >= 0 && (droid.freezeTime ?? 0) <= 0;
+    if (rolling && !roll(level, droids, droid)) continue;
+    updateFrame(droid);
   }
 }
 
 /** Keeps each carriage's pot over its head, empty or full. */
 export function updateRailDroidCargo(gameLayer: Container): void {
-  for (const droid of world.with('railDroid', 'sprite')) {
+  for (const droid of loaded) {
     let pot = droid.cargoSprite;
     if (!pot) {
       pot = new Sprite();

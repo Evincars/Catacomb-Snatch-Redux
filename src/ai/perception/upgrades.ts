@@ -5,6 +5,7 @@ import { TileType, TILE_WIDTH } from '../../level/TileType';
 import { upgradeCostOf, turretRadiusAt } from '../../entities/BuildingFactory';
 import { BASE_DEFENSE_RANGE, COINS_PER_POINT } from '../constants';
 import { treasureOf } from './economy';
+import { forEachTile } from '../../level/Grid';
 import { centreX, centreY, dist, tileX, tileY } from './geometry';
 import type { Brain } from '../types';
 
@@ -17,6 +18,23 @@ export function cornerExit(level: Level, tx: number, ty: number): boolean {
       && level.getTile(tx + dx, ty)?.passable && level.getTile(tx, ty + dy)?.passable) return true;
   }
   return false;
+}
+
+/** What surrounds a turret that makes some of the ground it watches worth more. */
+type Ground = { home: { x: number; y: number } | null; treasure: Entity | null; rival: Team };
+
+/**
+ * Worth of watching one tile: ordinary floor one, a corner someone steps out from three, the rival's laid
+ * track four, and the ground around home or the treasure at least two.
+ */
+function tileWorth(level: Level, tx: number, ty: number, { home, treasure, rival }: Ground): number {
+  const tile = level.getTile(tx, ty)!;
+  if (tile.type === TileType.Rail && tile.team === rival) return 4;
+  const value = cornerExit(level, tx, ty) ? 3 : 1;
+  const at = { x: centreX(tx), y: centreY(ty) };
+  const nearHome = home !== null && dist(at, home) < BASE_DEFENSE_RANGE + 2 * TILE_WIDTH;
+  const nearTreasure = treasure !== null && dist(at, treasure.position!) < 6 * TILE_WIDTH;
+  return nearHome || nearTreasure ? Math.max(value, 2) : value;
 }
 
 /**
@@ -32,26 +50,17 @@ export function upgradeGain(level: Level, entity: Entity, brain: Brain, turret: 
   const p = turret.position!;
   const from = turretRadiusAt(levelNow);
   const to = turretRadiusAt(levelNow + 1);
-  const home = level.getRandomSpawnPoint(entity.team ?? Team.Two);
-  const treasure = treasureOf();
-  const rival = entity.team === Team.One ? Team.Two : Team.One;
+  const ground: Ground = {
+    home: level.getRandomSpawnPoint(entity.team ?? Team.Two),
+    treasure: treasureOf(),
+    rival: entity.team === Team.One ? Team.Two : Team.One,
+  };
   let gain = 0;
-  for (let ty = tileY(p.y - to); ty <= tileY(p.y + to); ty++) {
-    for (let tx = tileX(p.x - to); tx <= tileX(p.x + to); tx++) {
-      const tile = level.getTile(tx, ty);
-      if (!tile?.passable) continue;
-      const cx = centreX(tx);
-      const cy = centreY(ty);
-      const d = Math.hypot(cx - p.x, cy - p.y);
-      if (d <= from || d > to || !level.checkLineOfSight(p.x, p.y, cx, cy)) continue;
-      let value = 1;
-      if (cornerExit(level, tx, ty)) value = 3;
-      if (tile.type === TileType.Rail && tile.team === rival) value = 4;
-      else if ((home && dist({ x: cx, y: cy }, home) < BASE_DEFENSE_RANGE + 2 * TILE_WIDTH)
-        || (treasure && dist({ x: cx, y: cy }, treasure.position!) < 6 * TILE_WIDTH)) value = Math.max(value, 2);
-      gain += value;
-    }
-  }
+  forEachTile(tileX(p.x - to), tileY(p.y - to), tileX(p.x + to), tileY(p.y + to), (tx, ty) => {
+    const d = Math.hypot(centreX(tx) - p.x, centreY(ty) - p.y);
+    if (d <= from || d > to || !level.getTile(tx, ty)?.passable) return;
+    if (level.checkLineOfSight(p.x, p.y, centreX(tx), centreY(ty))) gain += tileWorth(level, tx, ty, ground);
+  });
   worthCache.set(turret, { at: brain.age, level: levelNow, gain });
   return gain;
 }

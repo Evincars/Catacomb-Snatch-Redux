@@ -1,15 +1,14 @@
 import type { Entity, AIRole } from '../world';
 import type { Level } from '../level/Level';
-import { AI_DIFFICULTIES } from '../game/GameState';
+import { aiDifficultyNamed } from '../game/GameState';
 import type { AIDifficulty } from '../game/GameState';
+import { exposeForDebugging } from '../core/debugHooks';
 import { CARRIAGE_DELAY, FLIP_TICKS } from './constants';
 import { routeFor } from './perception/navigation';
 import type { Brain, Goal } from './types';
 
 export const brains = new WeakMap<Entity, Brain>();
-if (import.meta.env?.DEV && typeof window !== 'undefined') {
-  (window as unknown as { __aiBrain: (e: Entity) => Brain | undefined }).__aiBrain = (e) => brains.get(e);
-}
+exposeForDebugging({ __aiBrain: (e: Entity) => brains.get(e) });
 
 export function brainOf(entity: Entity): Brain {
   let brain = brains.get(entity);
@@ -32,7 +31,7 @@ export function roleOf(entity: Entity): AIRole {
 }
 
 export function profileOf(entity: Entity): AIDifficulty {
-  return AI_DIFFICULTIES.find((d) => d.name === entity.aiPlayer!.difficulty) ?? AI_DIFFICULTIES[1];
+  return aiDifficultyNamed(entity.aiPlayer!.difficulty);
 }
 
 export function setGoal(brain: Brain, level: Level, goal: Omit<Goal, 'since'>): void {

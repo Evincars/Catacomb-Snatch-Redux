@@ -3,6 +3,8 @@ import { world } from '../world';
 import type { Entity } from '../world';
 import { PixelLabel } from '../ui/PixelText';
 
+const named = world.with('playerName', 'position', 'playerSlot');
+
 /** Pixels from the character's feet to the bottom of the tag: the sprite stands about 24px tall. */
 const TAG_LIFT = 28;
 const PADDING_X = 3;
@@ -37,7 +39,7 @@ export function updateNameTags(gameLayer: Container, local: Entity | undefined):
     if (!tag.container.destroyed) tag.container.destroy({ children: true });
     tags.delete(entity);
   }
-  for (const entity of world.with('playerName', 'position', 'playerSlot')) {
+  for (const entity of named) {
     if (entity === local || entity.removed || tags.has(entity)) continue;
     tags.set(entity, createTag(gameLayer, entity.playerName!));
   }

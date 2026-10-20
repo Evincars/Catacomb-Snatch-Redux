@@ -1,6 +1,6 @@
 import { world } from '../world';
 import type { Entity } from '../world';
-import { Mth } from '../math/Mth';
+import { angleTo8 } from '../render/Facing';
 
 export type BulletType = 'rifle' | 'shotgun' | 'cannon' | 'flame' | 'poison' | 'ray' | 'melee';
 
@@ -49,7 +49,7 @@ export function createBullet(
   const nx = dirX / len;
   const ny = dirY / len;
   const ownerId = world.id(owner) ?? -1;
-  const facing8 = cfg.directional ? Mth.angleTo8(dirX, dirY) : undefined;
+  const facing8 = cfg.directional ? angleTo8(dirX, dirY) : undefined;
 
   return world.add({
     // Fired from the feet-level gun position, not the body centre; the sprite

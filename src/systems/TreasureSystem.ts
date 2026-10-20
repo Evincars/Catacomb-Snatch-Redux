@@ -1,4 +1,6 @@
+import { Rectangle } from 'pixi.js';
 import { world } from '../world';
+import { boxAround } from '../core/geometry';
 import type { Level } from '../level/Level';
 import { createMob } from '../entities/MobFactory';
 import { TileType, TILE_WIDTH } from '../level/TileType';
@@ -8,10 +10,15 @@ const GUARD_AREA = 8 * TILE_WIDTH;
 /** Guards stand in a ring around the pile, clear of its base. */
 const MIN_RING = 28;
 const MAX_RING = 64;
+const GUARD_RADIUS = 10;
+
+const mobs = world.with('position', 'ai');
+const piles = world.with('position', 'treasure');
+const guardBox = new Rectangle();
 
 function guardsNear(x: number, y: number): number {
   let n = 0;
-  for (const mob of world.with('position', 'ai')) {
+  for (const mob of mobs) {
     if (mob.mobType !== 'pharao' || mob.removed) continue;
     if (Math.abs(mob.position!.x - x) < GUARD_AREA && Math.abs(mob.position!.y - y) < GUARD_AREA) n++;
   }
@@ -26,9 +33,8 @@ function placeGuard(level: Level, x: number, y: number): void {
     const sy = y + Math.sin(a) * d;
     const tile = level.getTileAt(sx, sy);
     if (!tile || !tile.passable || tile.type === TileType.Hole) continue;
-    const r = 10;
-    const bb = level.getClipBBs(sx, sy, r, r);
-    if (bb.some((c) => c.x0 < sx + r && c.x1 > sx - r && c.y0 < sy + r && c.y1 > sy - r)) continue;
+    const body = boxAround(sx, sy, GUARD_RADIUS, GUARD_RADIUS, guardBox);
+    if (level.getClipBBs(sx, sy, GUARD_RADIUS, GUARD_RADIUS).some((clip) => clip.intersects(body))) continue;
     createMob(level, 'pharao', sx, sy);
     return;
   }
@@ -40,7 +46,7 @@ function placeGuard(level: Level, x: number, y: number): void {
  * for good, so no pharaoh ever rises again.
  */
 export function spawnTreasureGuards(level: Level): void {
-  for (const pile of world.with('position', 'treasure')) {
+  for (const pile of piles) {
     const { x, y } = pile.position!;
     const missing = gameState.difficulty.pharaohs - guardsNear(x, y);
     for (let i = 0; i < missing; i++) placeGuard(level, x, y);

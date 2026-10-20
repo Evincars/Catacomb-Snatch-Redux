@@ -1,4 +1,5 @@
 import { world, Team } from '../../world';
+import { forEachTile } from '../../level/Grid';
 import type { Entity } from '../../world';
 import type { Level } from '../../level/Level';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../../level/TileType';
@@ -7,6 +8,9 @@ import { BLAST_CLEARANCE, DIRS, INF } from '../constants';
 import { centreX, centreY, tileX, tileY } from './geometry';
 import { bridgedToRival } from './rails';
 import type { Field } from '../types';
+
+const damageable = world.with('position', 'health');
+const placedBombs = world.with('position', 'bomb');
 
 /** Something worth a bomb: the tile to blast, where to stand to set it, and what it is worth. */
 export type SabotageTarget = {
@@ -29,6 +33,38 @@ function linkHome(level: Level, tx: number, ty: number, rival: Team): boolean {
   });
 }
 
+type Spot = { x: number; y: number; cut: boolean };
+
+/** Ring of tiles around a tile, as [dx, dy], row by row (the order settles ties). */
+const RING = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]] as const;
+
+/** Every piece of the rival's laid track, marking the ones that link it to their base. */
+function rivalTrack(level: Level, rival: Team): Spot[] {
+  const spots: Spot[] = [];
+  forEachTile(0, 0, level.width - 1, level.height - 1, (tx, ty) => {
+    const tile = level.getTile(tx, ty);
+    if (tile?.type === TileType.Rail && tile.team === rival) spots.push({ x: tx, y: ty, cut: linkHome(level, tx, ty, rival) });
+  });
+  return spots;
+}
+
+/** Tiles of the rival's turrets, harvesters and carriages. */
+function rivalMachines(rival: Team): Spot[] {
+  const tiles: Spot[] = [];
+  for (const e of damageable) {
+    if (e.removed || e.carriedBy !== undefined || e.team !== rival) continue;
+    if (e.turret || e.harvester || e.railDroid) tiles.push({ x: tileX(e.position!.x), y: tileY(e.position!.y), cut: false });
+  }
+  return tiles;
+}
+
+/** How many of `spots` one bomb at `at` would wreck: everything within about a tile and a half. */
+function countNear(spots: readonly Spot[], at: Spot): number {
+  let count = 0;
+  for (const spot of spots) if (Math.abs(spot.x - at.x) <= 1 && Math.abs(spot.y - at.y) <= 1) count++;
+  return count;
+}
+
 /**
  * What to blow up next: the spot with the most of the rival's track and machines within reach of one
  * bomb, weighed against the walk. The laid track next to the rival's base is worth most of all: cut
@@ -40,55 +76,39 @@ export function findSabotage(level: Level, entity: Entity, field: Field, cutsOnl
   const rivalTeam = entity.team === Team.One ? Team.Two : Team.One;
   const bridged = bridgedToRival(level, entity);
   if (cutsOnly && !bridged) return null;
-  const spots: Array<{ x: number; y: number; cut: boolean }> = [];
-  for (let ty = 0; ty < level.height; ty++) {
-    for (let tx = 0; tx < level.width; tx++) {
-      const tile = level.getTile(tx, ty);
-      if (tile?.type !== TileType.Rail || tile.team !== rivalTeam) continue;
-      spots.push({ x: tx, y: ty, cut: linkHome(level, tx, ty, rivalTeam) });
-    }
-  }
-  const machines = cutsOnly ? [] : [...world.with('position', 'health')].filter((e) => !e.removed && e.carriedBy === undefined
-    && e.team === rivalTeam && (e.turret !== undefined || e.harvester !== undefined || e.railDroid !== undefined));
-  const machineTiles = machines.map((m) => ({ x: tileX(m.position!.x), y: tileY(m.position!.y), cut: false }));
-  // One bomb wrecks what lies within about a tile and a half of it.
-  const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1;
+  const track = rivalTrack(level, rivalTeam);
+  const machines = cutsOnly ? [] : rivalMachines(rivalTeam);
+  const candidates = cutsOnly ? track.filter((r) => r.cut) : [...track, ...machines];
   let best: SabotageTarget | null = null;
   let bestScore = -INF;
-  for (const spot of cutsOnly ? spots.filter((r) => r.cut) : [...spots, ...machineTiles]) {
+  for (const spot of candidates) {
     const tile = spot.x + spot.y * level.width;
     const stand = besideWall(level, field, tile);
     if (stand < 0) continue;
-    const value = spots.filter((r) => near(r, spot)).length + 4 * machineTiles.filter((m) => near(m, spot)).length
-      + (spot.cut ? (bridged ? 40 : 12) : 0);
+    const value = countNear(track, spot) + 4 * countNear(machines, spot) + (spot.cut ? (bridged ? 40 : 12) : 0);
     // Worth a walk of a few tiles per piece wrecked, but never an expedition for a single rail.
     const score = value * 5 - field.dist[stand];
-    if (score > bestScore) {
-      bestScore = score;
-      best = { tile, stand, value, cut: spot.cut, bridged };
-    }
+    if (score <= bestScore) continue;
+    bestScore = score;
+    best = { tile, stand, value, cut: spot.cut, bridged };
   }
   return best;
 }
 
+/** Where to stand to set a bomb against `wall`: square to it on bare floor is best; the bomb cannot sit on track. */
 export function besideWall(level: Level, field: Field, wall: number): number {
   const wx = wall % level.width;
   const wy = (wall - wx) / level.width;
   let best = -1;
   let bestScore = INF;
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const tile = level.getTile(wx + dx, wy + dy);
-      const t = wx + dx + (wy + dy) * level.width;
-      if (!tile?.passable || !Number.isFinite(field.dist[t])) continue;
-      // Square to the wall on bare floor is best; the bomb cannot sit on track.
-      const score = field.dist[t] + (dx !== 0 && dy !== 0 ? 20 : 0) + (tile.buildable ? 0 : 40);
-      if (score < bestScore) {
-        bestScore = score;
-        best = t;
-      }
-    }
+  for (const [dx, dy] of RING) {
+    const tile = level.getTile(wx + dx, wy + dy);
+    const t = wx + dx + (wy + dy) * level.width;
+    if (!tile?.passable || !Number.isFinite(field.dist[t])) continue;
+    const score = field.dist[t] + (dx !== 0 && dy !== 0 ? 20 : 0) + (tile.buildable ? 0 : 40);
+    if (score >= bestScore) continue;
+    bestScore = score;
+    best = t;
   }
   return best;
 }
@@ -102,28 +122,39 @@ export function clearOfBlast(entity: Entity, bomb: Entity): boolean {
     || Math.abs(entity.position!.y - centreY(by)) >= blastHitTiles(reach) * TILE_HEIGHT + r.y;
 }
 
+/** A lit bomb lying on the floor whose blast would catch the entity where it stands, if any. */
+export function threateningBomb(entity: Entity): Entity | undefined {
+  for (const b of placedBombs) {
+    if (!b.removed && b.carriedBy === undefined && b.bomb!.lit && !clearOfBlast(entity, b)) return b;
+  }
+  return undefined;
+}
+
+/** Tiles searched around a bomb, beyond its blast, for cover. */
+const COVER_SEARCH = 6;
+
 /** A reachable tile outside the actual blast, preferably with extra clearance. */
 export function blastCover(level: Level, field: Field, bomb: Entity, needsShot = true): number {
   const bp = bomb.position!;
   const bx = tileX(bp.x);
   const by = tileY(bp.y - (bomb.yOffset ?? 0));
   const reach = Math.ceil(blastHitTiles(bomb.bomb!.blastTiles) - 0.5);
+  const span = reach + COVER_SEARCH;
   let best = -1;
   let bestScore = INF;
-  for (let ty = by - reach - 6; ty <= by + reach + 6; ty++) {
-    for (let tx = bx - reach - 6; tx <= bx + reach + 6; tx++) {
-      const clearance = Math.max(Math.abs(tx - bx), Math.abs(ty - by)) - reach;
-      if (clearance <= 0) continue;
-      if (tx < 0 || ty < 0 || tx >= level.width || ty >= level.height) continue;
-      const t = tx + ty * level.width;
-      if (!Number.isFinite(field.dist[t])) continue;
-      if (needsShot && !level.checkLineOfSight(centreX(tx), centreY(ty), bp.x, bp.y)) continue;
-      const score = field.dist[t] + (needsShot ? Math.max(0, BLAST_CLEARANCE - clearance) * 4 : 0);
-      if (score < bestScore) {
-        best = t;
-        bestScore = score;
-      }
-    }
-  }
+  const x0 = Math.max(0, bx - span);
+  const y0 = Math.max(0, by - span);
+  const x1 = Math.min(level.width - 1, bx + span);
+  const y1 = Math.min(level.height - 1, by + span);
+  forEachTile(x0, y0, x1, y1, (tx, ty) => {
+    const clearance = Math.max(Math.abs(tx - bx), Math.abs(ty - by)) - reach;
+    const t = tx + ty * level.width;
+    if (clearance <= 0 || !Number.isFinite(field.dist[t])) return;
+    if (needsShot && !level.checkLineOfSight(centreX(tx), centreY(ty), bp.x, bp.y)) return;
+    const score = field.dist[t] + (needsShot ? Math.max(0, BLAST_CLEARANCE - clearance) * 4 : 0);
+    if (score >= bestScore) return;
+    best = t;
+    bestScore = score;
+  });
   return best;
 }
