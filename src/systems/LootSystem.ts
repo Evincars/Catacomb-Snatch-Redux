@@ -2,6 +2,7 @@ import { Rectangle } from 'pixi.js';
 import { world } from '../world';
 import type { Entity } from '../world';
 import { boxAround } from '../core/geometry';
+import type { Level } from '../level/Level';
 import { sound } from '../audio/SoundPlayer';
 import { gameState } from '../game/GameState';
 import { pickupSound, LOOT_BURST_TICKS } from '../entities/LootFactory';
@@ -22,6 +23,8 @@ const REST_TO_HARVEST = 1;
 const NORMAL_LIFESPAN = 20;
 const BLINK_TICKS = 180;
 const BLINK_PERIOD = 4;
+/** Share of its speed a coin keeps when it bounces off a wall. */
+const WALL_BOUNCE = 0.4;
 /** Slack around a player's drawn body within which a coin counts as walked over: about half a small coin. */
 const TOUCH_SLACK = 4;
 
@@ -87,14 +90,28 @@ function collect(coin: Entity, player: Entity): void {
   removeCoin(coin);
 }
 
-/** Drift and friction of a coin that is not gliding to anyone, and the arc of one still in the air. */
-function drift(coin: Entity, airborne: boolean): void {
+/** Whether a coin may move onto this point: inside the map and on a tile people can walk on. */
+function open(level: Level, x: number, y: number): boolean {
+  return level.getTileAt(x, y)?.passable === true;
+}
+
+/**
+ * Moves a loose coin along its velocity, one axis at a time, bouncing it softly off walls and other ground
+ * nobody can walk on, so a burst of loot never lands beyond a wall or off the map where it cannot be taken.
+ */
+function slide(level: Level, coin: Entity): void {
   const lp = coin.position!;
   const ld = coin.loot!;
-  if (ld.glide === 0) {
-    lp.x += ld.velX;
-    lp.y += ld.velY;
-  }
+  if (open(level, lp.x + ld.velX, lp.y)) lp.x += ld.velX;
+  else ld.velX = -ld.velX * WALL_BOUNCE;
+  if (open(level, lp.x, lp.y + ld.velY)) lp.y += ld.velY;
+  else ld.velY = -ld.velY * WALL_BOUNCE;
+}
+
+/** Drift and friction of a coin that is not gliding to anyone, and the arc of one still in the air. */
+function drift(level: Level, coin: Entity, airborne: boolean): void {
+  const ld = coin.loot!;
+  if (ld.glide === 0) slide(level, coin);
   const friction = airborne ? 0.98 : LOOT_FRICTION;
   ld.velX *= friction;
   ld.velY *= friction;
@@ -135,11 +152,11 @@ function glide(coin: Entity, target: Nearest): void {
   if (target.dist - step <= PICKUP_RADIUS) collect(coin, target.player);
 }
 
-function updateCoin(coin: Entity, lifeScale: number): void {
+function updateCoin(level: Level, coin: Entity, lifeScale: number): void {
   const lp = coin.position!;
   const ld = coin.loot!;
   const airborne = (ld.burstTicks ?? 0) > 0;
-  drift(coin, airborne);
+  drift(level, coin, airborne);
   const near = nearestPlayer(lp.x, lp.y, ld.suckRadius, inReach);
   const toucher = airborne ? null : contactCollector(coin, near);
   if (toucher) {
@@ -162,7 +179,7 @@ function updateCoin(coin: Entity, lifeScale: number): void {
  * coins in flight coast to a stop, and carry on once they stop.
  * Coins nobody collects blink and vanish after the difficulty's lifespan.
  */
-export function updateLoot(_dt: number): void {
+export function updateLoot(level: Level, _dt: number): void {
   for (const player of restless) {
     const stats = player.playerStats!;
     stats.restTicks = player.playerInput!.shoot ? 0 : stats.restTicks + 1;
@@ -170,6 +187,6 @@ export function updateLoot(_dt: number): void {
   }
   const lifeScale = gameState.difficulty.coinLifespan / NORMAL_LIFESPAN;
   for (const coin of coins) {
-    if (!coin.removed) updateCoin(coin, lifeScale);
+    if (!coin.removed) updateCoin(level, coin, lifeScale);
   }
 }

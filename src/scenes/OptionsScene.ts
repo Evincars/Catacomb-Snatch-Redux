@@ -100,6 +100,12 @@ export class OptionsScene implements Scene {
     this.container.addChild(back);
   }
 
+  /** Key Bindings opened over this screen: the name box must not show through it. */
+  setCovered(covered: boolean): void {
+    this.container.interactiveChildren = !covered;
+    this.nameField.visible = !covered;
+  }
+
   destroy(): void {
     this.nameField.destroy();
     this.container.destroy({ children: true });

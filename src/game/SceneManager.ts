@@ -20,6 +20,11 @@ export interface Scene {
   destroy(): void;
   /** Lets a scene consume Escape for itself (cancelling a prompt); true when it did. */
   handleEscape?(): boolean;
+  /**
+   * Told when another screen is stacked over this one, and when it is uncovered again. Pixi draws the screen
+   * on top, but HTML elements a scene lays over the canvas (text boxes) would show through: it hides them here.
+   */
+  setCovered?(covered: boolean): void;
 }
 
 export class SceneManager {
@@ -64,9 +69,15 @@ export class SceneManager {
     this.app.stage.addChild(next.container);
   }
 
+  /** The screen currently on top: the last stacked one, or the scene itself. */
+  private get top(): Scene | null {
+    return this.overlays[this.overlays.length - 1] ?? this.current;
+  }
+
   /** Shows a scene on top of the current one without tearing the current one down. */
   pushOverlay(name: SceneName): void {
     const scene = this.factoryOf(name)(this);
+    this.top?.setCovered?.(true);
     this.overlays.push(scene);
     this.app.stage.addChild(scene.container);
   }
@@ -76,6 +87,7 @@ export class SceneManager {
     if (!scene) return;
     this.app.stage.removeChild(scene.container);
     scene.destroy();
+    this.top?.setCovered?.(false);
   }
 
   /** Escape on a stacked sub-screen: closes it unless it has something of its own to cancel. */

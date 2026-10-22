@@ -15,7 +15,6 @@ export class CoopScene implements Scene {
   private input = document.createElement('input');
   private nameField: NameField;
   private disposed = false;
-  private overlayWatch?: ReturnType<typeof setInterval>;
   private place: () => void;
 
   constructor(private manager: SceneManager, role: 'host' | 'guest', destination?: string) {
@@ -140,19 +139,17 @@ export class CoopScene implements Scene {
       watch();
     } else status.text = 'Paste the link your host sent you.';
 
-    // The Options screen lies over this one; the text boxes would show through it.
-    let overlay = false;
-    this.overlayWatch = setInterval(() => {
-      if (manager.hasOverlay === overlay) return;
-      overlay = manager.hasOverlay;
-      this.container.interactiveChildren = !overlay;
-      this.input.style.display = overlay ? 'none' : '';
-      this.nameField.visible = !overlay;
-      if (!overlay) {
-        this.nameField.element.value = settings.playerName;
-        this.place();
-      }
-    }, 150);
+  }
+
+  /** The Options screen lies over this one; the text boxes would show through it. */
+  setCovered(covered: boolean): void {
+    this.container.interactiveChildren = !covered;
+    this.input.style.display = covered ? 'none' : '';
+    this.nameField.visible = !covered;
+    if (covered) return;
+    // The name may have been changed on the Options screen.
+    this.nameField.element.value = settings.playerName;
+    this.place();
   }
 
   private button(text: string, y: number, action: () => void): PixelButton {
@@ -163,7 +160,6 @@ export class CoopScene implements Scene {
   }
   destroy(): void {
     this.disposed = true;
-    clearInterval(this.overlayWatch);
     window.removeEventListener('resize', this.place);
     coop.onChange = null;
     this.nameField.destroy();

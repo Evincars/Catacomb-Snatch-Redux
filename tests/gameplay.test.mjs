@@ -1301,7 +1301,7 @@ test('a player walking over a coin while firing picks it up, even when it passes
     p.aimVector = { x: 1, y: 0 };
     updateWeapons(1);
     updateMovement(level, 1);
-    updateLoot(1);
+    updateLoot(level, 1);
   }
   assert.ok(coin.removed, 'walked through the coin without taking it');
   assert.equal(p.playerStats.score, 10);
@@ -1319,11 +1319,11 @@ test("a fallen player's coins and guns vanish 25 seconds later, whatever the dif
   const guns = () => [...world.with('weaponPickup')].length;
   assert.ok(coins() > 0 && guns() > 0);
   for (let tick = 0; tick < FALLEN_DROP_LIFE - 1; tick++) {
-    updateLoot(1);
+    updateLoot(level, 1);
     updateWeaponPickups();
   }
   assert.ok(coins() > 0 && guns() > 0, 'gone before 25 seconds');
-  updateLoot(1);
+  updateLoot(level, 1);
   updateWeaponPickups();
   assert.equal(coins(), 0, 'coins outlived 25 seconds');
   assert.equal(guns(), 0, 'guns outlived 25 seconds');
@@ -1555,4 +1555,17 @@ test('turret and harvester upgrades open up at player levels 3 and 7, and levels
   for (let tick = 0; tick < 700; tick++) updateRespawns(level, 1);
   assert.equal(fallen.respawnTicks, undefined);
   assert.equal(fallen.playerStats.level, 5, 'dying cost a level');
+});
+
+test('coins burst out of a kill bounce off walls instead of landing beyond them', () => {
+  const level = new Level(12, 12);
+  for (let y = 0; y < 12; y++) put(level, 6, y, TileType.Wall);
+  for (let y = 0; y < 12; y++) put(level, 7, y, TileType.UnpassableSand);
+  for (let i = 0; i < 40; i++) {
+    const coin = createLoot(centre(5) + 10, centre(5), 3, (i % 5) - 2, 10, true);
+    coin.position.y += i % 7;
+  }
+  for (let tick = 0; tick < 120; tick++) updateLoot(level, 1);
+  const beyond = [...world.with('loot')].filter((c) => c.position.x >= 6 * 32);
+  assert.equal(beyond.length, 0, `${beyond.length} coins went through the wall`);
 });
