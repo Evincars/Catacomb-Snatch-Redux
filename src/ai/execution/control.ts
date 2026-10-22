@@ -58,6 +58,7 @@ export function clearIntents(entity: Entity): void {
   it.use = false;
   it.build = false;
   it.upgrade = false;
+  it.dropWeapon = false;
 }
 
 function heldBy(entity: Entity): Entity | undefined {

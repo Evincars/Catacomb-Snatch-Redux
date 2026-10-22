@@ -8,6 +8,7 @@ import { frameTexture } from '../render/Sheets';
 import { makeText } from './PixelText';
 import { PixelLabel } from './PixelText';
 import { GAME_WIDTH, GAME_HEIGHT, camera } from '../render/Camera';
+import { treasureShare } from '../game/MatchRules';
 import { characterName, gameState, isVersus } from '../game/GameState';
 import type { CharacterType } from '../entities/PlayerFactory';
 import { forEachTile } from '../level/Grid';
@@ -171,7 +172,7 @@ export class HudPanel {
       const versus = isVersus();
       if (versus !== this.versusShown) this.layoutScores(versus, player);
       if (versus) {
-        const pct = (score: number) => Math.min(100, Math.floor(score * 100 / level.targetScore));
+        const pct = (score: number) => treasureShare(score, level);
         const yours = player.team === 2 ? level.player2Score : level.player1Score;
         const rival = player.team === 2 ? level.player1Score : level.player2Score;
         // With company on your side the computers are a team too (one per person): "LORD LARD TEAM".

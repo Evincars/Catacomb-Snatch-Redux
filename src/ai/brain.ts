@@ -18,7 +18,7 @@ export function brainOf(entity: Entity): Brain {
       trigger: false, triggerTicks: 0, swapTicks: 0,
       lastX: entity.position!.x, lastY: entity.position!.y, stuck: 0, sidestep: null, walkWatch: null, avoid: new Map(), railsSinceUpgrade: 0, upgradeSince: null,
       railPlan: [], railDone: false, lastCarriageAt: -CARRIAGE_DELAY, blacklist: new Map(),
-      retrieveUntil: 0, bank: null, bankCool: 0,
+      retrieveUntil: 0, bank: null, bankCool: 0, seenChests: new Set(),
       held: { x: { dir: 0, ticks: 0 }, y: { dir: 0, ticks: 0 } }, lane: false,
     };
     brains.set(entity, brain);

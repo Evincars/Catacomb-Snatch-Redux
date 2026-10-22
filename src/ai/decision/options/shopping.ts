@@ -2,7 +2,7 @@ import { q } from '../../../world';
 import type { ShopKind } from '../../../world';
 import { isWeaponKind } from '../../../entities/WeaponStats';
 import type { WeaponKind } from '../../../entities/WeaponStats';
-import { upgradeCostOf } from '../../../entities/BuildingFactory';
+import { experiencedEnough, upgradeCostOf } from '../../../entities/BuildingFactory';
 import { railCost, carriageCost } from '../../../systems/InteractionSystem';
 import { CARRIAGE_DELAY, GUARD_SPAN, INF, SABOTEUR_BOMB_SCORE } from '../../constants';
 import { bounces, weaponGain } from '../../perception/arsenal';
@@ -145,7 +145,7 @@ export const SHOPPING: Option[] = [
       if (!builds(s)) return null;
       const flush = s.money - s.profile.reserve;
       const pick = nearestOf(s.level, s.brain, [...q.upgradables].filter((b) => !b.removed && b.team === s.entity.team
-        && b.carriedBy === undefined && b.upgradable!.level < s.profile.maxUpgrade
+        && b.carriedBy === undefined && b.upgradable!.level < s.profile.maxUpgrade && experiencedEnough(s.entity, b)
         && worthUpgrading(s.level, s.entity, s.brain, b)
         && ((upgradeCostOf(b) ?? INF) <= s.surplus
           || (upgradeCostOf(b) ?? INF) * 2 <= flush - s.trackBudget * 0.25)));
@@ -207,7 +207,7 @@ export const SHOPPING: Option[] = [
     evaluate(s) {
       if (!builds(s)) return null;
       const pick = nearestOf(s.level, s.brain, [...q.upgradables].filter((b) => !b.removed && b.team === s.entity.team
-        && b.carriedBy === undefined && b.upgradable!.level < s.profile.maxUpgrade
+        && b.carriedBy === undefined && b.upgradable!.level < s.profile.maxUpgrade && experiencedEnough(s.entity, b)
         && (upgradeCostOf(b) ?? INF) <= s.spare && worthUpgrading(s.level, s.entity, s.brain, b)));
       return pick ? { score: 40, goal: usePlan(s.level, s.brain, 'upgrade', pick, 'upgradeId') } : null;
     },

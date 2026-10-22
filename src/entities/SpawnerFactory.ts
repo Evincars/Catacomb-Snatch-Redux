@@ -12,6 +12,18 @@ const SPAWNER_DEATH_POINTS: Record<string, number> = {
   scarab: 20,
 };
 
+/** Frames in spawner.png, from whole to nearly smashed. */
+const NEST_FRAMES = 4;
+
+/**
+ * spawner.png column for a nest's health: whole while unhurt, then one frame further cracked for every
+ * quarter of its health shot away, so all four frames show before it breaks.
+ */
+export function nestFrame(current: number, max: number): number {
+  const lost = 1 - Math.max(0, current) / Math.max(1, max);
+  return Math.min(NEST_FRAMES - 1, Math.max(0, Math.floor(lost * NEST_FRAMES)));
+}
+
 /** A destructible sarcophagus that keeps producing `mobType` until it is shot to pieces. */
 export function createSpawner(x: number, y: number, mobType: string): Entity {
   return world.add({

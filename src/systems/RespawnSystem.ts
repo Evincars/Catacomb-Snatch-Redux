@@ -3,7 +3,8 @@ import type { Level } from '../level/Level';
 import { gameState, isVersus } from '../game/GameState';
 import { respawnPlayer } from './HoleSystem';
 
-const respawning = world.with('playerInput', 'respawnTicks');
+/** Eliminated players never come back. */
+const respawning = world.with('playerInput', 'respawnTicks').without('eliminated');
 const players = world.with('playerInput', 'position');
 
 export const RESPAWN_TICKS = 600;

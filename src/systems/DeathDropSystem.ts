@@ -21,6 +21,29 @@ const DROP_RING = 14;
 const droppedGuns = world.with('position', 'weaponPickup');
 const collectors = world.with('position', 'playerStats', 'weaponInventory', 'health');
 
+/** Arms a player with the gun at `index` of their inventory, keeping the cooldown so a swap cannot skip it. */
+function equipSlot(player: Entity, index: number): void {
+  const inv = player.weaponInventory!;
+  const type = inv.weapons[index];
+  inv.current = index;
+  player.weapon = { type, cooldown: WEAPON_STATS[type].cooldown, currentCooldown: player.weapon?.currentCooldown ?? 0 };
+}
+
+/**
+ * Throws the gun in hand down at the player's feet, for a teammate to pick up; the starting gun is kept.
+ * The thrower takes up the gun before it, and cannot pick the thrown one up again until they have stepped off it.
+ */
+export function throwDownWeapon(player: Entity): boolean {
+  const inv = player.weaponInventory;
+  const pos = player.position;
+  if (!inv || !pos || inv.current <= 0 || inv.current >= inv.weapons.length) return false;
+  const [kind] = inv.weapons.splice(inv.current, 1);
+  equipSlot(player, inv.current - 1);
+  const gun = createWeaponPickup(pos.x, pos.y, kind);
+  gun.weaponPickup!.heldOff = world.id(player);
+  return true;
+}
+
 /** A gun lying on the ground, drawn as its shop icon. */
 export function createWeaponPickup(x: number, y: number, kind: WeaponKind): Entity {
   const def = SHOP_DEFS[kind];
@@ -67,10 +90,23 @@ export function dropOnDeath(player: Entity): void {
   dropSpareGuns(player, pos);
 }
 
+function withinReach(player: Entity, gun: Entity): boolean {
+  return Math.hypot(player.position!.x - gun.position!.x, player.position!.y - gun.position!.y) <= PICKUP_REACH;
+}
+
 function canCollect(player: Entity, gun: Entity): boolean {
   if (player.removed || player.falling || player.respawnTicks !== undefined || player.health!.current <= 0) return false;
   if (player.weaponInventory!.weapons.includes(gun.weaponPickup!.kind)) return false;
-  return Math.hypot(player.position!.x - gun.position!.x, player.position!.y - gun.position!.y) <= PICKUP_REACH;
+  if (gun.weaponPickup!.heldOff === world.id(player)) return false;
+  return withinReach(player, gun);
+}
+
+/** The thrower may have the gun back once they have stepped off it (or are gone). */
+function releaseHold(gun: Entity): void {
+  const hold = gun.weaponPickup!.heldOff;
+  if (hold === undefined) return;
+  const thrower = world.entity(hold);
+  if (!thrower?.position || !withinReach(thrower, gun)) delete gun.weaponPickup!.heldOff;
 }
 
 function removeGun(gun: Entity): void {
@@ -82,8 +118,7 @@ function collect(player: Entity, gun: Entity): void {
   const kind = gun.weaponPickup!.kind;
   const inv = player.weaponInventory!;
   inv.weapons.push(kind);
-  inv.current = inv.weapons.length - 1;
-  player.weapon = { type: kind, cooldown: WEAPON_STATS[kind].cooldown, currentCooldown: player.weapon?.currentCooldown ?? 0 };
+  equipSlot(player, inv.weapons.length - 1);
   quietly(player.aiPlayer !== undefined, () => notify(`Picked up ${SHOP_DEFS[kind].label}`));
   sound.playSound('upgrade', gun.position!.x, gun.position!.y);
   removeGun(gun);
@@ -104,6 +139,7 @@ function age(gun: Entity): boolean {
 export function updateWeaponPickups(): void {
   for (const gun of droppedGuns) {
     if (gun.removed || age(gun)) continue;
+    releaseHold(gun);
     const player = collectorOf(gun);
     if (player) collect(player, gun);
   }

@@ -10,6 +10,7 @@ import { boxAround } from '../core/geometry';
 import { move } from './MovementSystem';
 import { sound } from '../audio/SoundPlayer';
 import { gameState, isVersus } from '../game/GameState';
+import { takePot } from '../game/Treasury';
 
 /** Steady speed of Java's RailDroid (0.7 px of thrust against 0.4 drag). */
 const SPEED = 1.15;
@@ -32,7 +33,7 @@ const SWAP_TIME = 30;
 /** Coins credited to the team for each pot of treasure brought home in a co-operative game. */
 export const TREASURE_REWARD = 100;
 /** Original versus treasury progress per delivery, independent of the coin reward. */
-const TREASURE_PROGRESS = 2;
+export const TREASURE_PROGRESS = 2;
 const HEALTH = 10;
 /** A carriage that has gone nowhere in this many ticks while meant to be rolling is wedged. */
 const WEDGE_TICKS = 90;
@@ -174,12 +175,13 @@ function handleTreasure(level: Level, droid: Entity): void {
   else deliver(level, droid);
 }
 
-/** A carriage within reach of the treasure pile (Java's getBB().grow(32)) fills its pot. */
+/** A carriage within reach of the treasure pile (Java's getBB().grow(32)) fills its pot, while the pile lasts. */
 function fillAtTreasure(droid: Entity): void {
   const rd = droid.railDroid!;
   const reach = boxOf(droid, undefined, undefined, boxA).pad(TREASURE_REACH);
   for (const b of buildings) {
     if (b.building!.type !== 'treasure' || !reach.intersects(boxOf(b, undefined, undefined, boxB))) continue;
+    if (!takePot(b)) continue;
     rd.full = true;
     rd.swapTime = SWAP_TIME;
     sound.playSound('gem', droid.position!.x, droid.position!.y);

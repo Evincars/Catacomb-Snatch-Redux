@@ -26,6 +26,8 @@ export type PlayerIntents = {
   use: boolean;
   build: boolean;
   upgrade: boolean;
+  /** Throw the gun in hand on the floor for someone else (never the starting gun). */
+  dropWeapon: boolean;
 };
 
 /** Buildings sold at a stall, carried off and placed. */
@@ -184,8 +186,11 @@ export type Entity = {
   // --- buffs ---
   buffs?: Array<{ type: 'poison' | 'troll_perk'; duration: number; strength: number }>;
 
-  /** A gun a fallen player left on the ground; anyone without that gun can pick it up. */
-  weaponPickup?: { kind: WeaponKind; age: number; life: number };
+  /**
+   * A gun left on the ground, by a fallen player or thrown down to hand over; anyone without that gun can
+   * pick it up. `heldOff` is the id of whoever threw it down, who may not take it back until they step off it.
+   */
+  weaponPickup?: { kind: WeaponKind; age: number; life: number; heldOff?: number };
 
   // --- loot ---
   loot?: {
@@ -254,8 +259,11 @@ export type Entity = {
   stepTimer?: number;
   /** Ticks before a player may lay or lift another rail. */
   railCooldown?: number;
-  /** Marks the treasure pile. `timer` is unused and only kept so older saves still validate. */
-  treasure?: { timer: number };
+  /**
+   * Marks the treasure pile: `capacity` pots when the map opened and `left` still to mine (both missing in
+   * older saves, whose piles are full). `timer` is unused and only kept so older saves still validate.
+   */
+  treasure?: { timer: number; capacity?: number; left?: number };
   chest?: { value: number; opened: boolean; disappearTicks: number };
   spikeTrap?: { phase: number; ticks: number };
 
@@ -340,6 +348,9 @@ export type Entity = {
     solid: boolean;
     passable: boolean;
   };
+
+  /** Out of a team deathmatch for good: waits at home, never respawning, until the match is decided. */
+  eliminated?: true;
 
   // --- lifecycle ---
   removed?: true;

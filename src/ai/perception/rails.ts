@@ -1,4 +1,5 @@
 import { world, Team } from '../../world';
+import { treasureCapacity, treasureRemaining } from '../../game/Treasury';
 import type { Entity } from '../../world';
 import type { Level } from '../../level/Level';
 import { TileType } from '../../level/TileType';
@@ -210,6 +211,8 @@ export function ownCarriages(entity: Entity): number {
 }
 
 export function carriageDemand(level: Level, entity: Entity, profile: AIDifficulty): number {
+  // Once the pile has been mined bare there is nothing left to carry.
+  if (treasureCapacity() > 0 && treasureRemaining() === 0) return 0;
   const team = entity.team ?? Team.Two;
   // Track the rival laid counts once we have joined it; their base track never does.
   const follow = (tile: TileData) => tile.team === undefined || tile.team === team

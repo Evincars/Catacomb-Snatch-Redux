@@ -63,7 +63,7 @@ export function createPlayer(
       mouseX: 0, mouseY: 0,
       mouseAiming: true,
       keyAim: null,
-      intents: { weaponSlot: -1, weaponStep: 0, use: false, build: false, upgrade: false },
+      intents: { weaponSlot: -1, weaponStep: 0, use: false, build: false, upgrade: false, dropWeapon: false },
     },
     playerStats: {
       score: 0,

@@ -142,6 +142,7 @@ export function updateInput(_dt: number): void {
     it.use = rightClick || wasActionPressed('use');
     it.build = wasActionPressed('build');
     it.upgrade = wasActionPressed('upgrade');
+    it.dropWeapon = wasActionPressed('drop_weapon');
     it.weaponSlot = WEAPON_SLOTS.findIndex((a) => wasActionPressed(a));
     it.weaponStep =
       (wasActionPressed('next_weapon') ? 1 : 0) - (wasActionPressed('prev_weapon') ? 1 : 0) || step;

@@ -95,7 +95,8 @@ function validateSettings(settings: WorldState['settings'], level: LevelState): 
   'Invalid world settings');
   ensure(Number.isFinite(level.targetScore) && level.targetScore >= 1
     && Array.isArray(level.scores) && level.scores.length === 2 && level.scores.every(Number.isFinite)
-    && level.seen.every(b => typeof b === 'boolean'), 'Invalid world settings');
+    && level.seen.every(b => typeof b === 'boolean')
+    && (level.deathmatch === undefined || typeof level.deathmatch === 'boolean'), 'Invalid world settings');
 }
 
 /** A player character must sit in a free slot, on the team its slot plays for. */
@@ -170,6 +171,7 @@ const COMPONENTS = new Set([
   'building', 'tooltip', 'upgradable', 'rangeTicks', 'ephemeral', 'falling', 'stepTimer', 'railCooldown',
   'treasure', 'chest', 'spikeTrap', 'railDroid', 'explosion', 'dustTimer', 'shopItem', 'carriedBy', 'targetId',
   'carryingId', 'turret', 'bomb', 'harvester', 'facing8', 'ai', 'spawner', 'spawnedBy', 'minimapIcon', 'minimapColor', 'tile',
+  'eliminated',
 ]);
 const REQUIRED: Readonly<Record<string, Readonly<Record<string, 'number' | 'string' | 'boolean' | 'object'>>>> = {
   position: { x: 'number', y: 'number' }, velocity: { x: 'number', y: 'number' },
@@ -239,6 +241,9 @@ function checkDetails(data: EntityState): void {
   ensure(!data.upgradable || (Array.isArray(data.upgradable.costs) && data.upgradable.costs.every(Number.isFinite)), 'Invalid upgrade costs');
   ensure(data.loot?.burstTicks === undefined || inRange(data.loot.burstTicks, 0, 24), 'Invalid loot burst timer');
   ensure(data.loot?.fixedLife === undefined || typeof data.loot.fixedLife === 'boolean', 'Invalid loot lifetime');
+  const pile = data.treasure;
+  ensure(!pile || ((pile.capacity === undefined || inRange(pile.capacity, 0, 100000))
+    && (pile.left === undefined || inRange(pile.left, 0, pile.capacity ?? 100000))), 'Invalid treasure pile');
   const flash = data.playerStats?.pickupFlashCooldown;
   ensure(flash === undefined || inRange(flash, 0, 8), 'Invalid pickup flash timer');
 }

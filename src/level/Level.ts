@@ -17,6 +17,8 @@ export type LevelState = {
   spawns: [SpawnPoint[], SpawnPoint[]];
   targetScore: number;
   scores: [number, number];
+  /** The treasure ran out level: last team standing wins (missing in older saves). */
+  deathmatch?: boolean;
 };
 
 /** How far a wall's collision box rises above its tile (Java WallTile.addClipBBs). */
@@ -74,6 +76,8 @@ export class Level {
   targetScore = 100;
   player1Score = 0;
   player2Score = 0;
+  /** Set when the treasure was shared out evenly: from then on nobody respawns and the last team standing wins. */
+  deathmatch = false;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -272,7 +276,7 @@ export class Level {
       width: this.width, height: this.height, tiles: this.tileStacks, seen: this.seen,
       baseTiles: this.baseTiles, spawnTiles: this.spawnTiles, baseAreas: this.baseAreas,
       spawns: [this.spawnPointsP1, this.spawnPointsP2],
-      targetScore: this.targetScore, scores: [this.player1Score, this.player2Score],
+      targetScore: this.targetScore, scores: [this.player1Score, this.player2Score], deathmatch: this.deathmatch,
     };
   }
 
@@ -286,6 +290,7 @@ export class Level {
     [level.spawnPointsP1, level.spawnPointsP2] = state.spawns;
     level.targetScore = state.targetScore;
     [level.player1Score, level.player2Score] = state.scores;
+    level.deathmatch = state.deathmatch ?? false;
     return level;
   }
 

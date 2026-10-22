@@ -8,6 +8,7 @@ import { sound } from '../audio/SoundPlayer';
 import { notify, quietly } from '../game/Notices';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { gunDamageScale } from '../ai/damage';
+import { throwDownWeapon } from './DeathDropSystem';
 
 const shooters = world.with('position', 'playerInput', 'weapon', 'aimVector');
 
@@ -27,12 +28,24 @@ function equip(entity: Entity, index: number): void {
   sound.playSound('trackPlace');
 }
 
-/** Applies the slot keys, next/previous keys and mouse wheel. */
+/** The drop key throws the gun in hand down for someone else; the starting gun stays. */
+function throwDown(entity: Entity): void {
+  const kind = entity.weapon?.type;
+  if (!throwDownWeapon(entity)) {
+    notify('Your starting gun cannot be dropped');
+    return;
+  }
+  if (kind) notify(`Dropped ${SHOP_DEFS[kind].label}`);
+  sound.playSound('trackPlace', entity.position!.x, entity.position!.y);
+}
+
+/** Applies the slot keys, next/previous keys, mouse wheel and the drop key. */
 function updateWeaponSelection(entity: Entity): void {
   const inv = entity.weaponInventory;
   const intents = entity.playerInput?.intents;
   if (!inv || !intents) return;
 
+  if (intents.dropWeapon) throwDown(entity);
   if (intents.weaponSlot >= 0) equip(entity, intents.weaponSlot);
 
   if (intents.weaponStep !== 0 && inv.weapons.length > 1) {

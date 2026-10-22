@@ -1,9 +1,9 @@
-import { q } from '../../world';
+import { q, world } from '../../world';
 import type { Entity, ShopKind } from '../../world';
 import type { Level } from '../../level/Level';
 import { SHOP_DEFS, isShopKind } from '../../entities/ShopItemFactory';
 import type { ShopRole } from '../../entities/ShopItemFactory';
-import { INF, LOOT_DETOUR, RICH_LOOT, RICH_LOOT_DETOUR } from '../constants';
+import { CHEST_SIGHT, INF, LOOT_DETOUR, RICH_LOOT, RICH_LOOT_DETOUR } from '../constants';
 import { centreX, centreY } from './geometry';
 import { walkDistance } from './navigation';
 import { nearby } from './spatial';
@@ -17,6 +17,26 @@ export function roleOfBuilding(e: Entity): ShopRole | null {
 export function ownBuildings(entity: Entity, role: ShopRole): Entity[] {
   return [...q.buildings].filter((b) => !b.removed && b.team === entity.team
     && b.carriedBy === undefined && roleOfBuilding(b) === role);
+}
+
+const chests = world.with('position', 'chest');
+
+/**
+ * Unopened treasure chests it knows of. A chest is noticed once it stands within CHEST_SIGHT in clear sight,
+ * and remembered after that; the computer is never told where the hidden ones are.
+ */
+export function knownChests(level: Level, entity: Entity, brain: Brain): Entity[] {
+  const pos = entity.position!;
+  const known: Entity[] = [];
+  for (const chest of chests) {
+    if (chest.removed || chest.chest!.opened) continue;
+    const id = world.id(chest)!;
+    const at = chest.position!;
+    const inSight = Math.hypot(at.x - pos.x, at.y - pos.y) <= CHEST_SIGHT && level.checkLineOfSight(pos.x, pos.y, at.x, at.y);
+    if (inSight) brain.seenChests.add(id);
+    if (brain.seenChests.has(id)) known.push(chest);
+  }
+  return known;
 }
 
 export function treasureOf(): Entity | null {

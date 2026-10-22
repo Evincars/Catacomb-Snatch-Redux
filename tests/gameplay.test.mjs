@@ -40,7 +40,13 @@ const { nearby, beginPerception } = await load('ai/perception/spatial');
 const { createBullet, BULLET_CONFIGS } = await load('entities/BulletFactory');
 const { cleanName, settings, AI_START_GOLD } = await load('game/Settings');
 const { updateDeath } = await load('systems/DeathSystem');
-const { updateWeaponPickups, createWeaponPickup, FALLEN_DROP_LIFE } = await load('systems/DeathDropSystem');
+const { updateWeaponPickups, createWeaponPickup, FALLEN_DROP_LIFE, throwDownWeapon } = await load('systems/DeathDropSystem');
+const { giveCoins, giftRecipients, defaultGift } = await load('game/CoinGift');
+const { nestFrame } = await load('entities/SpawnerFactory');
+const { takePot, pileFrame, TREASURE_POTS } = await load('game/Treasury');
+const { treasureVerdict, deathmatchVerdict, versusTarget } = await load('game/MatchRules');
+const { scatterChests, CHEST_CAMP_CLEARANCE } = await load('systems/ChestSystem');
+const { updateRespawns } = await load('systems/RespawnSystem');
 const { createLoot } = await load('entities/LootFactory');
 const { updateLoot } = await load('systems/LootSystem');
 const { flushRemoved } = await load('systems/DeathSystem');
@@ -1022,6 +1028,8 @@ test('the AI skips a turret upgrade whose bigger circle covers little new ground
     const turret = createBuilding(centre(setup.x), centre(5), 'turret', Team.Two);
     const ai = computer(4, 5, 5000);
     ai.aiPlayer.difficulty = 'Insane';
+    // Experienced enough for a level-two turret, so only the ground covered decides.
+    ai.playerStats.level = 3;
     for (let tick = 0; tick < 1500 && turret.upgradable.level === 1; tick++) aiTick(level);
     return turret.upgradable.level > 1;
   };
@@ -1396,4 +1404,155 @@ test('with two computers the saboteur spends on bombs, not on turrets of its own
   assert.ok(boughtBomb, 'never bought a bomb');
   assert.equal([...world.with('turret')].length, 0, 'the saboteur built a turret');
   assert.ok(!ai.weaponInventory.weapons.includes('raygun'), 'bought a gun before its bomb');
+});
+
+test('the drop key throws the gun in hand down for a teammate; the starting gun stays', () => {
+  const thrower = createPlayer(centre(5), centre(5), Team.One);
+  thrower.weaponInventory.weapons.push('shotgun');
+  thrower.weaponInventory.current = 1;
+  thrower.weapon.type = 'shotgun';
+  thrower.playerInput.intents.dropWeapon = true;
+  updateWeapons(1);
+  assert.deepEqual(thrower.weaponInventory.weapons, ['rifle']);
+  assert.equal(thrower.weapon.type, 'rifle');
+  const [gun] = [...world.with('weaponPickup')];
+  assert.equal(gun.weaponPickup.kind, 'shotgun');
+  for (let tick = 0; tick < 30; tick++) updateWeaponPickups();
+  assert.ok(gun.weaponPickup, 'the thrower snatched it straight back');
+  const mate = createPlayer(centre(5) + 4, centre(5), Team.One);
+  updateWeaponPickups();
+  assert.deepEqual(mate.weaponInventory.weapons, ['rifle', 'shotgun'], 'the teammate could not pick it up');
+  assert.equal(throwDownWeapon(thrower), false, 'the starting gun was dropped');
+  assert.deepEqual(thrower.weaponInventory.weapons, ['rifle']);
+});
+
+test('coins go only to a teammate, never more than the giver holds, half offered by default', () => {
+  const giver = createPlayer(centre(2), centre(2), Team.One);
+  world.addComponent(giver, 'playerSlot', 'host');
+  const mate = createPlayer(centre(3), centre(2), Team.One);
+  world.addComponent(mate, 'playerSlot', 'guest');
+  const rival = createPlayer(centre(4), centre(2), Team.Two);
+  world.addComponent(rival, 'playerSlot', 'guest2');
+  giver.playerStats.score = 300;
+  assert.deepEqual(giftRecipients(giver), [mate]);
+  assert.equal(defaultGift(300), 150);
+  assert.equal(giveCoins(giver, mate, 500).ok, false, 'gave more than it had');
+  assert.equal(giveCoins(giver, rival, 10).ok, false, 'gave coins to the other side');
+  assert.equal(giveCoins(giver, mate, 0).ok, false, 'gave nothing');
+  assert.equal(giver.playerStats.score, 300);
+  assert.equal(giveCoins(giver, mate, 120).ok, true);
+  assert.equal(giver.playerStats.score, 180);
+  assert.equal(mate.playerStats.score, 120);
+});
+
+test('a nest shows all four spawner frames as it is shot down', () => {
+  assert.deepEqual([20, 15, 14, 10, 9, 5, 4, 1].map((hp) => nestFrame(hp, 20)), [0, 1, 1, 2, 2, 3, 3, 3]);
+});
+
+test('the treasure pile empties a pot at a time and is drawn emptier as it is mined', () => {
+  const pile = createBuilding(centre(5), centre(5), 'treasure');
+  assert.equal(pile.frame, 0);
+  assert.deepEqual([100, 67, 66, 34, 33, 1, 0].map((left) => pileFrame(left, 100)), [0, 0, 1, 1, 2, 2, 3]);
+  for (let i = 0; i < TREASURE_POTS / 2; i++) assert.ok(takePot(pile));
+  assert.equal(pile.treasure.left, TREASURE_POTS / 2);
+  assert.equal(pile.frame, 1);
+  while (takePot(pile));
+  assert.equal(pile.treasure.left, 0);
+  assert.equal(pile.frame, 3);
+  assert.equal(takePot(pile), false, 'an empty pile gave a pot');
+});
+
+test('more than half the treasure wins; an even split once it is all mined is a draw', () => {
+  const level = new Level(12, 12);
+  const pile = createBuilding(centre(5), centre(5), 'treasure');
+  level.targetScore = versusTarget(100);
+  assert.equal(level.targetScore, TREASURE_POTS, 'half of the pile, at two points a pot');
+  level.player1Score = level.targetScore;
+  level.player2Score = level.targetScore - 2;
+  assert.equal(treasureVerdict(level), null, 'half is not yet a win while pots remain');
+  level.player1Score = level.targetScore + 2;
+  assert.equal(treasureVerdict(level), Team.One);
+  pile.treasure.left = 0;
+  level.player1Score = level.player2Score = level.targetScore;
+  assert.equal(treasureVerdict(level), 'draw');
+  level.player2Score -= 2;
+  assert.equal(treasureVerdict(level), Team.One, 'the larger share of a spent pile wins');
+});
+
+test('in a team deathmatch the fallen stay down, and the last team standing wins', () => {
+  const level = homeLevel();
+  level.deathmatch = true;
+  const one = richPlayer();
+  const two = createPlayer(centre(20), centre(9), Team.Two);
+  world.addComponent(two, 'aiPlayer', { character: 'lord_lard', difficulty: 'Easy' });
+  assert.equal(deathmatchVerdict(), null);
+  two.health.current = 0;
+  updateDeath(level, 1);
+  assert.ok(two.eliminated, 'the fallen computer was not eliminated');
+  for (let tick = 0; tick < 700; tick++) updateRespawns(level, 1);
+  assert.notEqual(two.respawnTicks, undefined, 'an eliminated player respawned');
+  assert.equal(deathmatchVerdict(), Team.One);
+  void one;
+});
+
+test('two chests are hidden on open floor well away from both camps, and the computer only opens one it has seen', () => {
+  const level = new Level(40, 30);
+  level.setSpawnPoints(Team.One, [{ x: centre(3), y: centre(3) }, { x: centre(3), y: centre(3) }]);
+  level.setSpawnPoints(Team.Two, [{ x: centre(36), y: centre(26) }, { x: centre(36), y: centre(26) }]);
+  for (let y = 0; y < 30; y++) for (let x = 0; x < 40; x++) level.getTile(x, y).buildable = true;
+  assert.equal(scatterChests(level), 2);
+  const chests = [...world.with('chest')];
+  assert.equal(chests.length, 2);
+  for (const chest of chests) {
+    const tx = Math.floor(chest.position.x / 32);
+    const ty = Math.floor(chest.position.y / 32);
+    for (const [cx, cy] of [[3, 3], [36, 26]]) {
+      assert.ok(Math.max(Math.abs(tx - cx), Math.abs(ty - cy)) > CHEST_CAMP_CLEARANCE, `chest at ${tx},${ty} too close to a camp`);
+    }
+  }
+
+  for (const e of [...world]) world.remove(e);
+  const room = new Level(30, 12);
+  room.setSpawnPoints(Team.Two, [{ x: centre(3), y: centre(5) }]);
+  // Nine tiles off: close enough that a computer told where it was would go, too far to be seen.
+  const far = createBuilding(centre(12), centre(5), 'chest');
+  const ai = computer(3, 5, 0);
+  for (let tick = 0; tick < 400; tick++) aiTick(room);
+  assert.equal(far.chest.opened, false, 'went straight to a chest it was never shown');
+  const near = createBuilding(centre(7), centre(5), 'chest');
+  for (let tick = 0; tick < 600 && !near.chest.opened; tick++) aiTick(room);
+  assert.ok(near.chest.opened, 'never opened the chest in plain sight');
+  void ai;
+});
+
+test('turret and harvester upgrades open up at player levels 3 and 7, and levels survive death', () => {
+  const level = homeLevel();
+  const p = createPlayer(centre(5), centre(5), Team.One);
+  p.aimVector = { x: 1, y: 0 };
+  p.playerStats.score = 5000;
+  const turret = createBuilding(centre(6), centre(5), 'turret', Team.One);
+  const tryUpgrade = () => {
+    updateTargeting();
+    p.playerInput.intents.upgrade = true;
+    updateInteraction(level);
+    p.playerInput.intents.upgrade = false;
+  };
+  tryUpgrade();
+  assert.equal(turret.upgradable.level, 1, 'upgraded at player level 1');
+  p.playerStats.level = 3;
+  tryUpgrade();
+  assert.equal(turret.upgradable.level, 2);
+  tryUpgrade();
+  assert.equal(turret.upgradable.level, 2, 'reached level 3 before player level 7');
+  p.playerStats.level = 7;
+  tryUpgrade();
+  assert.equal(turret.upgradable.level, 3);
+
+  const fallen = richPlayer();
+  fallen.playerStats.level = 5;
+  fallen.health.current = 0;
+  updateDeath(level, 1);
+  for (let tick = 0; tick < 700; tick++) updateRespawns(level, 1);
+  assert.equal(fallen.respawnTicks, undefined);
+  assert.equal(fallen.playerStats.level, 5, 'dying cost a level');
 });

@@ -3,6 +3,7 @@ import type { Entity } from '../world';
 import { TILE_WIDTH } from '../level/TileType';
 import { gameState } from '../game/GameState';
 import { setVisualFrame } from '../render/AnimatedVisual';
+import { TREASURE_POTS } from '../game/Treasury';
 
 export type BuildingType = 'harvester' | 'turret' | 'bomb' | 'chest' | 'treasure' | 'shop';
 
@@ -65,6 +66,25 @@ const BUILDING_TITLES: Partial<Record<BuildingType, { title: string; lines: stri
 /** How far a turret of the given level (1-based) shoots, in pixels. */
 export function turretRadiusAt(level: number): number {
   return TURRET_UPGRADES.tiers[Math.min(TURRET_UPGRADES.tiers.length, Math.max(1, level)) - 1].radius;
+}
+
+/**
+ * Player level needed to raise a turret or harvester to level 2, and to level 3. Anyone can buy and place
+ * one at level 1; the upgrades open up as the player levels up, and levels are kept through death.
+ */
+export const UPGRADE_PLAYER_LEVELS = [3, 7] as const;
+
+/** Player level the building's next upgrade needs, or null when it is fully upgraded. */
+export function upgradeLevelNeeded(entity: Entity): number | null {
+  const up = entity.upgradable;
+  if (!up || up.level >= up.maxLevel) return null;
+  return UPGRADE_PLAYER_LEVELS[up.level - 1] ?? null;
+}
+
+/** Whether this player is experienced enough for the building's next upgrade (people and computers alike). */
+export function experiencedEnough(player: Entity, building: Entity): boolean {
+  const needed = upgradeLevelNeeded(building);
+  return needed === null || (player.playerStats?.level ?? 1) >= needed;
 }
 
 /** Price of the next upgrade, scaled by difficulty like shop prices, or null at max level. */
@@ -139,7 +159,8 @@ export function createBuilding(
   // The treasure pile is scenery that cannot be shot away.
   if (type === 'treasure') {
     entity.health!.immortal = true;
-    entity.treasure = { timer: 0 };
+    entity.treasure = { timer: 0, capacity: TREASURE_POTS, left: TREASURE_POTS };
+    entity.frame = 0;
   }
   // Bombs ignore damage entirely; a bullet lights the fuse instead.
   if (type === 'bomb') {

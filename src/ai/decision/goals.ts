@@ -1,7 +1,7 @@
 import { world } from '../../world';
 import type { Entity } from '../../world';
 import type { Level } from '../../level/Level';
-import { upgradeCostOf } from '../../entities/BuildingFactory';
+import { experiencedEnough, upgradeCostOf } from '../../entities/BuildingFactory';
 import { railCost, carriageCost } from '../../systems/InteractionSystem';
 import { INF } from '../constants';
 import { besideTrack } from '../perception/rails';
@@ -63,7 +63,7 @@ export function goalStillValid(level: Level, entity: Entity, brain: Brain, g: Go
     if (target.shopItem) return entity.playerStats!.score >= target.shopItem.cost;
     if (target.harvester && g.useId !== undefined) return target.harvester.collected > 0 && !target.harvester.emptying;
     if (target.chest) return !target.chest.opened;
-    if (g.upgradeId !== undefined) return (upgradeCostOf(target) ?? INF) <= entity.playerStats!.score;
+    if (g.upgradeId !== undefined) return experiencedEnough(entity, target) && (upgradeCostOf(target) ?? INF) <= entity.playerStats!.score;
     return true;
   }
   if (g.build === 'rail') {

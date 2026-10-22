@@ -74,6 +74,8 @@ export type Brain = {
   /** A ricochet that reaches an enemy it cannot see, worked out at tick `at`. */
   bank: { targetId: number; shot: BankShot; at: number } | null;
   bankCool: number;
+  /** Treasure chests it has set eyes on; the only ones it knows to go and open. */
+  seenChests: Set<number>;
 };
 
 export type Controls = { up: boolean; down: boolean; left: boolean; right: boolean; sprint: boolean };

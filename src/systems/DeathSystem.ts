@@ -76,6 +76,8 @@ function sendHome(level: Level, entity: Entity): void {
   }
   world.removeComponent(entity, 'falling');
   world.addComponent(entity, 'respawnTicks', RESPAWN_TICKS);
+  // In a team deathmatch nobody comes back: they wait at home until one team is left standing.
+  if (level.deathmatch) world.addComponent(entity, 'eliminated', true);
   world.removeComponent(entity, 'buffs');
   if (entity.velocity) entity.velocity.x = entity.velocity.y = 0;
   if (entity.bump) entity.bump.x = entity.bump.y = 0;

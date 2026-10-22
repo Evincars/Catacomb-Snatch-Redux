@@ -13,10 +13,11 @@ import { runSystems, SIMULATION, PRESENTATION } from '../systems/Simulation';
 import type { FrameContext } from '../systems/Simulation';
 import { clearSprites, updateSprites } from '../systems/SpriteSystem';
 import { spawnInitialSpawners } from '../systems/RandomSpawnerSystem';
+import { scatterChests } from '../systems/ChestSystem';
 import { carriedByPlayer } from '../systems/InteractionSystem';
 import { targetOf, updateTargeting } from '../systems/TargetingSystem';
 import { syncWalls, resetWalls } from '../systems/WallSystem';
-import { applyUpgradeLevel, upgradeCostOf } from '../entities/BuildingFactory';
+import { applyUpgradeLevel, experiencedEnough, upgradeCostOf, upgradeLevelNeeded } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { takeNotices, clearNotices, updateNotices, noticeEvents, notify } from '../game/Notices';
 import { makeText, makeTitle } from '../ui/PixelText';
@@ -49,13 +50,21 @@ import { flushRemoved } from '../systems/DeathSystem';
 import { resetNameTags, updateNameTags } from '../systems/NameTagSystem';
 import { aimToFacing8 } from '../render/Facing';
 import { exposeForDebugging } from '../core/debugHooks';
+import { createLog } from '../core/log';
+import { GiftPanel } from '../ui/GiftPanel';
+import { giftRecipients, giveCoins, giveCoinsBySlot } from '../game/CoinGift';
+import { deathmatchVerdict, treasureVerdict, versusTarget } from '../game/MatchRules';
+
+const log = createLog('game');
 
 /** Tiles of sight around the player, as in Java's Player.tick(). */
 const REVEAL_RADIUS = 5;
 
 const CHARACTERS: readonly CharacterType[] = ['lord_lard', 'countess_cruller', 'herr_von_speck', 'duchess_donut'];
-/** The original versus treasury target, two points per delivered pot. */
+/** The original versus treasury target, two points per delivered pot, for a map without a treasure pile. */
 const VERSUS_TARGET = 100;
+/** Ticks the team deathmatch announcement stays on screen. */
+const DEATHMATCH_BANNER_TICKS = 60 * 7;
 /** Where guests start relative to the host, by join order, so nobody stands inside anyone else. */
 const GUEST_OFFSETS: ReadonlyArray<readonly [number, number]> = [[0, 0], [16, 0], [-16, 0], [0, 16]];
 const GUEST_MINIMAP_COLOR = 0x80dfff;
@@ -77,7 +86,7 @@ function partyMemberLost(): boolean {
 type Controls = NonNullable<Entity['playerInput']>;
 
 function noIntents(): Controls['intents'] {
-  return { use: false, build: false, upgrade: false, weaponSlot: -1, weaponStep: 0 };
+  return { use: false, build: false, upgrade: false, dropWeapon: false, weaponSlot: -1, weaponStep: 0 };
 }
 
 /** Lets go of every key and button. */
@@ -119,6 +128,9 @@ export class InGameScene implements Scene {
   private disposed = false;
   private finished = false;
   private respawnLabel = makeText('', 0xffdd88, 18, 'center');
+  /** The team deathmatch announcement, and how many more ticks it stays up. */
+  private deathmatchBanner: Container | null = null;
+  private bannerTicks = 0;
   private console = new ConsoleView((line) => runCommand(line, { player: this.player }));
   /** Fraction of a simulation step carried over while the game runs slower than normal. */
   private stepBank = 0;
@@ -129,6 +141,7 @@ export class InGameScene implements Scene {
   private onBlur = () => { this.scoreboardHeld = false; };
   private scoreboard = new Scoreboard();
   private scoreboardHeld = false;
+  private gift: GiftPanel;
 
   constructor(manager: SceneManager) {
     this.manager = manager;
@@ -141,6 +154,9 @@ export class InGameScene implements Scene {
     this.container.addChild(loading);
 
     initInput(this.app.canvas);
+    this.gift = new GiftPanel(this.app.canvas);
+    this.gift.onSend = (to, amount) => this.sendGift(to, amount);
+    this.gift.onClose = () => setInputCaptured(false);
 
     this.onKeyDown = (e: KeyboardEvent) => {
       if (this.finished) return;
@@ -160,7 +176,16 @@ export class InGameScene implements Scene {
         else this.console.handleKey(e);
         return;
       }
+      if (e.code === bindingFor('give_coins') && !this.paused && !this.gift.visible) {
+        e.preventDefault();
+        this.openGift();
+        return;
+      }
       if (e.code !== 'Escape') return;
+      if (this.gift.visible) {
+        this.gift.close();
+        return;
+      }
       // Escape backs out of a sub-screen first, and only then closes the pause menu.
       if (this.mainConfirmation) this.closeMainConfirmation();
       else if (this.manager.hasOverlay) this.manager.escapeOverlay();
@@ -238,13 +263,18 @@ export class InGameScene implements Scene {
     if (!snapshot && coop.role !== 'guest' && gameState.opponent === 'ai') this.addComputerOpponents();
     // The terrain is drawn once the local side is known: the rival's track is shown darker.
     this.addLevelView();
-    // Placed after the player so no nest lands within sight of the start.
-    if (!snapshot) spawnInitialSpawners(this.level);
+    // Placed after the player so no nest lands within sight of the start; the hidden chests go down first so
+    // no nest is set on top of one.
+    if (!snapshot) {
+      scatterChests(this.level);
+      spawnInitialSpawners(this.level);
+    }
 
     coop.onState = this.onHostState;
     coop.onEnd = this.onMatchEnd;
     if (coop.role === 'host') {
       coop.onLeave = this.onGuestLeave;
+      coop.onGift = this.onGuestGift;
       sound.onEffect = (name, x, y) => coop.sendSound(name, x, y);
       noticeEvents.onNotice = text => coop.sendNotice(text);
     }
@@ -274,11 +304,39 @@ export class InGameScene implements Scene {
     this.departed.push(slot);
   };
 
+  /** Host: a guest handed coins to a teammate; their window already checked it, the host checks again. */
+  private readonly onGuestGift = (from: PlayerSlot, to: PlayerSlot, amount: number): void => {
+    const given = giveCoinsBySlot(from, to, amount);
+    if (!given.ok) log.warn('Coin gift refused', { from, to, amount, reason: given.error.message });
+  };
+
+  /** Opens the give-coins window, if there is a teammate to give to. */
+  private openGift(): void {
+    const recipients = giftRecipients(this.player);
+    if (recipients.length === 0) {
+      notify('There is no teammate to give coins to');
+      return;
+    }
+    setInputCaptured(true);
+    this.gift.open(recipients.map((p) => ({ slot: p.playerSlot!, name: p.playerName ?? p.playerSlot! })), this.player.playerStats?.score ?? 0);
+  }
+
+  /** The host and a lone player hand the coins over at once; a guest asks the host to. */
+  private sendGift(to: PlayerSlot, amount: number): void {
+    if (coop.role === 'guest') {
+      coop.sendGift(to, amount);
+      return;
+    }
+    const given = giveCoins(this.player, playerInSlot(to), amount);
+    if (!given.ok) notify(given.error.message);
+  }
+
   /** Lets go of the co-op hooks, but only its own: the next scene is built first and may already have set its own. */
   private releaseCoopHooks(): void {
     if (coop.onState === this.onHostState) coop.onState = null;
     if (coop.onEnd === this.onMatchEnd) coop.onEnd = null;
     if (coop.onLeave === this.onGuestLeave) coop.onLeave = null;
+    if (coop.onGift === this.onGuestGift) coop.onGift = null;
   }
 
   /** Picks up a saved run, or the world the host sent. */
@@ -315,7 +373,7 @@ export class InGameScene implements Scene {
       gameState.opponent = 'none';
       notify('This map has no second base - playing without the computer');
     }
-    level.targetScore = isVersus() ? VERSUS_TARGET : gameState.targetScore;
+    level.targetScore = isVersus() ? versusTarget(VERSUS_TARGET) : gameState.targetScore;
     return level;
   }
 
@@ -471,12 +529,15 @@ export class InGameScene implements Scene {
 
     const title = target.tooltip?.title ?? 'Building';
     const cost = upgradeCostOf(target);
-    const upgrade = cost === null ? '' : ` - [${keyLabel('upgrade')}] upgrade ${cost}`;
+    const upgrade = cost === null ? ''
+      : experiencedEnough(this.player, target) ? ` - [${keyLabel('upgrade')}] upgrade ${cost}`
+        : ` - upgrade at level ${upgradeLevelNeeded(target)}`;
     this.hud.setPrompt(`${title} - [${keyLabel('build')}] pick up${upgrade}`);
   }
 
   private togglePause(): void {
     if (this.console.visible) this.toggleConsole();
+    this.gift.close();
     this.paused = !this.paused;
     this.mainConfirmation = null;
     this.overlay.removeChildren().forEach((c) => c.destroy({ children: true }));
@@ -650,9 +711,10 @@ export class InGameScene implements Scene {
     this.scoreboard.update(this.scoreboardHeld && !this.console.visible, this.player);
     // The other side's stalls are not for sale to this player, so their prices stay hidden.
     for (const stall of pricedStalls) stall.priceLabel!.visible = stall.team === this.player.team;
-    this.respawnLabel.text = this.player.respawnTicks !== undefined
-      ? `Respawning in ${Math.ceil(this.player.respawnTicks / 60)}...` : '';
+    this.respawnLabel.text = this.respawnText();
+    this.updateDeathmatchBanner();
     this.weaponBar.update(this.player);
+    if (this.gift.visible) this.gift.setPurse(this.player.playerStats?.score ?? 0);
     this.tooltip.update(this.player);
     this.crosshair.update();
     this.console.update();
@@ -665,6 +727,40 @@ export class InGameScene implements Scene {
     if (coop.role === 'guest') return;
     const winner = this.outcome();
     if (winner !== null) this.end(winner);
+  }
+
+  private respawnText(): string {
+    if (this.player.respawnTicks === undefined) return '';
+    if (this.player.eliminated) return 'Eliminated - your team fights on';
+    return `Respawning in ${Math.ceil(this.player.respawnTicks / 60)}...`;
+  }
+
+  /** Puts the deathmatch announcement up once the match turns into one, on every screen, and takes it down later. */
+  private updateDeathmatchBanner(): void {
+    if (this.level.deathmatch && !this.deathmatchBanner) {
+      this.deathmatchBanner = this.buildDeathmatchBanner();
+      this.bannerTicks = DEATHMATCH_BANNER_TICKS;
+      this.hudLayer.addChild(this.deathmatchBanner);
+      sound.playSound('fail');
+    }
+    if (!this.deathmatchBanner || this.bannerTicks <= 0) return;
+    this.deathmatchBanner.visible = --this.bannerTicks > 0;
+  }
+
+  private buildDeathmatchBanner(): Container {
+    const banner = new Container();
+    const strip = new Graphics();
+    // Above the respawn line, which says when a player has been eliminated.
+    strip.rect(0, 16, GAME_WIDTH, 92).fill({ color: 0x000000, alpha: 0.75 });
+    banner.addChild(strip);
+    const title = makeText('DRAW!  TEAM DEATHMATCH', 0xff6644, 20, 'center');
+    title.x = GAME_WIDTH / 2;
+    title.y = 28;
+    const rules = makeText('The treasure was shared out evenly.\nNobody respawns any more:\nthe last team standing wins.', 0xffdd88, 10, 'center');
+    rules.x = GAME_WIDTH / 2;
+    rules.y = 60;
+    banner.addChild(title, rules);
+    return banner;
   }
 
   private revealAroundTeam(): void {
@@ -683,15 +779,25 @@ export class InGameScene implements Scene {
     if (coop.role === 'host') {
       if (slottedCount() < 2 || partyMemberLost()) return 0;
     }
-    if (isVersus()) {
-      if (this.level.player1Score >= this.level.targetScore) return Team.One;
-      return this.level.player2Score >= this.level.targetScore ? Team.Two : null;
-    }
+    if (isVersus()) return this.versusOutcome();
     const health = this.player.health;
     if (!health || health.current <= 0 || this.player.removed) return 0;
     let purse = 0;
     for (const p of q.slotted) purse += p.playerStats?.score ?? 0;
     return this.player.playerStats && purse >= this.level.targetScore ? Team.One : null;
+  }
+
+  /**
+   * Versus: the treasure race, until the treasure has been shared out evenly; then a team deathmatch in which
+   * nobody respawns and the last team standing wins.
+   */
+  private versusOutcome(): number | null {
+    const verdict = this.level.deathmatch ? deathmatchVerdict() : treasureVerdict(this.level);
+    if (verdict !== 'draw') return verdict;
+    this.level.deathmatch = true;
+    notify('Draw! Team deathmatch - no more respawns');
+    if (coop.role === 'host') this.sendWorld(false, true);
+    return null;
   }
 
   private sendGuestInput(idle: boolean): void {
@@ -759,6 +865,7 @@ export class InGameScene implements Scene {
     this.crosshair.destroy();
     this.tooltip.destroy();
     this.weaponBar.destroy();
+    this.gift.destroy();
     this.app.canvas.style.cursor = '';
     clearSprites();
     this.container.destroy({ children: true });

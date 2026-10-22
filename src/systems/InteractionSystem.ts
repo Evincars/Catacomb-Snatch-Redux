@@ -1,7 +1,7 @@
 import { Rectangle } from 'pixi.js';
 import { world, q, Team } from '../world';
 import type { BuildingKind, Entity, ShopKind } from '../world';
-import { createBuilding, applyUpgradeLevel, upgradeCostOf } from '../entities/BuildingFactory';
+import { createBuilding, applyUpgradeLevel, experiencedEnough, upgradeCostOf, upgradeLevelNeeded } from '../entities/BuildingFactory';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
 import { WEAPON_STATS, isWeaponKind } from '../entities/WeaponStats';
 import type { WeaponKind } from '../entities/WeaponStats';
@@ -122,6 +122,12 @@ function upgrade(player: Entity, target: Entity | null): void {
   const name = target.tooltip?.title ?? 'Building';
   if (cost === null) {
     notify(`${name} is fully upgraded`);
+    return;
+  }
+
+  if (!experiencedEnough(player, target)) {
+    notify(`Reach level ${upgradeLevelNeeded(target)} to upgrade ${name}`);
+    sound.playSound('fail');
     return;
   }
 

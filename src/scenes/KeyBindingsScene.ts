@@ -10,14 +10,14 @@ import type { ActionName } from '../game/Settings';
 /** Laid out in two columns matching the original key bindings screen. */
 const LEFT: ActionName[] = [
   'up', 'down', 'left', 'right', 'sprint',
-  'fire', 'weapon_slot_1', 'weapon_slot_2', 'weapon_slot_3', 'console',
+  'fire', 'weapon_slot_1', 'weapon_slot_2', 'weapon_slot_3', 'drop_weapon', 'console',
 ];
 const RIGHT: ActionName[] = [
   'fire_up', 'fire_down', 'fire_left', 'fire_right',
-  'build', 'use', 'upgrade', 'next_weapon', 'prev_weapon', 'chat',
+  'build', 'use', 'upgrade', 'next_weapon', 'prev_weapon', 'give_coins', 'chat',
 ];
 
-const ROW_H = 28;
+const ROW_H = 25;
 const BTN_W = 120;
 const BTN_H = 22;
 const TOP = 72;

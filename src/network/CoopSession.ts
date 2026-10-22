@@ -20,7 +20,7 @@ const log = createLog('network');
 export type InputFrame = { input: NonNullable<Entity['playerInput']>; aim: { x: number; y: number }; sequence: number };
 export type RosterEntry = { slot: PlayerSlot; name: string };
 type Message =
-  | { type: 'hello'; version: 4; name: string }
+  | { type: 'hello'; version: 5; name: string }
   | { type: 'welcome'; slot: PlayerSlot; mode: MultiplayerMode }
   | { type: 'refused'; reason: string }
   | { type: 'roster'; players: RosterEntry[]; mode: MultiplayerMode }
@@ -31,13 +31,15 @@ type Message =
   | { type: 'end'; winner: number }
   /** The match is over and the host is setting up the next one in the same room. */
   | { type: 'lobby' }
+  /** A guest hands coins to a teammate; the host checks and carries it out. */
+  | { type: 'gift'; to: PlayerSlot; amount: number }
   | { type: 'sound'; name: SfxName; x?: number; y?: number }
   | { type: 'notice'; text: string }
   | { type: 'ping' };
 
 /** The most guests a room takes: the host plus three others make four players. */
 export const MAX_GUESTS = PLAYER_SLOTS.length - 1;
-const VERSION = 4;
+const VERSION = 5;
 
 type Intents = InputFrame['input']['intents'];
 /** Folds a source's one-shot button presses into the target so none is lost. */
@@ -45,10 +47,11 @@ function mergeIntents(target: Intents, source: Intents): void {
   target.use ||= source.use;
   target.build ||= source.build;
   target.upgrade ||= source.upgrade;
+  target.dropWeapon ||= source.dropWeapon;
   if (target.weaponSlot === -1) target.weaponSlot = source.weaponSlot;
   if (target.weaponStep === 0) target.weaponStep = source.weaponStep;
 }
-const hasIntent = (i: Intents) => i.use || i.build || i.upgrade || i.weaponSlot !== -1 || i.weaponStep !== 0;
+const hasIntent = (i: Intents) => i.use || i.build || i.upgrade || i.dropWeapon || i.weaponSlot !== -1 || i.weaponStep !== 0;
 
 async function gzip(text: string): Promise<Uint8Array> {
   return new Uint8Array(await new Response(new Blob([text]).stream()
@@ -79,7 +82,7 @@ const FAST_CHANNEL_ID = 100;
 
 type Controls = InputFrame['input'];
 const BUTTONS = ['up', 'down', 'left', 'right', 'shoot', 'use', 'sprint', 'mouseAiming'] as const satisfies readonly (keyof Controls)[];
-const INTENT_FLAGS = ['use', 'build', 'upgrade'] as const satisfies readonly (keyof Intents)[];
+const INTENT_FLAGS = ['use', 'build', 'upgrade', 'dropWeapon'] as const satisfies readonly (keyof Intents)[];
 /** Aim points farther than this from the origin are not a real cursor. */
 const MAX_AIM = 100000;
 
@@ -153,6 +156,8 @@ export class CoopSession {
   onEnd: ((winner: number) => void) | null = null;
   /** Guest only: the host took the room back to the lobby for another match. */
   onLobby: (() => void) | null = null;
+  /** Host only: a guest asked to hand coins to a teammate. */
+  onGift: ((from: PlayerSlot, to: PlayerSlot, amount: number) => void) | null = null;
   /** Host only: a guest's connection ended. */
   onLeave: ((slot: PlayerSlot, name: string) => void) | null = null;
   private peer: Peer | null = null;
@@ -349,6 +354,9 @@ export class CoopSession {
       this.levelChanged = true;
     } else if (message.type === 'input' && this.role === 'host') {
       this.acceptInput(link, message.frame);
+    } else if (message.type === 'gift' && this.role === 'host') {
+      if (!PLAYER_SLOTS.includes(message.to) || !Number.isSafeInteger(message.amount)) throw new NetworkError('Invalid coin gift');
+      this.onGift?.(link.slot!, message.to, message.amount);
     } else if (message.type === 'end' && this.role === 'guest') {
       if (![0, 1, 2].includes(message.winner)) throw new NetworkError('Invalid game result');
       this.onEnd?.(message.winner);
@@ -609,6 +617,10 @@ export class CoopSession {
     this.broadcast({ type: 'sound', name, ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y }) });
   }
   sendNotice(text: string): void { this.broadcast({ type: 'notice', text }); }
+  /** Guest: asks the host to hand `amount` of this player's coins to a teammate. */
+  sendGift(to: PlayerSlot, amount: number): void {
+    if (this.role === 'guest' && this.uplink?.ready) this.send(this.uplink, { type: 'gift', to, amount });
+  }
   end(winner: number): void { this.broadcast({ type: 'end', winner }); }
 
   private broadcast(message: Message): void {
@@ -678,7 +690,7 @@ export class CoopSession {
     clearTimeout(this.timeout);
     clearInterval(this.heartbeat);
     this.heartbeat = undefined;
-    this.onChange = null; this.onState = null; this.onEnd = null; this.onLeave = null; this.onLobby = null;
+    this.onChange = null; this.onState = null; this.onEnd = null; this.onLeave = null; this.onLobby = null; this.onGift = null;
     for (const link of this.allLinks()) {
       clearTimeout(link.timeout);
       this.closeFast(link);

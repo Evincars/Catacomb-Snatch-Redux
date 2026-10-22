@@ -11,7 +11,7 @@ export const ACTION_NAMES = [
   'fire', 'fire_up', 'fire_down', 'fire_left', 'fire_right',
   'build', 'use', 'upgrade',
   'weapon_slot_1', 'weapon_slot_2', 'weapon_slot_3',
-  'next_weapon', 'prev_weapon',
+  'next_weapon', 'prev_weapon', 'drop_weapon', 'give_coins',
   'console', 'chat',
 ] as const;
 
@@ -36,6 +36,8 @@ export const ACTION_LABELS: Record<ActionName, string> = {
   weapon_slot_3: 'WEAPON SLOT 3',
   next_weapon: 'NEXT WEAPON',
   prev_weapon: 'PREV WEAPON',
+  drop_weapon: 'DROP WEAPON',
+  give_coins: 'GIVE COINS',
   console: 'CONSOLE',
   chat: 'CHAT',
 };
@@ -60,6 +62,8 @@ const DEFAULT_BINDINGS: Record<ActionName, string> = {
   weapon_slot_3: 'Digit3',
   next_weapon: 'KeyZ',
   prev_weapon: 'KeyX',
+  drop_weapon: 'KeyG',
+  give_coins: 'KeyH',
   console: 'Backquote',
   chat: 'KeyT',
 };

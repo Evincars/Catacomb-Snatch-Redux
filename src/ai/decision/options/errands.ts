@@ -1,8 +1,8 @@
 import { q, world } from '../../../world';
 import { TILE_HEIGHT } from '../../../level/TileType';
-import { LOOT_DETOUR } from '../../constants';
+import { LOOT_DETOUR, RICH_LOOT_DETOUR } from '../../constants';
 import { weaponGain } from '../../perception/arsenal';
-import { nearestLoot, ownBuildings, treasureOf } from '../../perception/economy';
+import { knownChests, nearestLoot, ownBuildings, treasureOf } from '../../perception/economy';
 import { tileOf } from '../../perception/geometry';
 import { approachTile, nearestOf } from '../../perception/navigation';
 import { onTrack } from '../../perception/rails';
@@ -47,11 +47,12 @@ export const ERRANDS: Option[] = [
     },
   },
   {
+    // A chest it has come across: a hoard worth going back for, though it never knows where unseen ones are.
     id: 'open a chest',
-    ceiling: 34,
+    ceiling: 44,
     evaluate(s) {
-      const chest = nearestOf(s.level, s.brain, [...q.buildings].filter((b) => b.chest && !b.chest.opened), LOOT_DETOUR * 1.5);
-      return chest ? { score: 34, goal: usePlan(s.level, s.brain, 'chest', chest) } : null;
+      const chest = nearestOf(s.level, s.brain, knownChests(s.level, s.entity, s.brain), RICH_LOOT_DETOUR);
+      return chest ? { score: 44, goal: usePlan(s.level, s.brain, 'chest', chest) } : null;
     },
   },
   {

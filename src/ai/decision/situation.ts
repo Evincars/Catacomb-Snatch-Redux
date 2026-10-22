@@ -3,7 +3,7 @@ import type { Entity, AIRole } from '../../world';
 import type { Level } from '../../level/Level';
 import { TILE_WIDTH } from '../../level/TileType';
 import type { AIDifficulty } from '../../game/GameState';
-import { upgradeCostOf } from '../../entities/BuildingFactory';
+import { experiencedEnough, upgradeCostOf } from '../../entities/BuildingFactory';
 import { railCost } from '../../systems/InteractionSystem';
 import { roleOf } from '../brain';
 import {
@@ -75,7 +75,7 @@ const NO_UPGRADE: UpgradePlan = { upgradeDue: null, savingForUpgrade: false };
 /** The cheapest of its own buildings it could and would upgrade, or null. */
 function cheapestUpgrade(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): Entity | null {
   const candidates = [...q.upgradables].filter((b) => !b.removed && b.team === entity.team && b.carriedBy === undefined
-    && b.upgradable!.level < profile.maxUpgrade && reachable(level, brain, b) < INF
+    && b.upgradable!.level < profile.maxUpgrade && experiencedEnough(entity, b) && reachable(level, brain, b) < INF
     && worthUpgrading(level, entity, brain, b))
     .sort((a, b) => (upgradeCostOf(a) ?? INF) - (upgradeCostOf(b) ?? INF));
   return candidates[0] ?? null;

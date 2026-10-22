@@ -30,6 +30,12 @@ export const LOOT_DETOUR = 7 * TILE_WIDTH;
 /** Nests this close to the spawn or the head of the track get cleared out. */
 export const NEST_CLEAR_RANGE = 10 * TILE_WIDTH;
 
+/**
+ * How near a treasure chest must be, in clear sight, for a computer player to notice it. It is not told where
+ * the hidden chests are: like a person it finds them by exploring, and remembers the ones it has seen.
+ */
+export const CHEST_SIGHT = 6 * TILE_WIDTH;
+
 /** Coins worth a long walk (carriage emeralds, chest hoards). */
 export const RICH_LOOT = 100;
 
