@@ -52,7 +52,10 @@ function exactKind(value: number): number {
   return kind;
 }
 
-/** `exact` keeps the stated worth (money spilled by a player or harvester) instead of rolling a tier. */
+/**
+ * `exact` keeps the stated worth (money spilled by a player or harvester) instead of rolling a tier.
+ * `life`, when given, is exactly how many ticks it lies around, whatever the difficulty.
+ */
 export function createLoot(
   x: number,
   y: number,
@@ -60,6 +63,7 @@ export function createLoot(
   velY: number,
   value: number,
   exact = false,
+  life?: number,
 ): Entity {
   const kind = exact ? exactKind(value) : rollKind(value);
   const spec = LOOT_KINDS[kind];
@@ -76,7 +80,8 @@ export function createLoot(
       suckRadius: LOOT_PULL_RADIUS,
       glide: 0,
       age: 0,
-      life: LIFE_MIN + Math.floor(Math.random() * LIFE_SPREAD),
+      life: life ?? LIFE_MIN + Math.floor(Math.random() * LIFE_SPREAD),
+      ...(life === undefined ? {} : { fixedLife: true }),
       burstTicks: LOOT_BURST_TICKS,
     },
     radius: { x: 4, y: 4 },
@@ -106,22 +111,23 @@ export function dropLoot(x: number, y: number, value: number): void {
 /**
  * Scatters a purse as the biggest pickups that fit it (diamonds, rubies, emeralds, then coins), so
  * a rich player leaves gems behind. Worth is exact; the last piece takes whatever the cap leaves.
+ * Every piece lies around for exactly `life` ticks.
  */
-export function spillPurse(x: number, y: number, total: number, maxPieces = 16): number {
+export function spillPurse(x: number, y: number, total: number, life: number, maxPieces = 16): number {
   let remaining = Math.floor(total);
   let pieces = 0;
   for (let kind = LOOT_KINDS.length - 1; kind >= 0 && remaining > 0; kind--) {
     const value = LOOT_KINDS[kind].value;
     while (remaining >= value && pieces < maxPieces - 1) {
       const angle = Math.random() * Math.PI * 2;
-      createLoot(x, y, Math.cos(angle) * 0.8, Math.sin(angle) * 0.8, value, true);
+      createLoot(x, y, Math.cos(angle) * 0.8, Math.sin(angle) * 0.8, value, true, life);
       remaining -= value;
       pieces++;
     }
   }
   if (remaining > 0) {
     const angle = Math.random() * Math.PI * 2;
-    createLoot(x, y, Math.cos(angle) * 0.8, Math.sin(angle) * 0.8, remaining, true);
+    createLoot(x, y, Math.cos(angle) * 0.8, Math.sin(angle) * 0.8, remaining, true, life);
   }
   return Math.floor(total);
 }

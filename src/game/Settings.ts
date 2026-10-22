@@ -64,6 +64,18 @@ const DEFAULT_BINDINGS: Record<ActionName, string> = {
   chat: 'KeyT',
 };
 
+/**
+ * Coins the host may hand each computer player when a match starts: none by default, a fixed sum, or
+ * 'full', enough for its best gun and first buildings.
+ */
+export const AI_START_GOLD = [0, 500, 1000, 2500, 5000, 'full'] as const;
+
+export type AIStartGold = (typeof AI_START_GOLD)[number];
+
+export function isAIStartGold(value: unknown): value is AIStartGold {
+  return AI_START_GOLD.some((choice) => choice === value);
+}
+
 export type Settings = {
   bindings: Record<ActionName, string>;
   sfxVolume: number;
@@ -73,6 +85,8 @@ export type Settings = {
   /** Last opponent picked on the difficulty screen; the computer by default. */
   opponent: 'none' | 'ai';
   aiDifficulty: string;
+  /** Head start the computer players get; chosen by whoever hosts the match. */
+  aiStartGold: AIStartGold;
   /** Name other players see above this character in multiplayer. */
   playerName: string;
 };
@@ -96,6 +110,7 @@ function defaults(): Settings {
     fullscreen: false,
     opponent: 'ai',
     aiDifficulty: 'Normal',
+    aiStartGold: 0,
     playerName: '',
   };
 }
@@ -129,6 +144,7 @@ function parseSettings(value: unknown, base: Settings): Settings {
     fullscreen: flag(value.fullscreen, base.fullscreen),
     opponent: value.opponent === 'none' || value.opponent === 'ai' ? value.opponent : base.opponent,
     aiDifficulty: typeof value.aiDifficulty === 'string' ? value.aiDifficulty : base.aiDifficulty,
+    aiStartGold: isAIStartGold(value.aiStartGold) ? value.aiStartGold : base.aiStartGold,
     playerName: cleanName(value.playerName),
   };
 }

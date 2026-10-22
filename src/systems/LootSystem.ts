@@ -1,5 +1,7 @@
+import { Rectangle } from 'pixi.js';
 import { world } from '../world';
 import type { Entity } from '../world';
+import { boxAround } from '../core/geometry';
 import { sound } from '../audio/SoundPlayer';
 import { gameState } from '../game/GameState';
 import { pickupSound, LOOT_BURST_TICKS } from '../entities/LootFactory';
@@ -20,8 +22,10 @@ const REST_TO_HARVEST = 1;
 const NORMAL_LIFESPAN = 20;
 const BLINK_TICKS = 180;
 const BLINK_PERIOD = 4;
+/** Slack around a player's drawn body within which a coin counts as walked over: about half a small coin. */
+const TOUCH_SLACK = 4;
 
-const collectors = world.with('position', 'playerStats', 'health');
+const collectors = world.with('position', 'playerStats', 'health', 'radius');
 const restless = world.with('playerStats', 'playerInput');
 const coins = world.with('position', 'loot');
 
@@ -29,12 +33,17 @@ const coins = world.with('position', 'loot');
 type Nearest = { player: Entity; dist: number };
 const inReach: Nearest = { player: {}, dist: Infinity };
 const anywhere: Nearest = { player: {}, dist: Infinity };
+const bodyBox = new Rectangle();
+
+function canCollect(player: Entity): boolean {
+  return player.health!.current > 0 && !player.removed && !player.falling;
+}
 
 function nearestPlayer(x: number, y: number, range: number, out: Nearest): Nearest | null {
   let found = false;
   out.dist = Infinity;
   for (const player of collectors) {
-    if (player.health!.current <= 0 || player.removed || player.falling) continue;
+    if (!canCollect(player)) continue;
     const dist = Math.hypot(player.position!.x - x, player.position!.y - y);
     if (dist >= range || dist >= out.dist) continue;
     out.player = player;
@@ -42,6 +51,27 @@ function nearestPlayer(x: number, y: number, range: number, out: Nearest): Neare
     found = true;
   }
   return found ? out : null;
+}
+
+/**
+ * Whether the coin, where it is drawn, lies on the player's drawn body. The body stands `yOffset` above the
+ * feet, so a coin crossed by the torso is touched even though it is farther than PICKUP_RADIUS from the feet.
+ */
+function touches(player: Entity, coin: Entity): boolean {
+  const p = player.position!;
+  const r = player.radius!;
+  const lift = player.yOffset ?? 0;
+  boxAround(p.x, p.y - lift / 2, r.x + TOUCH_SLACK, r.y + lift / 2 + TOUCH_SLACK, bodyBox);
+  return bodyBox.contains(coin.position!.x, coin.position!.y - (coin.yOffset ?? 0));
+}
+
+/** Who picks a landed coin up by walking over it, whether or not they are firing: the nearest within reach, or anyone touching it. */
+function contactCollector(coin: Entity, near: Nearest | null): Entity | null {
+  if (near && near.dist <= PICKUP_RADIUS) return near.player;
+  for (const player of collectors) {
+    if (canCollect(player) && touches(player, coin)) return player;
+  }
+  return null;
 }
 
 function removeCoin(coin: Entity): void {
@@ -77,7 +107,7 @@ function drift(coin: Entity, airborne: boolean): void {
 function expire(coin: Entity, lifeScale: number): boolean {
   const ld = coin.loot!;
   ld.age++;
-  const left = ld.life * lifeScale - ld.age;
+  const left = (ld.fixedLife ? ld.life : ld.life * lifeScale) - ld.age;
   if (coin.sprite) coin.sprite.visible = left > BLINK_TICKS || Math.floor(left / BLINK_PERIOD) % 2 === 0;
   if (left > 0) return false;
   removeCoin(coin);
@@ -111,8 +141,9 @@ function updateCoin(coin: Entity, lifeScale: number): void {
   const airborne = (ld.burstTicks ?? 0) > 0;
   drift(coin, airborne);
   const near = nearestPlayer(lp.x, lp.y, ld.suckRadius, inReach);
-  if (!airborne && near && near.dist <= PICKUP_RADIUS) {
-    collect(coin, near.player);
+  const toucher = airborne ? null : contactCollector(coin, near);
+  if (toucher) {
+    collect(coin, toucher);
     return;
   }
   if (ld.glide <= 0) {

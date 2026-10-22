@@ -90,5 +90,21 @@ export const AI_GUN_DAMAGE = {
   Insane: { rifle: 1.3, shotgun: 1.3, raygun: 1.3 },
 } as const satisfies Record<AIDifficultyName, Record<WeaponKind, number>>;
 
+/**
+ * Utility of a saboteur buying a bomb, above even the plasma gun (72): with two computer players one builds
+ * and the other wrecks the people's track and machines, so it bombs as often as its purse allows.
+ */
+export const SABOTEUR_BOMB_SCORE = 73;
+
+/** Utility of a saboteur going after the rival's turrets, harvesters and carriages, above hunting and errands. */
+export const SABOTEUR_WRECK_SCORE = 58;
+
+/**
+ * Tiles of walking one wrecked piece of the rival's track or machinery is worth when choosing where to set a
+ * bomb: a lone computer will not make an expedition of a single rail; a saboteur ranges much farther.
+ */
+export const SABOTAGE_WALK_PER_PIECE = 5;
+export const SABOTEUR_WALK_PER_PIECE = 12;
+
 /** Coins a computer player is handed each time it dies, on top of whatever it kept, to rebuild with. */
 export const AI_DEATH_GOLD = 3000;

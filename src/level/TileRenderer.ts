@@ -150,9 +150,17 @@ function drawGround(level: Level, layers: TerrainLayers, tx: number, ty: number)
   layers.floors.addTile(frameTexture('floortiles', img % FLOOR_COLS, Math.floor(img / FLOOR_COLS)), x, y);
 }
 
-function drawRail(level: Level, layers: TerrainLayers, tx: number, ty: number): void {
-  if (!level.getTile(tx, ty) || !isRailTile(level, tx, ty)) return;
-  layers.rails.addTile(frameTexture('rails', railFrame(level, tx, ty), 0), tx * TILE_WIDTH, ty * TILE_HEIGHT - RAIL_RISE);
+/** The rival's track is drawn with charcoal sleepers, so whose line it is reads at a glance. */
+function railSheet(tile: TileData, viewerTeam: Team): 'rails' | 'rails_enemy' {
+  const rival = tile.team !== undefined && tile.team !== Team.Neutral && tile.team !== viewerTeam;
+  return rival ? 'rails_enemy' : 'rails';
+}
+
+function drawRail(level: Level, layers: TerrainLayers, tx: number, ty: number, viewerTeam: Team): void {
+  const tile = level.getTile(tx, ty);
+  if (!tile || !isRailTile(level, tx, ty)) return;
+  const texture = frameTexture(railSheet(tile, viewerTeam), railFrame(level, tx, ty), 0);
+  layers.rails.addTile(texture, tx * TILE_WIDTH, ty * TILE_HEIGHT - RAIL_RISE);
 }
 
 /** Spawn platforms sit above the floor, below base pieces; base platforms above the floor but below walls. */
@@ -170,9 +178,9 @@ function drawBases(level: Level, layers: TerrainLayers): void {
 /**
  * Batches the static terrain into Pixi v8 ParticleContainers (see StaticTileLayer); moving actors and
  * walls keep their own depth-sorted sprites. Floors come first so wall overhang draws over them, and
- * rails sit on top of the floor.
+ * rails sit on top of the floor. `viewerTeam` is the side of the person looking, whose rival's track is drawn darker.
  */
-export function buildLevelView(level: Level): Container {
+export function buildLevelView(level: Level, viewerTeam: Team): Container {
   const container = new Container();
   const layers: TerrainLayers = {
     holes: new Graphics(),
@@ -185,7 +193,7 @@ export function buildLevelView(level: Level): Container {
   const right = level.width - 1;
   const bottom = level.height - 1;
   forEachTile(0, 0, right, bottom, (tx, ty) => drawGround(level, layers, tx, ty));
-  forEachTile(0, 0, right, bottom, (tx, ty) => drawRail(level, layers, tx, ty));
+  forEachTile(0, 0, right, bottom, (tx, ty) => drawRail(level, layers, tx, ty, viewerTeam));
   drawBases(level, layers);
   return container;
 }

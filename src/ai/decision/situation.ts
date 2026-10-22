@@ -6,7 +6,10 @@ import type { AIDifficulty } from '../../game/GameState';
 import { upgradeCostOf } from '../../entities/BuildingFactory';
 import { railCost } from '../../systems/InteractionSystem';
 import { roleOf } from '../brain';
-import { GUARD_SPAN, INF, NEST_CLEAR_RANGE, RAILS_PER_UPGRADE, UPGRADE_AFTER, UPGRADE_SAVE_TICKS } from '../constants';
+import {
+  GUARD_SPAN, INF, NEST_CLEAR_RANGE, RAILS_PER_UPGRADE, SABOTAGE_WALK_PER_PIECE, SABOTEUR_WALK_PER_PIECE,
+  UPGRADE_AFTER, UPGRADE_SAVE_TICKS,
+} from '../constants';
 import { mobsNear, rivalsInSight } from '../perception/awareness';
 import { besideWall, findSabotage, threateningBomb } from '../perception/demolition';
 import type { SabotageTarget } from '../perception/demolition';
@@ -110,7 +113,8 @@ export function assess(level: Level, entity: Entity, brain: Brain, profile: AIDi
   const saboteur = role === 'saboteur';
 
   // A builder only cuts the rival's link home once it has joined their track; the others wreck freely.
-  const sabotage = findSabotage(level, entity, field, role === 'builder');
+  const sabotage = findSabotage(level, entity, field, role === 'builder',
+    saboteur ? SABOTEUR_WALK_PER_PIECE : SABOTAGE_WALK_PER_PIECE);
   const plan = saboteur ? null : planRails(level, entity.team ?? Team.Two);
   brain.railPlan = plan ?? [];
   brain.railDone = plan !== null && plan.length === 0;
@@ -122,10 +126,12 @@ export function assess(level: Level, entity: Entity, brain: Brain, profile: AIDi
   const loose = brain.looseBombId !== undefined ? world.entity(brain.looseBombId) : undefined;
   if (!loose || loose.removed || loose.carriedBy !== undefined || loose.bomb?.lit) brain.looseBombId = undefined;
 
-  // Hands full and something biting within reach: put it down here and fight. A bomb is never let go
-  // of in a fight: on the floor any stray shot sets it off, and it stays in hand across a respawn anyway.
-  const engaged = mobsNear(level, entity, 72) > 0 || rivalsInSight(level, entity, profile.engageRange) > 0;
-  const threatened = held !== undefined && !held.bomb && engaged;
+  // Hands full and something biting within reach: put it down here and fight. A bomb stays in hand
+  // against mobs (on the floor a stray shot sets it off), but a rival player in sight is answered with
+  // the gun: standing there holding a bomb would only get it shot.
+  const rivalInSight = rivalsInSight(level, entity, profile.engageRange) > 0;
+  const engaged = mobsNear(level, entity, 72) > 0 || rivalInSight;
+  const threatened = held !== undefined && (held.bomb ? rivalInSight : engaged);
   const explosive = cheapestStall(entity, 'explosive');
   const saving = wall >= 0 && brain.blastId === undefined && brain.looseBombId === undefined && !held?.bomb && explosive
     ? explosive.shopItem!.cost : 0;

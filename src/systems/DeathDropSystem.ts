@@ -9,8 +9,9 @@ import { notify, quietly } from '../game/Notices';
 
 /** Share of the carried coins a fallen player leaves behind. */
 export const DEATH_PURSE_SHARE = 0.9;
-/** Ticks a dropped gun lies around (40 seconds) and how long it blinks before it goes. */
-const WEAPON_LIFE = 60 * 40;
+/** Ticks a fallen player's coins and guns lie around (25 seconds), whatever the difficulty. */
+export const FALLEN_DROP_LIFE = 60 * 25;
+/** Ticks a dropped gun blinks before it goes. */
 const BLINK_TICKS = 180;
 const BLINK_PERIOD = 4;
 const PICKUP_REACH = 16;
@@ -28,7 +29,7 @@ export function createWeaponPickup(x: number, y: number, kind: WeaponKind): Enti
     radius: { x: 8, y: 8 },
     yOffset: def.yOffset,
     visual: { sheet: def.sheet, col: def.col },
-    weaponPickup: { kind, age: 0, life: WEAPON_LIFE },
+    weaponPickup: { kind, age: 0, life: FALLEN_DROP_LIFE },
   });
 }
 
@@ -37,7 +38,7 @@ function spillShare(player: Entity, at: { x: number; y: number }): void {
   const stats = player.playerStats;
   if (!stats || stats.score <= 0) return;
   const share = Math.floor(stats.score * DEATH_PURSE_SHARE);
-  if (share > 0) stats.score -= spillPurse(at.x, at.y, share);
+  if (share > 0) stats.score -= spillPurse(at.x, at.y, share, FALLEN_DROP_LIFE);
 }
 
 /** Scatters every gun but the starting one in a ring around the spot, and re-arms the player with the starter. */
@@ -57,7 +58,7 @@ function dropSpareGuns(player: Entity, at: { x: number; y: number }): void {
 
 /**
  * What a player leaves where they fall: nine tenths of their coins, as the biggest gems and
- * coins that fit, and every gun but the starting one. Coins and guns vanish after a while.
+ * coins that fit, and every gun but the starting one. Coins and guns vanish after 25 seconds.
  */
 export function dropOnDeath(player: Entity): void {
   const pos = player.position;

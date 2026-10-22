@@ -27,6 +27,8 @@ export function reachPoint(player: Entity, distance = INTERACT_REACH): { x: numb
 function usableBy(player: Entity, candidate: Entity): boolean {
   if (candidate.removed || candidate.chest?.opened) return false;
   if (candidate.carriedBy !== undefined) return false;
+  // A burning fuse cannot be carried off: the bomb would go off overhead.
+  if (candidate.bomb?.lit) return false;
   if (candidate.shopItem) return candidate.team === player.team;
   // The rival's turrets and harvesters cannot be used, so they are not offered or marked either.
   if (isVersus() && candidate.building && !candidate.bomb && candidate.team

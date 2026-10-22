@@ -54,6 +54,7 @@ const SHEETS: Record<string, SheetInfo> = {
   bomb:        { frameWidth: 32, frameHeight: 32 },
   muzzle:      { frameWidth: 16, frameHeight: 16 },
   rails:       { frameWidth: 32, frameHeight: 38 },
+  rails_enemy: { frameWidth: 32, frameHeight: 38 },
   bullet:      { frameWidth: 16, frameHeight: 16 },
   bullet_buckshot: { frameWidth: 16, frameHeight: 16 },
   bullet_poison: { frameWidth: 16, frameHeight: 16 },

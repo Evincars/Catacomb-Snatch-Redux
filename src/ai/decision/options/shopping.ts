@@ -4,7 +4,7 @@ import { isWeaponKind } from '../../../entities/WeaponStats';
 import type { WeaponKind } from '../../../entities/WeaponStats';
 import { upgradeCostOf } from '../../../entities/BuildingFactory';
 import { railCost, carriageCost } from '../../../systems/InteractionSystem';
-import { CARRIAGE_DELAY, GUARD_SPAN, INF } from '../../constants';
+import { CARRIAGE_DELAY, GUARD_SPAN, INF, SABOTEUR_BOMB_SCORE } from '../../constants';
 import { bounces, weaponGain } from '../../perception/arsenal';
 import { hostile } from '../../perception/awareness';
 import { stallFor } from '../../perception/economy';
@@ -27,6 +27,8 @@ const owns = (s: Situation, kind: WeaponKind) => s.entity.weaponInventory!.weapo
 /** A stall filter that takes only guns, and of those only the ones `test` accepts. */
 const gun = (test: (kind: WeaponKind) => boolean) => (kind: ShopKind) => isWeaponKind(kind) && test(kind);
 const idle = (s: Situation) => s.brain.blastId === undefined && s.brain.looseBombId === undefined;
+/** Base building is the builder's job: a saboteur spends its coins on guns and bombs only. */
+const builds = (s: Situation) => !s.saboteur;
 
 /** Everything bought, upgraded or laid with coins. */
 export const SHOPPING: Option[] = [
@@ -45,7 +47,7 @@ export const SHOPPING: Option[] = [
     id: 'secure the base',
     ceiling: 70,
     evaluate(s) {
-      if (!s.needsBaseDefense) return null;
+      if (!s.needsBaseDefense || !builds(s)) return null;
       const exposed = [...q.spawners].some((n) => hostile(s.entity, n)
         && walkDistance(s.level, s.field, n.position!.x, n.position!.y) < INF);
       return buyAt(s, 70, 'secure base', 'defense', exposed ? s.money : s.money - s.saving);
@@ -62,12 +64,13 @@ export const SHOPPING: Option[] = [
     },
   },
   {
-    // A bomb for the rival's track and machines: the more there is to wreck, the sooner it is bought.
+    // A bomb for the rival's track and machines: the more there is to wreck, the sooner it is bought. A
+    // saboteur buys one whenever it can, even before a better gun: wrecking is its whole job.
     id: 'buy a bomb to sabotage',
-    ceiling: 69,
+    ceiling: SABOTEUR_BOMB_SCORE + 4,
     evaluate(s) {
       if (!s.sabotage || !idle(s)) return null;
-      const score = 62 + Math.min(7, s.sabotage.value / 6);
+      const score = (s.saboteur ? SABOTEUR_BOMB_SCORE : 62) + Math.min(s.saboteur ? 4 : 7, s.sabotage.value / 6);
       return buyAt(s, score, 'buy explosive', 'explosive', s.money);
     },
   },
@@ -84,7 +87,7 @@ export const SHOPPING: Option[] = [
     id: 'first turret',
     ceiling: 60,
     evaluate(s) {
-      return s.turrets.length === 0 ? buyAt(s, 60, 'buy defense', 'defense', s.money - s.saving) : null;
+      return s.turrets.length === 0 && builds(s) ? buyAt(s, 60, 'buy defense', 'defense', s.money - s.saving) : null;
     },
   },
   {
@@ -99,7 +102,7 @@ export const SHOPPING: Option[] = [
     id: 'first harvester',
     ceiling: 56,
     evaluate(s) {
-      return !s.needsBaseDefense && s.turrets.length > 0 && s.harvesters.length === 0
+      return builds(s) && !s.needsBaseDefense && s.turrets.length > 0 && s.harvesters.length === 0
         ? buyAt(s, 56, 'buy economy', 'economy', s.spare) : null;
     },
   },
@@ -108,7 +111,7 @@ export const SHOPPING: Option[] = [
     id: 'turret at the track head',
     ceiling: 54,
     evaluate(s) {
-      if (!s.frontBusy || s.turrets.length >= s.profile.maxTurrets) return null;
+      if (!builds(s) || !s.frontBusy || s.turrets.length >= s.profile.maxTurrets) return null;
       return buyAt(s, 54, 'buy defense', 'defense', s.spare, () => { s.brain.front = s.railHead!; });
     },
   },
@@ -118,7 +121,7 @@ export const SHOPPING: Option[] = [
     ceiling: 53,
     evaluate(s) {
       const { unguarded } = s;
-      if (!unguarded || unguarded.count < GUARD_SPAN || s.turrets.length >= s.profile.maxTurrets + s.profile.trackTurrets) return null;
+      if (!builds(s) || !unguarded || unguarded.count < GUARD_SPAN || s.turrets.length >= s.profile.maxTurrets + s.profile.trackTurrets) return null;
       // The more bare track, the more urgent; a long undefended line is what the rival raids.
       return buyAt(s, 52 + Math.min(1, unguarded.count / 20), 'buy defense', 'defense', s.spare, () => { s.brain.front = unguarded; });
     },
@@ -128,7 +131,7 @@ export const SHOPPING: Option[] = [
     id: 'spend the surplus',
     ceiling: 50,
     evaluate(s) {
-      if (s.turrets.length <= s.harvesters.length && s.turrets.length >= s.profile.maxTurrets) return null;
+      if (!builds(s) || (s.turrets.length <= s.harvesters.length && s.turrets.length >= s.profile.maxTurrets)) return null;
       const role = s.turrets.length > s.harvesters.length ? 'economy' : 'defense';
       return buyAt(s, 50, `buy ${role}`, role, s.surplus);
     },
@@ -139,6 +142,7 @@ export const SHOPPING: Option[] = [
     id: 'upgrade',
     ceiling: 55,
     evaluate(s) {
+      if (!builds(s)) return null;
       const flush = s.money - s.profile.reserve;
       const pick = nearestOf(s.level, s.brain, [...q.upgradables].filter((b) => !b.removed && b.team === s.entity.team
         && b.carriedBy === undefined && b.upgradable!.level < s.profile.maxUpgrade
@@ -155,7 +159,7 @@ export const SHOPPING: Option[] = [
     id: 'upgrade it saved for',
     ceiling: 47,
     evaluate(s) {
-      if (!s.upgradeDue) return null;
+      if (!s.upgradeDue || !builds(s)) return null;
       return {
         score: 47,
         goal: usePlan(s.level, s.brain, 'upgrade', s.upgradeDue, 'upgradeId'),
@@ -192,7 +196,7 @@ export const SHOPPING: Option[] = [
     id: 'harvester for each turret',
     ceiling: 44,
     evaluate(s) {
-      if (s.turrets.length <= s.harvesters.length) return null;
+      if (!builds(s) || s.turrets.length <= s.harvesters.length) return null;
       return buyAt(s, 44, 'buy economy', 'economy', s.harvesters.length === 0 ? s.spare + s.profile.reserve : s.spare);
     },
   },
@@ -201,6 +205,7 @@ export const SHOPPING: Option[] = [
     id: 'upgrade when idle',
     ceiling: 40,
     evaluate(s) {
+      if (!builds(s)) return null;
       const pick = nearestOf(s.level, s.brain, [...q.upgradables].filter((b) => !b.removed && b.team === s.entity.team
         && b.carriedBy === undefined && b.upgradable!.level < s.profile.maxUpgrade
         && (upgradeCostOf(b) ?? INF) <= s.spare && worthUpgrading(s.level, s.entity, s.brain, b)));
@@ -211,7 +216,7 @@ export const SHOPPING: Option[] = [
     id: 'more defence',
     ceiling: 42,
     evaluate(s) {
-      if (s.turrets.length >= s.profile.maxTurrets) return null;
+      if (!builds(s) || s.turrets.length >= s.profile.maxTurrets) return null;
       const free = s.brain.railDone || s.brain.age < s.profile.railDelay || !s.plan;
       return buyAt(s, 42, 'buy defense', 'defense', free ? s.spare : s.spare - s.trackBudget);
     },

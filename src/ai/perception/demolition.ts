@@ -4,7 +4,7 @@ import type { Entity } from '../../world';
 import type { Level } from '../../level/Level';
 import { TileType, TILE_WIDTH, TILE_HEIGHT } from '../../level/TileType';
 import { blastHitTiles } from '../../systems/BuildingSystem';
-import { BLAST_CLEARANCE, DIRS, INF } from '../constants';
+import { BLAST_CLEARANCE, DIRS, INF, SABOTAGE_WALK_PER_PIECE } from '../constants';
 import { centreX, centreY, tileX, tileY } from './geometry';
 import { bridgedToRival } from './rails';
 import type { Field } from '../types';
@@ -72,7 +72,8 @@ function countNear(spots: readonly Spot[], at: Spot): number {
  * carry off the treasure instead. With `cutsOnly` it looks no further than that cut, and only once the
  * two networks are joined.
  */
-export function findSabotage(level: Level, entity: Entity, field: Field, cutsOnly = false): SabotageTarget | null {
+export function findSabotage(level: Level, entity: Entity, field: Field, cutsOnly = false,
+  walkPerPiece = SABOTAGE_WALK_PER_PIECE): SabotageTarget | null {
   const rivalTeam = entity.team === Team.One ? Team.Two : Team.One;
   const bridged = bridgedToRival(level, entity);
   if (cutsOnly && !bridged) return null;
@@ -86,8 +87,8 @@ export function findSabotage(level: Level, entity: Entity, field: Field, cutsOnl
     const stand = besideWall(level, field, tile);
     if (stand < 0) continue;
     const value = countNear(track, spot) + 4 * countNear(machines, spot) + (spot.cut ? (bridged ? 40 : 12) : 0);
-    // Worth a walk of a few tiles per piece wrecked, but never an expedition for a single rail.
-    const score = value * 5 - field.dist[stand];
+    // Worth a walk of a few tiles per piece wrecked; only a saboteur makes an expedition of it.
+    const score = value * walkPerPiece - field.dist[stand];
     if (score <= bestScore) continue;
     bestScore = score;
     best = { tile, stand, value, cut: spot.cut, bridged };

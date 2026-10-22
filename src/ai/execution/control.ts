@@ -315,6 +315,27 @@ function directShot(entity: Entity, brain: Brain, profile: AIDifficulty, enemy: 
   if (!moving && enemy.ai && d < 40) steerTo(entity, pos.x * 2 - at.x, pos.y * 2 - at.y, 0, out);
 }
 
+/** A bomb of ours lying unlit where a rival player stands within its blast, while we stand clear of it. */
+function bombTrap(entity: Entity, brain: Brain, enemy: Entity): Entity | null {
+  if (!enemy.playerInput) return null;
+  for (const id of [brain.looseBombId, brain.blastId]) {
+    const bomb = id !== undefined ? world.entity(id) : undefined;
+    if (!bomb?.bomb || bomb.removed || bomb.bomb.lit || bomb.carriedBy !== undefined) continue;
+    if (!clearOfBlast(enemy, bomb) && clearOfBlast(entity, bomb)) return bomb;
+  }
+  return null;
+}
+
+/** Shoots its own bomb to light it under the rival standing beside it. */
+function springTrap(entity: Entity, brain: Brain, profile: AIDifficulty, bomb: Entity): void {
+  const pos = entity.position!;
+  const at = bomb.position!;
+  rollTrigger(brain, profile);
+  setAim(entity, at.x - pos.x, at.y - (bomb.yOffset ?? 0) - pos.y);
+  act.shooting = brain.reaction <= 0 && brain.trigger;
+  act.aimed = true;
+}
+
 /** Turns on the current enemy: picks the gun, aims, and decides whether to fire. */
 function fight(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty, goal: Goal | null, moving: boolean): void {
   const enemy = brain.enemyId !== undefined ? world.entity(brain.enemyId) : undefined;
@@ -323,6 +344,9 @@ function fight(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty
   if (busy || !alive(enemy) || !hostile(entity, enemy)) return;
   const pos = entity.position!;
   const at = enemy.position!;
+  // A rival who walks up to one of our bombs gets it set off under them.
+  const trap = bombTrap(entity, brain, enemy);
+  if (trap && level.checkLineOfSight(pos.x, pos.y, trap.position!.x, trap.position!.y)) return springTrap(entity, brain, profile, trap);
   // Out of sight, the only way to reach it is a shot that banks off the walls.
   const seen = level.checkLineOfSight(pos.x, pos.y, at.x, at.y);
   const bank = !seen && brain.bank?.targetId === brain.enemyId ? brain.bank : null;

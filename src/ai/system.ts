@@ -1,6 +1,7 @@
 import { world, q, Team } from '../world';
 import type { Level } from '../level/Level';
 import type { AIDifficulty } from '../game/GameState';
+import type { AIStartGold } from '../game/Settings';
 import type { Entity } from '../world';
 import type { Brain } from './types';
 import { SHOP_DEFS } from '../entities/ShopItemFactory';
@@ -12,13 +13,12 @@ import { threateningBomb } from './perception/demolition';
 import { alive } from './perception/geometry';
 import { beginPerception } from './perception/spatial';
 
-/** What every computer player starts with, enough to buy the plasma gun first and then fortify. */
+/** The least a full head start comes to, enough to buy the plasma gun first and then fortify. */
 export const STARTING_GOLD = 5000;
 
 /**
- * Coins the computer starts a match with: its opening defence, a harvester, a bomb for the
+ * A full head start, when the host asks for one: its opening defence, a harvester, a bomb for the
  * first wall and the best gun on its side's stalls, so it is never the underdog for lack of a start.
- * The player is not told.
  */
 export function openingCoins(profile: AIDifficulty): number {
   let gun = 0;
@@ -36,6 +36,11 @@ export function openingCoins(profile: AIDifficulty): number {
   }
   const needed = gun + harvester + bomb + turret * Math.min(3, profile.maxTurrets) + profile.reserve + 25;
   return Math.max(STARTING_GOLD, needed);
+}
+
+/** The head start the host chose for the computer players: nothing, a fixed sum, or a full opening. */
+export function startingCoins(profile: AIDifficulty, choice: AIStartGold): number {
+  return choice === 'full' ? openingCoins(profile) : choice;
 }
 
 const computers = world.with('aiPlayer', 'playerInput', 'position', 'playerStats', 'weaponInventory', 'health');
@@ -61,7 +66,7 @@ function forgetPlans(brain: Brain): void {
 
 /**
  * Something that cannot wait for the next plan: a lit bomb about to catch it, health low with enemies
- * close, or a load in hand when a rival or a mob closes in (down it goes at once).
+ * close, or a load in hand when a rival or a mob closes in (down it goes at once; a bomb only for a rival).
  */
 function needsReplan(level: Level, entity: Entity, brain: Brain, profile: AIDifficulty): boolean {
   if (threateningBomb(entity) && brain.goal?.name !== 'escape blast') return true;
@@ -70,8 +75,9 @@ function needsReplan(level: Level, entity: Entity, brain: Brain, profile: AIDiff
   if (!carrying && health.current < health.max * profile.retreatHealth && enemiesNear(entity, 160)
     && brain.goal?.name !== 'retreat') return true;
   if (!carrying || brain.age % 4 !== 0 || brain.goal?.name === 'stash fight') return false;
-  if (world.entity(entity.carryingId!)?.bomb !== undefined) return false;
-  return mobsNear(level, entity, 72) > 0 || rivalsInSight(level, entity, profile.engageRange) > 0;
+  const rivalInSight = rivalsInSight(level, entity, profile.engageRange) > 0;
+  if (world.entity(entity.carryingId!)?.bomb !== undefined) return rivalInSight;
+  return rivalInSight || mobsNear(level, entity, 72) > 0;
 }
 
 /** Spotting enemies happens more often than planning, but still with a reaction delay. */

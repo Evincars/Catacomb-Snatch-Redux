@@ -20,7 +20,7 @@ const log = createLog('network');
 export type InputFrame = { input: NonNullable<Entity['playerInput']>; aim: { x: number; y: number }; sequence: number };
 export type RosterEntry = { slot: PlayerSlot; name: string };
 type Message =
-  | { type: 'hello'; version: 3; name: string }
+  | { type: 'hello'; version: 4; name: string }
   | { type: 'welcome'; slot: PlayerSlot; mode: MultiplayerMode }
   | { type: 'refused'; reason: string }
   | { type: 'roster'; players: RosterEntry[]; mode: MultiplayerMode }
@@ -29,13 +29,15 @@ type Message =
   | { type: 'level'; compressed: ArrayBuffer | Uint8Array }
   | { type: 'input'; frame: InputFrame }
   | { type: 'end'; winner: number }
+  /** The match is over and the host is setting up the next one in the same room. */
+  | { type: 'lobby' }
   | { type: 'sound'; name: SfxName; x?: number; y?: number }
   | { type: 'notice'; text: string }
   | { type: 'ping' };
 
 /** The most guests a room takes: the host plus three others make four players. */
 export const MAX_GUESTS = PLAYER_SLOTS.length - 1;
-const VERSION = 3;
+const VERSION = 4;
 
 type Intents = InputFrame['input']['intents'];
 /** Folds a source's one-shot button presses into the target so none is lost. */
@@ -149,6 +151,8 @@ export class CoopSession {
   onChange: (() => void) | null = null;
   onState: (() => void) | null = null;
   onEnd: ((winner: number) => void) | null = null;
+  /** Guest only: the host took the room back to the lobby for another match. */
+  onLobby: (() => void) | null = null;
   /** Host only: a guest's connection ended. */
   onLeave: ((slot: PlayerSlot, name: string) => void) | null = null;
   private peer: Peer | null = null;
@@ -348,6 +352,8 @@ export class CoopSession {
     } else if (message.type === 'end' && this.role === 'guest') {
       if (![0, 1, 2].includes(message.winner)) throw new NetworkError('Invalid game result');
       this.onEnd?.(message.winner);
+    } else if (message.type === 'lobby' && this.role === 'guest') {
+      this.awaitNextMatch();
     } else throw new NetworkError('Unexpected co-op message');
   }
 
@@ -391,6 +397,39 @@ export class CoopSession {
   /** Once the match begins the room is closed to newcomers, and every roster name is final. */
   lock(): void {
     this.locked = true;
+  }
+
+  /** Whether this browser is still in a room from the last match, so the lobby can reuse it instead of a new invite. */
+  get inRoom(): boolean {
+    return this.role === 'host' ? this.peer !== null && this.invite !== '' : this.role === 'guest' && this.connected;
+  }
+
+  /**
+   * Host: the match is over and the same room takes the next one, so nobody needs a new invite. The room opens
+   * to newcomers again, every guest's controls start afresh, and the guests are told to wait for the next start.
+   */
+  reopen(): void {
+    if (this.role !== 'host') return;
+    this.locked = false;
+    this.guestLimit = null;
+    for (const link of this.links.values()) {
+      link.input = null;
+      link.sequence = -1;
+    }
+    this.refreshRoster();
+    this.broadcast({ type: 'lobby' });
+    this.broadcastRoster();
+    this.setStatus(this.waitingText());
+  }
+
+  /** Guest: the last match's world is dropped, so the next one is never mixed with its terrain. */
+  private awaitNextMatch(): void {
+    this.latest = null;
+    this.level = null;
+    this.levelChanged = false;
+    this.pendingState = null;
+    this.setStatus('The host is setting up the next match.');
+    this.onLobby?.();
   }
 
   private startHeartbeat(): void {
@@ -639,7 +678,7 @@ export class CoopSession {
     clearTimeout(this.timeout);
     clearInterval(this.heartbeat);
     this.heartbeat = undefined;
-    this.onChange = null; this.onState = null; this.onEnd = null; this.onLeave = null;
+    this.onChange = null; this.onState = null; this.onEnd = null; this.onLeave = null; this.onLobby = null;
     for (const link of this.allLinks()) {
       clearTimeout(link.timeout);
       this.closeFast(link);

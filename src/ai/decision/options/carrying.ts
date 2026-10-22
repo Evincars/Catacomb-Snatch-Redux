@@ -54,11 +54,12 @@ export const CARRYING: Option[] = [
     },
   },
   {
-    // A bomb put down to fight is fetched again once things are quiet.
+    // A bomb put down to fight is fetched again once things are quiet, not while the rival is still in sight.
     id: 'fetch the bomb',
     ceiling: 74,
     evaluate(s) {
-      if (s.brain.looseBombId === undefined || (s.wall < 0 && !s.sabotage) || mobsNear(s.level, s.entity, 120) > 0) return null;
+      if (s.brain.looseBombId === undefined || (s.wall < 0 && !s.sabotage) || s.engaged
+        || mobsNear(s.level, s.entity, 120) > 0) return null;
       const bomb = world.entity(s.brain.looseBombId);
       return bomb ? { score: 74, goal: usePlan(s.level, s.brain, 'fetch bomb', bomb) } : null;
     },

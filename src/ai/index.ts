@@ -1,1 +1,1 @@
-export { updateAIPlayers, openingCoins } from './system';
+export { updateAIPlayers, openingCoins, startingCoins } from './system';

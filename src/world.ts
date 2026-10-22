@@ -202,6 +202,8 @@ export type Entity = {
     age: number;
     /** Ticks it may lie around before vanishing. */
     life: number;
+    /** `life` is plain ticks, not scaled by the difficulty's coin lifespan (a fallen player's purse). */
+    fixedLife?: boolean;
     /** Time left in the outward drop arc, before collectors may attract it. */
     burstTicks?: number;
   };

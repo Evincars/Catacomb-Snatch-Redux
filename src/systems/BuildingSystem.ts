@@ -1,3 +1,4 @@
+import { MathUtils } from 'yuka';
 import { world, Team } from '../world';
 import type { Entity } from '../world';
 import type { Level } from '../level/Level';
@@ -30,6 +31,14 @@ const WORKING_TICKS = 30;
 
 /** A blast hurts a little farther out than the tiles it clears, in tiles beyond the bomb's own. */
 export const BLAST_HIT_MARGIN = 0.5;
+
+/**
+ * Multiples of a bomb's blast damage a player takes: at the very edge of the blast, and right on top of
+ * the bomb. In between it grows the closer they stand, so being caught near a bomb is far worse than
+ * being clipped by it.
+ */
+export const PLAYER_BLAST_EDGE = 1.5;
+export const PLAYER_BLAST_CORE = 3;
 
 const turrets = world.with('position', 'turret');
 const shootable = world.with('position', 'health', 'radius');
@@ -204,6 +213,18 @@ function inBlast(blast: Blast, e: Entity): boolean {
   return Math.abs(e.position!.x - blast.centerX) < blast.halfW && Math.abs(e.position!.y - blast.centerY) < blast.halfH;
 }
 
+/** How close to the middle of the (square) blast the entity stands: 1 on the bomb, 0 at its edge. */
+function blastCloseness(blast: Blast, e: Entity): number {
+  const dx = Math.abs(e.position!.x - blast.centerX) / blast.halfW;
+  const dy = Math.abs(e.position!.y - blast.centerY) / blast.halfH;
+  return MathUtils.clamp(1 - Math.max(dx, dy), 0, 1);
+}
+
+/** What the blast does to a player standing where they are: more the nearer the bomb. */
+export function playerBlastDamage(blastDamage: number, closeness: number): number {
+  return Math.round(blastDamage * (PLAYER_BLAST_EDGE + (PLAYER_BLAST_CORE - PLAYER_BLAST_EDGE) * closeness));
+}
+
 /** Whether a blast also wrecks this rival machine (versus play only). */
 function blastsMachine(bomb: Entity, target: Entity): boolean {
   if (!target.turret && !target.harvester && !target.railDroid) return false;
@@ -214,9 +235,10 @@ function blastsMachine(bomb: Entity, target: Entity): boolean {
 function hurtByBlast(bomb: Entity, blast: Blast): void {
   const damage = bomb.bomb!.blastDamage;
   for (const mob of mobs) if (inBlast(blast, mob)) hurtEntity(mob, bomb, damage);
-  // Nobody is spared: a player standing too close is hurt like anyone else.
+  // Nobody is spared, and a player standing close to the bomb is hurt hardest of all.
   for (const player of players) {
-    if (inBlast(blast, player) && (player.hurtTime ?? 0) <= 0) hurtPlayer(player, bomb, damage);
+    if (!inBlast(blast, player) || (player.hurtTime ?? 0) > 0) continue;
+    hurtPlayer(player, bomb, playerBlastDamage(damage, blastCloseness(blast, player)));
   }
   if (!isVersus()) return;
   for (const target of damageable) {

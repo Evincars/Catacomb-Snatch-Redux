@@ -3,6 +3,7 @@ import type { Entity } from '../world';
 import type { Level } from '../level/Level';
 import { TileType } from '../level/TileType';
 import { createLoot } from '../entities/LootFactory';
+import { FALLEN_DROP_LIFE } from './DeathDropSystem';
 import { sound } from '../audio/SoundPlayer';
 import { spawnFx } from '../entities/FxFactory';
 
@@ -65,7 +66,7 @@ function spillHalfPurse(player: Entity): void {
   for (let i = 0; remaining > 0 && i < SPILL_PILES; i++) {
     const value = Math.max(1, Math.floor(remaining / 2));
     const dir = Math.random() * Math.PI * 2;
-    createLoot(pos.x, pos.y, Math.cos(dir), Math.sin(dir), value, true);
+    createLoot(pos.x, pos.y, Math.cos(dir), Math.sin(dir), value, true, FALLEN_DROP_LIFE);
     remaining -= value;
   }
 }

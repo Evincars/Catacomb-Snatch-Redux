@@ -16,6 +16,7 @@ export const ASSETS: AssetManifest = {
     walltiles:    '/art/map/walltiles.png',
     dark:         '/art/map/dark.png',
     rails:        '/art/map/rails.png',
+    rails_enemy:  '/art/map/rails-enemy.png',
     spiketrap:    '/art/map/spiketrap.png',
     droptrap:     '/art/map/droptrap.png',
     treasure:     '/art/map/treasure.png',

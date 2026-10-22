@@ -22,7 +22,7 @@ import { takeNotices, clearNotices, updateNotices, noticeEvents, notify } from '
 import { makeText, makeTitle } from '../ui/PixelText';
 import { PixelButton } from '../ui/PixelButton';
 import { gameState, isVersus } from '../game/GameState';
-import { openingCoins } from '../ai';
+import { startingCoins } from '../ai';
 import { cheats, resetCheats, runCommand } from '../game/Console';
 import { ConsoleView } from '../ui/ConsoleView';
 import type { CharacterType } from '../entities/PlayerFactory';
@@ -34,7 +34,7 @@ import { TooltipView } from '../ui/Tooltip';
 import { WeaponBar } from '../ui/WeaponBar';
 import { DarknessRenderer } from '../level/DarknessRenderer';
 import { Crosshair } from '../ui/Crosshair';
-import { bindingFor, keyLabel } from '../game/Settings';
+import { bindingFor, keyLabel, settings } from '../game/Settings';
 import { Scoreboard } from '../ui/Scoreboard';
 import { coop } from '../network/CoopSession';
 import { captureWorld, WorldReplica, restoreSettings } from '../game/WorldState';
@@ -219,10 +219,6 @@ export class InGameScene implements Scene {
     // Not on the overlay: pausing destroys everything there, which used to take the label with it.
     this.hudLayer.addChild(this.respawnLabel);
 
-    this.levelView = buildLevelView(this.level);
-    this.levelView.zIndex = -Number.MAX_SAFE_INTEGER;
-    this.gameLayer.addChild(this.levelView);
-
     // Fog sits above every world sprite but below the HUD.
     this.darkness.container.zIndex = Number.MAX_SAFE_INTEGER;
     this.gameLayer.addChild(this.darkness.container);
@@ -240,19 +236,15 @@ export class InGameScene implements Scene {
       this.markOthersRemote();
     }
     if (!snapshot && coop.role !== 'guest' && gameState.opponent === 'ai') this.addComputerOpponents();
+    // The terrain is drawn once the local side is known: the rival's track is shown darker.
+    this.addLevelView();
     // Placed after the player so no nest lands within sight of the start.
     if (!snapshot) spawnInitialSpawners(this.level);
 
-    coop.onState = () => {
-      if (coop.role !== 'guest' || !coop.latest || this.disposed) return;
-      const applied = attempt(() => this.applyHostState(), 'network');
-      if (applied.ok) return;
-      this.finished = true;
-      this.showLoadError(report(applied.error, 'Applying co-op state failed', 'network'));
-    };
-    coop.onEnd = winner => this.end(winner);
+    coop.onState = this.onHostState;
+    coop.onEnd = this.onMatchEnd;
     if (coop.role === 'host') {
-      coop.onLeave = slot => this.departed.push(slot);
+      coop.onLeave = this.onGuestLeave;
       sound.onEffect = (name, x, y) => coop.sendSound(name, x, y);
       noticeEvents.onNotice = text => coop.sendNotice(text);
     }
@@ -265,6 +257,28 @@ export class InGameScene implements Scene {
     this.app.canvas.style.cursor = 'none';
     this.centerCameraOn(this.player.position!.x, this.player.position!.y);
     if (coop.role === 'host') this.sendWorld(false, true);
+  }
+
+  /** Guest: the host's latest world arrived. */
+  private readonly onHostState = (): void => {
+    if (coop.role !== 'guest' || !coop.latest || this.disposed) return;
+    const applied = attempt(() => this.applyHostState(), 'network');
+    if (applied.ok) return;
+    this.finished = true;
+    this.showLoadError(report(applied.error, 'Applying co-op state failed', 'network'));
+  };
+
+  private readonly onMatchEnd = (winner: number): void => this.end(winner);
+
+  private readonly onGuestLeave = (slot: PlayerSlot): void => {
+    this.departed.push(slot);
+  };
+
+  /** Lets go of the co-op hooks, but only its own: the next scene is built first and may already have set its own. */
+  private releaseCoopHooks(): void {
+    if (coop.onState === this.onHostState) coop.onState = null;
+    if (coop.onEnd === this.onMatchEnd) coop.onEnd = null;
+    if (coop.onLeave === this.onGuestLeave) coop.onLeave = null;
   }
 
   /** Picks up a saved run, or the world the host sent. */
@@ -375,18 +389,23 @@ export class InGameScene implements Scene {
       world.addComponent(ai, 'aiPlayer', { character: gameState.aiCharacter, difficulty: gameState.aiDifficulty.name, role });
       world.addComponent(ai, 'remoteInput', true);
       ai.minimapColor = 0xff5040;
-      // A quiet head start, so the computer can afford a good gun from the first minute.
-      ai.playerStats!.score += openingCoins(gameState.aiDifficulty);
+      // Only the head start the host chose on the difficulty screen; none by default.
+      ai.playerStats!.score += startingCoins(gameState.aiDifficulty, settings.aiStartGold);
     }
+  }
+
+  /** Draws the terrain under everything else, as seen from the local player's side. */
+  private addLevelView(): void {
+    this.levelView?.destroy({ children: true });
+    this.levelView = buildLevelView(this.level, this.player.team ?? Team.One);
+    this.levelView.zIndex = -Number.MAX_SAFE_INTEGER;
+    this.gameLayer.addChild(this.levelView);
   }
 
   /** Redraws the floor texture and wall entities after bombs change the terrain. */
   private rebuildTerrain = (): void => {
     this.level.tilesDirty = false;
-    this.levelView?.destroy({ children: true });
-    this.levelView = buildLevelView(this.level);
-    this.levelView.zIndex = -Number.MAX_SAFE_INTEGER;
-    this.gameLayer.addChild(this.levelView);
+    this.addLevelView();
     syncWalls(this.level);
   };
 
@@ -728,7 +747,7 @@ export class InGameScene implements Scene {
 
   destroy(): void {
     this.disposed = true;
-    coop.onState = null; coop.onEnd = null; coop.onLeave = null;
+    this.releaseCoopHooks();
     sound.onEffect = null; noticeEvents.onNotice = null;
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);

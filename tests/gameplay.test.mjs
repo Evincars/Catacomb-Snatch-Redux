@@ -15,7 +15,7 @@ const { createRailDroid, canSpawnRailDroid, updateRailDroids } = await load('sys
 const { createBuilding } = await load('entities/BuildingFactory');
 const { createPlayer } = await load('entities/PlayerFactory');
 const { createShopItem } = await load('entities/ShopItemFactory');
-const { updateAIPlayers, openingCoins } = await load('ai/index');
+const { updateAIPlayers, openingCoins, startingCoins } = await load('ai/index');
 const { updateAI, MAX_CHASERS } = await load('systems/AISystem');
 const { updateTargeting } = await load('systems/TargetingSystem');
 const { updateInteraction, updateCarried } = await load('systems/InteractionSystem');
@@ -23,7 +23,7 @@ const { updateMovement, updateSlides } = await load('systems/MovementSystem');
 const { updateWeapons } = await load('systems/WeaponSystem');
 const { updateBullets } = await load('systems/BulletSystem');
 const { updateBulletCollision, updateCombatTimers } = await load('systems/CombatSystem');
-const { updateBombs } = await load('systems/BuildingSystem');
+const { updateBombs, playerBlastDamage } = await load('systems/BuildingSystem');
 const { updateHoles, overHole } = await load('systems/HoleSystem');
 const { canSpawnMob, updateSpawners, MAX_PER_NEST } = await load('systems/SpawnerSystem');
 const { updateRandomSpawner, spawnInitialSpawners } = await load('systems/RandomSpawnerSystem');
@@ -38,9 +38,12 @@ const { unguardedTrack } = await load('ai/perception/rails');
 const { walkField, routeFor } = await load('ai/perception/navigation');
 const { nearby, beginPerception } = await load('ai/perception/spatial');
 const { createBullet, BULLET_CONFIGS } = await load('entities/BulletFactory');
-const { cleanName } = await load('game/Settings');
+const { cleanName, settings, AI_START_GOLD } = await load('game/Settings');
 const { updateDeath } = await load('systems/DeathSystem');
-const { updateWeaponPickups, createWeaponPickup } = await load('systems/DeathDropSystem');
+const { updateWeaponPickups, createWeaponPickup, FALLEN_DROP_LIFE } = await load('systems/DeathDropSystem');
+const { createLoot } = await load('entities/LootFactory');
+const { updateLoot } = await load('systems/LootSystem');
+const { flushRemoved } = await load('systems/DeathSystem');
 const { coop } = await load('network/CoopSession');
 const { AI_GUN_DAMAGE, AI_DEATH_GOLD } = await load('ai/constants');
 const { findMobPath } = await load('systems/AISystem');
@@ -1267,4 +1270,130 @@ test('failures become typed GameErrors in Results, and log entries go to whichev
   } finally {
     useLog(previous);
   }
+});
+
+test('the computer starts with no coins unless the host grants a head start', () => {
+  createShopItem(centre(4), centre(4), 'raygun', Team.Two);
+  assert.equal(settings.aiStartGold, 0, 'a head start by default');
+  assert.equal(startingCoins(AI_DIFFICULTIES[1], 0), 0);
+  assert.equal(startingCoins(AI_DIFFICULTIES[1], 1000), 1000);
+  assert.equal(startingCoins(AI_DIFFICULTIES[1], 'full'), openingCoins(AI_DIFFICULTIES[1]));
+  assert.ok(AI_START_GOLD.includes(0) && AI_START_GOLD.includes('full'));
+});
+
+test('a player walking over a coin while firing picks it up, even when it passes under the body', () => {
+  const level = new Level(20, 20);
+  const p = createPlayer(centre(3), centre(5), Team.One);
+  // Level with the chest, well above the feet: the old 16px circle round the feet never reached it.
+  const coin = createLoot(centre(9), centre(5) - 18, 0, 0, 10, true);
+  coin.loot.burstTicks = 0;
+  for (let tick = 0; tick < 200 && !coin.removed; tick++) {
+    p.playerInput.right = true;
+    p.playerInput.shoot = true;
+    p.aimVector = { x: 1, y: 0 };
+    updateWeapons(1);
+    updateMovement(level, 1);
+    updateLoot(1);
+  }
+  assert.ok(coin.removed, 'walked through the coin without taking it');
+  assert.equal(p.playerStats.score, 10);
+});
+
+test("a fallen player's coins and guns vanish 25 seconds later, whatever the difficulty", () => {
+  const level = homeLevel();
+  gameState.difficulty = DIFFICULTIES[0];
+  const p = richPlayer();
+  p.health.current = 0;
+  updateDeath(level, 1);
+  p.position.x = p.position.y = -1000;
+  assert.equal(FALLEN_DROP_LIFE, 60 * 25);
+  const coins = () => [...world.with('loot')].filter((c) => !c.removed).length;
+  const guns = () => [...world.with('weaponPickup')].length;
+  assert.ok(coins() > 0 && guns() > 0);
+  for (let tick = 0; tick < FALLEN_DROP_LIFE - 1; tick++) {
+    updateLoot(1);
+    updateWeaponPickups();
+  }
+  assert.ok(coins() > 0 && guns() > 0, 'gone before 25 seconds');
+  updateLoot(1);
+  updateWeaponPickups();
+  assert.equal(coins(), 0, 'coins outlived 25 seconds');
+  assert.equal(guns(), 0, 'guns outlived 25 seconds');
+});
+
+test('a lit bomb cannot be picked up, and a load that vanishes frees the hands', () => {
+  const level = new Level(12, 12);
+  const p = createPlayer(centre(5), centre(5), Team.One);
+  p.aimVector = { x: 1, y: 0 };
+  const bomb = createBuilding(centre(6), centre(5), 'bomb', Team.One);
+  bomb.bomb.lit = true;
+  updateTargeting();
+  assert.equal(p.targetId, undefined, 'a burning bomb was offered');
+  p.playerInput.intents.build = true;
+  updateInteraction(level);
+  assert.equal(p.carryingId, undefined, 'lifted a burning bomb');
+  // Should one go off overhead anyway, the carrier's hands are empty again.
+  world.addComponent(bomb, 'carriedBy', world.id(p));
+  world.addComponent(p, 'carryingId', world.id(bomb));
+  world.addComponent(bomb, 'removed', true);
+  flushRemoved();
+  assert.equal(p.carryingId, undefined, 'still holding a bomb that is gone');
+});
+
+test('a bomb hurts a player more the closer they stand to it', () => {
+  assert.ok(playerBlastDamage(5, 1) > playerBlastDamage(5, 0));
+  assert.ok(playerBlastDamage(5, 0) > 5, 'no worse than before at the edge');
+  const level = new Level(12, 12);
+  const near = createPlayer(centre(5), centre(5) + 8, Team.One);
+  const far = createPlayer(centre(6) + 12, centre(5) + 8, Team.One);
+  const bomb = createBuilding(centre(5), centre(5) + 7, 'bomb', Team.Two);
+  bomb.bomb.lit = true;
+  bomb.bomb.fuse = 0;
+  updateBombs(level, 1);
+  const lost = (p) => p.health.max - p.health.current;
+  assert.ok(lost(far) > 0, 'the edge of the blast did nothing');
+  assert.ok(lost(near) > lost(far), `near ${lost(near)} vs far ${lost(far)}`);
+});
+
+test('AI carrying a bomb puts it down to fight a rival player in sight', () => {
+  const level = new Level(24, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(4), y: centre(5) }]);
+  const ai = computer(4, 5, 0);
+  ai.aiPlayer.difficulty = 'Normal';
+  const bomb = createBuilding(centre(4), centre(5), 'bomb', Team.Two);
+  world.addComponent(bomb, 'carriedBy', world.id(ai));
+  world.removeComponent(bomb, 'blocking');
+  world.addComponent(ai, 'carryingId', world.id(bomb));
+  const rival = createPlayer(centre(11), centre(5), Team.One);
+  world.addComponent(rival, 'playerSlot', 'host');
+  world.addComponent(rival, 'remoteInput', true);
+  rival.health.immortal = true;
+  let dropped = false;
+  let fired = false;
+  for (let tick = 0; tick < 300 && !fired; tick++) {
+    aiTick(level);
+    if (ai.carryingId === undefined) dropped = true;
+    if (dropped && ai.playerInput.shoot) fired = true;
+  }
+  assert.ok(dropped, 'kept the bomb in its hands in front of a rival');
+  assert.ok(fired, 'never shot back');
+});
+
+test('with two computers the saboteur spends on bombs, not on turrets of its own', () => {
+  const level = new Level(30, 12);
+  level.setSpawnPoints(Team.Two, [{ x: centre(3), y: centre(5) }]);
+  createShopItem(centre(3), centre(3), 'bomb', Team.Two);
+  createShopItem(centre(5), centre(3), 'turret', Team.Two);
+  createShopItem(centre(7), centre(3), 'raygun', Team.Two);
+  for (let x = 18; x <= 21; x++) put(level, x, 5, TileType.Rail, { team: Team.One });
+  const ai = computer(3, 5, 900);
+  ai.aiPlayer.role = 'saboteur';
+  let boughtBomb = false;
+  for (let tick = 0; tick < 600 && !boughtBomb; tick++) {
+    aiTick(level);
+    boughtBomb = [...world.with('bomb')].length > 0;
+  }
+  assert.ok(boughtBomb, 'never bought a bomb');
+  assert.equal([...world.with('turret')].length, 0, 'the saboteur built a turret');
+  assert.ok(!ai.weaponInventory.weapons.includes('raygun'), 'bought a gun before its bomb');
 });

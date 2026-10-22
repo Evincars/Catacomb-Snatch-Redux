@@ -147,8 +147,16 @@ export function updateDeath(level: Level, _dt: number): void {
   flushRemoved();
 }
 
+/** Whoever was holding something that is now gone (a bomb that went off overhead) has empty hands again. */
+function freeCarrier(entity: Entity): void {
+  if (entity.carriedBy === undefined) return;
+  const carrier = world.entity(entity.carriedBy);
+  if (carrier && carrier.carryingId === world.id(entity)) world.removeComponent(carrier, 'carryingId');
+}
+
 export function flushRemoved(): void {
   for (const entity of doomed) {
+    freeCarrier(entity);
     destroyAttachments(entity);
     if (entity.sprite) entity.sprite.destroy({ children: true });
     world.remove(entity);

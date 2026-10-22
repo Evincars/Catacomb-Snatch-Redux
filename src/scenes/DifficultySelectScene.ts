@@ -5,12 +5,20 @@ import { PixelButton } from '../ui/PixelButton';
 import { makeText, makeTitle } from '../ui/PixelText';
 import { getTexture } from '../assets/AssetLoader';
 import { AI_DIFFICULTIES, DIFFICULTIES, gameState } from '../game/GameState';
-import { saveSettings, settings } from '../game/Settings';
+import { AI_START_GOLD, saveSettings, settings } from '../game/Settings';
+import type { AIStartGold } from '../game/Settings';
 
 const GW = GAME_WIDTH;
 const GH = GAME_HEIGHT;
 const BTN_W = 200;
 const BTN_H = 30;
+const GOLD_BTN_W = 170;
+
+/** How the computer's head start reads on its button. */
+function goldLabel(gold: AIStartGold): string {
+  if (gold === 'full') return 'AI gold: Full start';
+  return gold === 0 ? 'AI gold: None' : `AI gold: ${gold}`;
+}
 
 const DESCRIPTIONS: Record<string, string> = {
   Easy:      'Relaxed — mobs are weak',
@@ -100,6 +108,10 @@ export class DifficultySelectScene implements Scene {
     const desc = makeText('', 0xaaaaaa, 8, 'center');
     desc.x = GW / 2;
     desc.y = y + BTN_H + 6;
+    // The host decides whether the computers start with coins, and how many; they start with none by default.
+    const gold = new PixelButton('', GOLD_BTN_W, 28);
+    gold.x = x;
+    gold.y = GH - 56;
 
     const refresh = () => {
       settings.opponent = gameState.opponentChoice;
@@ -110,6 +122,9 @@ export class DifficultySelectScene implements Scene {
       level.setText(`AI: ${gameState.aiDifficulty.name}`);
       level.setEnabled(allowed);
       level.alpha = ai ? 1 : 0.6;
+      gold.setText(goldLabel(settings.aiStartGold));
+      gold.setEnabled(ai);
+      gold.alpha = ai ? 1 : 0.6;
       desc.text = !allowed ? 'The enemy guest is your opponent'
         : ai ? 'Computers (one per player) race you to fill their treasury' : 'Collect coins with no rival base';
     };
@@ -127,9 +142,14 @@ export class DifficultySelectScene implements Scene {
       }
       refresh();
     };
+    gold.onPress = () => {
+      const i = AI_START_GOLD.indexOf(settings.aiStartGold);
+      settings.aiStartGold = AI_START_GOLD[(i + 1) % AI_START_GOLD.length];
+      refresh();
+    };
     opponent.setEnabled(allowed);
     refresh();
-    this.container.addChild(opponent, level, desc);
+    this.container.addChild(opponent, level, desc, gold);
   }
 
   private updateSelection(): void {

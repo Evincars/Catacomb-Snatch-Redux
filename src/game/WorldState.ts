@@ -238,6 +238,7 @@ function checkDetails(data: EntityState): void {
     'Invalid saved weapons');
   ensure(!data.upgradable || (Array.isArray(data.upgradable.costs) && data.upgradable.costs.every(Number.isFinite)), 'Invalid upgrade costs');
   ensure(data.loot?.burstTicks === undefined || inRange(data.loot.burstTicks, 0, 24), 'Invalid loot burst timer');
+  ensure(data.loot?.fixedLife === undefined || typeof data.loot.fixedLife === 'boolean', 'Invalid loot lifetime');
   const flash = data.playerStats?.pickupFlashCooldown;
   ensure(flash === undefined || inRange(flash, 0, 8), 'Invalid pickup flash timer');
 }

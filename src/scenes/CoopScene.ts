@@ -25,8 +25,10 @@ export class CoopScene implements Scene {
     this.container.addChild(title);
     // A loaded save only has room for the guests it was saved with.
     const savedGuests = savedRun.pending ? savedRun.pending.state.entities.filter(e => e.data.playerSlot && e.data.playerSlot !== 'host').length : null;
+    // Back from a finished match: the same room, its players and its invite carry on into the next one.
+    const reuse = coop.inRoom && coop.role === role;
     if (role === 'host') {
-      gameState.multiplayerMode = savedRun.pending?.state.settings.multiplayerMode ?? 'companion';
+      if (!reuse) gameState.multiplayerMode = savedRun.pending?.state.settings.multiplayerMode ?? 'companion';
       const mode = this.button('', 58, () => {
         const next = gameState.multiplayerMode === 'companion' ? 'enemy' : 'companion';
         if (next === 'enemy' && coop.guestSlots().length > 1) {
@@ -107,7 +109,8 @@ export class CoopScene implements Scene {
           : coop.status;
         if (role === 'host') this.input.value = coop.invite;
         start.setEnabled(ready());
-        action.setEnabled(role !== 'host' || !!coop.invite);
+        // A guest already in the room has nothing to connect to; pressing it would only drop the line.
+        action.setEnabled(role === 'host' ? !!coop.invite : !coop.connected);
         showRoster();
       };
       coop.onState = () => {
@@ -121,7 +124,11 @@ export class CoopScene implements Scene {
     const showError = (error: unknown) => {
       status.text = report(error, 'Co-op lobby', 'network').message;
     };
-    if (role === 'host') {
+    if (reuse) {
+      if (role === 'host') this.input.value = coop.invite;
+      else this.input.value = destination ?? '';
+      watch();
+    } else if (role === 'host') {
       void coop.open('host').catch(showError);
       coop.guestLimit = savedGuests;
       watch();

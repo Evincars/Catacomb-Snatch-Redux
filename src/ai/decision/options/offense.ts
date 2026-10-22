@@ -1,7 +1,7 @@
 import { q, world } from '../../../world';
 import type { Entity } from '../../../world';
 import { TILE_WIDTH } from '../../../level/TileType';
-import { BASE_DEFENSE_RANGE, NEST_CLEAR_RANGE } from '../../constants';
+import { BASE_DEFENSE_RANGE, NEST_CLEAR_RANGE, SABOTEUR_WRECK_SCORE } from '../../constants';
 import { hostile } from '../../perception/awareness';
 import { nearby } from '../../perception/spatial';
 import { nearestOf, nearestReachableTo } from '../../perception/navigation';
@@ -41,7 +41,8 @@ export const OFFENSE: Option[] = [
     id: 'defend what is ours',
     ceiling: 66,
     evaluate(s) {
-      if (s.held || s.profile.aggression < 0.3) return null;
+      // The saboteur leaves home to its partner and keeps up the attack.
+      if (s.held || s.saboteur || s.profile.aggression < 0.3) return null;
       const target = nearestOf(s.level, s.brain, intruders(s));
       return target ? { score: 66, goal: huntPlan(s.level, s.brain, 'defend', target) } : null;
     },
@@ -62,13 +63,13 @@ export const OFFENSE: Option[] = [
     // Shoot the rival's turrets, harvesters and carriages down. A saboteur does little else; a builder only
     // defends its track against their carriages.
     id: 'wreck their machines',
-    ceiling: 40,
+    ceiling: SABOTEUR_WRECK_SCORE,
     evaluate(s) {
       const machines = [...damageable].filter((e) => hostile(s.entity, e) && isMachine(e)
         && (s.role !== 'builder' || e.railDroid !== undefined));
       const wreck = nearestOf(s.level, s.brain, machines);
       if (!wreck) return null;
-      const score = s.saboteur ? 40 : 26 + 22 * s.profile.aggression;
+      const score = s.saboteur ? SABOTEUR_WRECK_SCORE : 26 + 22 * s.profile.aggression;
       return { score, goal: huntPlan(s.level, s.brain, 'wreck', wreck) };
     },
   },
